@@ -15,6 +15,7 @@ public final class Service implements AutoCloseable {
   private final Archives archives;
   private final Jobs jobs;
   private final External external;
+  private final Comparisons comparisons;
   private final Map<String, SyncPlan> plans = new java.util.concurrent.ConcurrentHashMap<>();
 
   public Service(Path root, Consumer<Object> emit) throws Exception {
@@ -24,6 +25,7 @@ public final class Service implements AutoCloseable {
     archives = new Archives(store);
     jobs = new Jobs(store, db, archives, emit);
     external = new External(store, db, archives);
+    comparisons = new Comparisons(emit, plan -> plans.put(plan.id, plan));
   }
 
   public Object handle(String method, JsonNode p) throws Exception {
@@ -79,15 +81,21 @@ public final class Service implements AutoCloseable {
       case "tables.list" -> db.tables(ref(p.path("ref")));
       case "table.get" -> db.snapshot(ref(p.path("ref")), p.path("table").asText(), false);
       case "imports.parse" -> Imports.parse(p.path("format").asText(), p.path("content").asText());
+      case "sync.compare.start" -> startComparison(p);
+      case "sync.compare.get" -> comparisons.get(p.path("compareId").asText());
+      case "sync.compare.cancel" -> comparisons.cancel(p.path("compareId").asText());
       case "sync.compare" -> {
-        var plan =
-            planner.compare(
-                p.path("workspaceId").asText(),
-                ref(p.path("source")),
-                Arrays.asList(Json.MAPPER.treeToValue(p.path("targets"), DbRef[].class)),
-                Arrays.asList(Json.MAPPER.treeToValue(p.path("tables"), TableChoice[].class)));
-        plans.put(plan.id, plan);
-        yield plan;
+        String id = startComparison(p).get("compareId").toString();
+        Map<String, Object> result;
+        do {
+          Thread.sleep(25);
+          result = comparisons.get(id);
+        } while (List.of("RUNNING", "CANCELLING").contains(result.get("status")));
+        if (result.get("status").equals("CANCELLED"))
+          throw new java.util.concurrent.CancellationException("比较已停止");
+        if (result.get("status").equals("FAILED"))
+          throw new IllegalArgumentException(result.get("error").toString());
+        yield result.get("plan");
       }
       case "sync.save" -> {
         var plan = plans.get(p.path("planId").asText());
@@ -352,7 +360,41 @@ public final class Service implements AutoCloseable {
     return Map.of("sql", b.toString(), "tables", opts.tables(), "includeDrop", opts.includeDrop());
   }
 
+  private Map<String, Object> startComparison(JsonNode p) throws Exception {
+    var params = p.deepCopy();
+    var credentials = Json.node(db.secretSnapshot());
+    for (var choice : params.path("tables")) {
+      var options = choice.get("structureOptions");
+      if (options != null && !options.isNull()) {
+        for (String key :
+            List.of(
+                "columns",
+                "columnOrder",
+                "tableComment",
+                "columnComments",
+                "indexes",
+                "foreignKeys",
+                "tableCollation"))
+          if (!options.path(key).isBoolean())
+            throw new IllegalArgumentException("结构细项缺少布尔值：" + key);
+      }
+    }
+    var source = ref(params.path("source"));
+    var targets = Arrays.asList(Json.MAPPER.treeToValue(params.path("targets"), DbRef[].class));
+    var tables = Arrays.asList(Json.MAPPER.treeToValue(params.path("tables"), TableChoice[].class));
+    String id = params.path("compareId").asText();
+    if (id.isBlank()) id = "COMPARE-" + UUID.randomUUID();
+    else UUID.fromString(id);
+    return comparisons.start(
+        id,
+        () -> {
+          db.secrets(credentials);
+          return planner.compare(params.path("workspaceId").asText(), source, targets, tables);
+        });
+  }
+
   public void close() throws Exception {
+    comparisons.close();
     jobs.close();
     store.close();
   }

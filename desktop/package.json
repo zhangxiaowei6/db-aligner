@@ -50,6 +50,10 @@
     ],
     "extraResources": [
       {
+        "from": "build/icon.png",
+        "to": "app-icon.png"
+      },
+      {
         "from": "../engine/target/engine.jar",
         "to": "engine/engine.jar"
       },

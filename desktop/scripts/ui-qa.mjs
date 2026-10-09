@@ -71,7 +71,7 @@ async function browserQA() {
     ],
     { cwd: desktop, windowsHide: true, stdio: ['ignore', log.fd, log.fd] },
   );
-  let browser;
+  let browser, lastPage;
   try {
     for (let attempt = 0; attempt < 60; attempt++) {
       try {
@@ -86,6 +86,7 @@ async function browserQA() {
         colorScheme: mode,
       });
       const page = await context.newPage();
+      lastPage = page;
       observe(page);
       await page.goto('http://127.0.0.1:4183/?preview=1');
       await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
@@ -193,6 +194,7 @@ async function browserQA() {
         colorScheme: 'light',
       });
       const page = await context.newPage();
+      lastPage = page;
       observe(page);
       await page.goto('http://127.0.0.1:4183/?preview=1&page=import');
       await page.getByRole('textbox', { name: '会话内容' }).fill('fictional QA sample');
@@ -209,6 +211,7 @@ async function browserQA() {
         permissions: ['clipboard-read', 'clipboard-write'],
       });
       const page = await context.newPage();
+      lastPage = page;
       observe(page);
       await page.goto('http://127.0.0.1:4183/?preview=1');
       await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
@@ -237,10 +240,18 @@ async function browserQA() {
       for (const label of ['索引（2）', '外键（0）', '建表 SQL', '字段']) {
         await page.getByRole('tab', { name: label, exact: true }).click();
       }
-      report.browser.push({ check: 'lazy-tree-table-tabs', passed: true });
+      report.browser.push({ check: 'lazy-tree-single-table-sections', passed: true });
       await page.getByRole('button', { name: '导出表结构', exact: true }).click();
       await page.getByRole('heading', { level: 1, name: '导出表结构', exact: true }).waitFor();
       await page.getByText('仅 CREATE TABLE', { exact: true }).waitFor();
+      assert(
+        !(await page.locator('.sql-view').innerText()).includes('CREATE TABLE'),
+        'single-table entry should wait for manual generation',
+      );
+      await page.getByRole('button', { name: /生成预览 SQL/ }).click();
+      await page.waitForFunction(() =>
+        document.querySelector('.sql-view').innerText.includes('CREATE TABLE'),
+      );
       assert(
         !(await page
           .locator('.sql-view')
@@ -249,6 +260,11 @@ async function browserQA() {
         'default export includes DROP',
       );
       await page.getByText('包含 DROP TABLE', { exact: true }).click();
+      assert(
+        !(await page.locator('.sql-view').innerText()).includes('CREATE TABLE'),
+        'changing DROP must clear the previous preview',
+      );
+      await page.getByRole('button', { name: /生成预览 SQL/ }).click();
       await page.waitForFunction(() =>
         document.querySelector('.sql-view').innerText.includes('DROP TABLE'),
       );
@@ -257,7 +273,7 @@ async function browserQA() {
       await page.getByRole('heading', { level: 1, name: '同步模板', exact: true }).waitFor();
       const templateName = page.getByRole('textbox', { name: '模板名称' });
       await templateName.fill('QA 模板草稿');
-      await page.getByRole('button', { name: '取消修改', exact: true }).click();
+      await page.locator('.template-card').first().click();
       assert.equal(await templateName.inputValue(), '基础字典与菜单');
       await page.getByRole('button', { name: '应用模板', exact: true }).click();
       await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
@@ -265,13 +281,57 @@ async function browserQA() {
         await page.getByRole('textbox', { name: 'sys_dict 匹配键' }).inputValue(),
         'code',
       );
+      const dictRow = page
+        .getByRole('row')
+        .filter({ has: page.getByText('sys_dict', { exact: true }) });
+      await dictRow.getByRole('button', { name: /7 \/ 7 项/ }).click();
+      const dictOptions = page.getByRole('group', { name: 'sys_dict 结构细项', exact: true });
+      assert.equal(await dictOptions.getByRole('checkbox').count(), 7);
+      await dictOptions.getByRole('checkbox', { name: '字段顺序', exact: true }).uncheck();
+      await shot(page, `table-options-${workflowTheme}`);
+      await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).click();
+      await dictOptions.waitFor({ state: 'hidden' });
+      assert((await dictRow.innerText()).includes('6 / 7 项'));
       await page.getByRole('button', { name: '开始比较', exact: true }).click();
+      const comparison = page.getByRole('dialog', { name: '确认比较范围', exact: true });
+      await comparison.waitFor();
+      await comparison.getByText('逐表设置', { exact: true }).waitFor();
+      assert(await comparison.getByRole('button', { name: '确认并开始比较' }).isDisabled());
+      await comparison.getByRole('checkbox', { name: /性能影响/ }).check();
+      await shot(page, `compare-confirmation-${workflowTheme}`);
+      await comparison.getByRole('button', { name: '确认并开始比较' }).click();
+      await page.getByRole('region', { name: '比较进度' }).waitFor();
+      await page.waitForFunction(() =>
+        document.querySelector('.compare-progress-panel')?.innerText.includes('比较表'),
+      );
+      await page.getByRole('menuitem', { name: /设置/ }).click();
+      assert.equal(await page.getByRole('region', { name: '比较进度' }).count(), 0);
+      await page.getByRole('menuitem', { name: /新建同步/ }).click();
+      await page.getByRole('region', { name: '比较进度' }).waitFor();
+      await shot(page, `compare-running-${workflowTheme}`);
+      await page.getByRole('button', { name: '停止比较', exact: true }).click();
+      await page.getByText('比较已停止', { exact: true }).waitFor();
+      await shot(page, `compare-stopped-${workflowTheme}`);
+      await page.getByRole('menuitem', { name: /新建同步/ }).click();
+      assert.equal(
+        await page.getByRole('textbox', { name: 'sys_dict 匹配键' }).inputValue(),
+        'code',
+      );
+      assert((await dictRow.innerText()).includes('6 / 7 项'));
+      await shot(page, `scope-options-${workflowTheme}`);
+      await page.getByRole('button', { name: '开始比较', exact: true }).click();
+      await comparison.waitFor();
+      await comparison.getByRole('checkbox', { name: /性能影响/ }).check();
+      await comparison.getByRole('button', { name: '确认并开始比较' }).click();
       await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
       await page.getByRole('button', { name: '复制 SQL', exact: true }).click();
       assert((await page.evaluate(() => navigator.clipboard.readText())).includes('ALTER TABLE'));
       await page.getByRole('button', { name: '仅保存记录', exact: true }).click();
+      const saveConfirmation = page.getByRole('dialog');
+      await saveConfirmation.waitFor();
+      await saveConfirmation.getByRole('button', { name: '确认保存', exact: true }).click();
       await page.getByRole('heading', { level: 1, name: '同步记录详情', exact: true }).waitFor();
-      for (const label of ['执行结果', '外部执行校验', '脚本与恢复资料']) {
+      for (const label of ['执行结果', '外部执行校验', '执行脚本', '回滚脚本']) {
         await page.getByRole('tab', { name: label, exact: true }).click();
       }
       await page.getByRole('button', { name: '登记外部执行', exact: true }).click();
@@ -281,7 +341,7 @@ async function browserQA() {
       await external.getByRole('button', { name: /取\s*消/ }).click();
       await external.waitFor({ state: 'hidden' });
       report.browser.push({
-        check: 'template-cancel-apply-compare-copy-save-record',
+        check: 'template-options-confirm-data-compare-cancel-navigation-retry-copy-save-record',
         passed: true,
       });
       await page.getByRole('menuitem', { name: /同步历史/ }).click();
@@ -301,18 +361,30 @@ async function browserQA() {
       await page.getByRole('button', { name: /保\s*存/ }).click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
       report.browser.push({ check: 'history-selection-version-drawer-and-edit', passed: true });
-      await page.getByRole('button', { name: '添加连接', exact: true }).click();
+      await page.locator('aside').getByRole('button', { name: '新建连接', exact: true }).click();
       await page.getByLabel('连接名称', { exact: true }).fill('QA 连接');
       await page.getByRole('textbox', { name: '用户名' }).fill('qa_user');
       await page.getByRole('button', { name: '保存连接', exact: true }).click();
       await page.getByRole('cell', { name: 'QA 连接', exact: true }).waitFor();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await page.getByRole('cell', { name: 'QA 连接', exact: true }).click();
       await page.getByLabel('连接名称', { exact: true }).fill('未保存');
-      await page.getByRole('button', { name: '取消修改', exact: true }).click();
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: /取\s*消/, exact: true })
+        .click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await page.getByRole('cell', { name: 'QA 连接', exact: true }).click();
       assert.equal(await page.getByLabel('连接名称', { exact: true }).inputValue(), 'QA 连接');
       await page
         .getByRole('checkbox', { name: '启用 SSL，验证证书与服务器名称', exact: true })
         .check();
       await page.getByText('客户端证书（PKCS#12，可选）', { exact: true }).waitFor();
+      await page
+        .getByRole('dialog')
+        .getByRole('button', { name: /取\s*消/, exact: true })
+        .click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('button', { name: '管理工作区', exact: true }).click();
       await page.getByRole('textbox', { name: '工作区名称' }).fill('QA 项目');
       await page.getByRole('button', { name: '保存工作区', exact: true }).click();
@@ -346,6 +418,19 @@ async function browserQA() {
       for (const item of report.browser.slice(reportStart)) item.theme = workflowTheme;
       await context.close();
     }
+  } catch (error) {
+    report.errors.push(String(error));
+    if (lastPage && !lastPage.isClosed()) {
+      await lastPage.screenshot({
+        path: path.join(repo, '.local-data', 'ui-qa-failure.png'),
+        animations: 'disabled',
+      });
+      await fs.writeFile(
+        path.join(repo, '.local-data', 'ui-qa-failure.txt'),
+        await lastPage.locator('body').innerText(),
+      );
+    }
+    throw error;
   } finally {
     await browser?.close();
     vite.kill();

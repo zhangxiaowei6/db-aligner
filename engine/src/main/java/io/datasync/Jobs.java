@@ -237,7 +237,7 @@ public final class Jobs implements AutoCloseable {
               executeBatch(r, tp, result, c, batch);
               batch.clear();
             }
-            if ((x.kind.equals("DROP_COLUMN") || x.kind.equals("MODIFY_COLUMN"))
+            if ((x.kind.equals("DROP_COLUMN") || x.kind.equals("MODIFY_COLUMN") && !x.commentOnly())
                 && db.incomingForeignKeys(c, tp.ref, x.table, x.label) > 0)
               throw new IllegalArgumentException("字段被其他表引用，阻止变更：" + x.label);
             executeStep(r, tp, result, c, x);
@@ -371,7 +371,7 @@ public final class Jobs implements AutoCloseable {
                               && i.label.equals(prev)))
             throw new IllegalArgumentException("字段顺序依赖未选择的新增字段：" + prev);
         }
-        if ((x.kind.equals("ADD_INDEX") || x.kind.equals("ADD_FK"))
+        if ((List.of("ADD_INDEX", "REPLACE_INDEX", "ADD_FK", "REPLACE_FK").contains(x.kind))
             && tp.changes.stream()
                 .anyMatch(
                     i ->

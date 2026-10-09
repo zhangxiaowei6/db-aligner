@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { smoke } from './smoke.js';
 import { isThemeMode, readThemeMode, writeThemeMode } from './appearance.js';
 import type { Appearance, ThemeMode } from '../src/types.js';
+import { connectionTestError } from '../src/connection-validation.js';
 
 const repo = path.resolve(__dirname, '../..');
 let win: BrowserWindow, engine: ChildProcessWithoutNullStreams, ready: Promise<void>;
@@ -62,6 +63,9 @@ const methods = new Set([
   'table.get',
   'imports.parse',
   'sync.compare',
+  'sync.compare.start',
+  'sync.compare.get',
+  'sync.compare.cancel',
   'sync.save',
   'record.get',
   'record.file',
@@ -176,7 +180,9 @@ async function call(method: string, params: Record<string, unknown> = {}) {
         pending.delete(id);
         reject(new Error('请求超时；执行任务不会因此自动撤销，请查看记录'));
       },
-      30 * 60 * 1000,
+      ['sync.compare.start', 'sync.compare.get', 'sync.compare.cancel'].includes(method)
+        ? 15_000
+        : 30 * 60 * 1000,
     );
     pending.set(id, { resolve, reject, timer });
     engine.stdin.write(JSON.stringify({ id, method, params }) + '\n');
@@ -328,18 +334,23 @@ async function invoke(method: string, params: Record<string, unknown> = {}) {
   const credentials = await secrets();
   if (method === 'connections.test' && params.config) {
     const c = { ...(params.config as Record<string, unknown>) };
+    const validation = connectionTestError(c);
+    if (validation) throw new Error(validation);
     const original = String(c.id || '');
     c.id = randomUUID();
     credentials[String(c.id)] =
       typeof c.password === 'string' && c.password !== ''
         ? c.password
-        : credentials[original] || '';
+        : c.importCredentialId
+          ? importPasswords.get(String(c.importCredentialId)) || ''
+          : credentials[original] || '';
     credentials[String(c.id) + ':certificate'] =
       typeof c.certificatePassword === 'string' && c.certificatePassword !== ''
         ? c.certificatePassword
         : credentials[original + ':certificate'] || '';
     delete c.password;
     delete c.certificatePassword;
+    delete c.importCredentialId;
     params = { ...params, config: c };
   }
   const response = await call(method, { ...params, $secrets: credentials });
@@ -386,6 +397,9 @@ app.whenReady().then(async () => {
     titleBarOverlay: overlayStyle(),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#141414' : '#ffffff',
     title: 'Data Sync',
+    icon: app.isPackaged
+      ? path.join(process.resourcesPath, 'app-icon.png')
+      : path.join(repo, 'desktop/build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

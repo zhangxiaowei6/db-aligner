@@ -30,6 +30,11 @@ public final class Database {
     return (request == null ? passwords : request).getOrDefault(id, "");
   }
 
+  Map<String, String> secretSnapshot() {
+    var request = requestPasswords.get();
+    return Map.copyOf(request == null ? passwords : request);
+  }
+
   public Connection open(DbRef ref) throws Exception {
     var cfg = store.get("connection", ref.connectionId());
     if (cfg == null) throw new IllegalArgumentException("连接不存在");
@@ -92,8 +97,11 @@ public final class Database {
       p.setProperty("keyStorePassword", secret(ref.connectionId() + ":certificate"));
     }
     String endpoint = host.contains(":") && !host.startsWith("[") ? "[" + host + "]" : host;
+    ComparisonContext.check();
     var c = DriverManager.getConnection("jdbc:mariadb://" + endpoint + ":" + port + "/", p);
     try {
+      var comparison = ComparisonContext.CURRENT.get();
+      if (comparison != null) c = comparison.wrap(c);
       if (!ref.database().isEmpty()) c.setCatalog(ref.database());
       try (var s = c.createStatement()) {
         s.execute(
@@ -306,7 +314,10 @@ public final class Database {
   }
 
   public void keyTokens(Connection c, DbRef ref, Table table, List<String> keys) throws Exception {
+    ComparisonContext.check();
     if (!table.exists || keys.isEmpty()) return;
+    var comparison = ComparisonContext.CURRENT.get();
+    if (comparison != null) comparison.stage(ref, table.name, "读取匹配键");
     var expressions = new ArrayList<String>();
     var aliases = new ArrayList<String>();
     for (int i = 0; i < keys.size(); i++) {
@@ -335,21 +346,26 @@ public final class Database {
       aliases.add(alias);
       expressions.add(expr + " AS " + Sql.id(alias));
     }
-    try (var st = c.createStatement();
-        var rs =
-            st.executeQuery(
-                "SELECT *,"
-                    + String.join(",", expressions)
-                    + " FROM "
-                    + Sql.qualified(ref, table.name)
-                    + " LIMIT 20001")) {
-      int count = 0;
-      while (rs.next()) {
-        if (++count > 20000) throw new IllegalArgumentException("基础数据超过 20000 行");
-        var row = row(rs);
-        var values = new ArrayList<Object>();
-        for (String alias : aliases) values.add(row.remove(alias));
-        table.keyTokens.put(Json.hash(row), Json.hash(values));
+    try (var st = c.createStatement()) {
+      st.setQueryTimeout(60);
+      st.setFetchSize(500);
+      try (var rs =
+          st.executeQuery(
+              "SELECT *,"
+                  + String.join(",", expressions)
+                  + " FROM "
+                  + Sql.qualified(ref, table.name)
+                  + " LIMIT 20001")) {
+        int count = 0;
+        while (rs.next()) {
+          ComparisonContext.rows(count);
+          if (++count > 20000) throw new IllegalArgumentException("基础数据超过 20000 行");
+          var row = row(rs);
+          var values = new ArrayList<Object>();
+          for (String alias : aliases) values.add(row.remove(alias));
+          table.keyTokens.put(Json.hash(row), Json.hash(values));
+        }
+        ComparisonContext.rows(count);
       }
     }
   }
@@ -357,16 +373,20 @@ public final class Database {
   public List<Map<String, Object>> readRows(Connection c, DbRef ref, String table, int limit)
       throws Exception {
     var rows = new ArrayList<Map<String, Object>>();
+    var comparison = ComparisonContext.CURRENT.get();
+    if (comparison != null) comparison.stage(ref, table, "读取数据");
     try (var s = c.createStatement()) {
       s.setQueryTimeout(60);
       s.setFetchSize(500);
       try (var rs =
           s.executeQuery("SELECT * FROM " + Sql.qualified(ref, table) + " LIMIT " + (limit + 1))) {
         while (rs.next()) {
+          ComparisonContext.rows(rows.size());
           if (rows.size() >= limit)
             throw new IllegalArgumentException("基础数据超过 " + limit + " 行，首版请缩小同步范围");
           rows.add(row(rs));
         }
+        ComparisonContext.rows(rows.size());
       }
     }
     return rows;

@@ -9,7 +9,12 @@ import {
 } from 'react';
 import { App, Input } from 'antd';
 import { api, onEvent, preview, windowAction } from './api';
+import { previewPlan } from './preview';
 import { copyModel } from './copy';
+import { connectionTestError } from './connection-validation';
+import { SyncExecutionConfirmation } from './components/SyncExecutionConfirmation';
+import { effectiveOptions } from './structure-options';
+import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
 import {
   changesOf,
   dbOptions,
@@ -20,6 +25,7 @@ import {
   refKey,
   splitKeys,
   toggleIds,
+  type CompareSelection,
   type ImportRow,
   type Model,
   type Page,
@@ -28,7 +34,9 @@ import {
   type TreeNode,
 } from './model';
 import type {
+  CompareTask,
   ConnectionInfo,
+  DbRef,
   RollbackPlan,
   State,
   SyncPlan,
@@ -40,6 +48,9 @@ import type {
 } from './types';
 
 function useBusinessController() {
+  const databaseLoads = useRef(
+    new Map<string, { signature: string; workspace: string; promise: Promise<void> }>(),
+  );
   const [m, dispatch] = useReducer(modelReducer, undefined, initialModel);
   const latest = useRef(m);
   const mounted = useRef(true);
@@ -47,14 +58,49 @@ function useBusinessController() {
   const requestSerial = useRef(0);
   const { message, modal } = App.useApp();
   const closePending = useRef(false);
+  const syncSubmitPending = useRef(false);
+  const compareStarting = useRef(false);
+  const compareCancelPending = useRef(false);
+  const comparisonActive = () =>
+    !!latest.current.compareTask &&
+    ['RUNNING', 'CANCELLING'].includes(latest.current.compareTask.status);
+  const compareSelection = (s: Model): CompareSelection => ({
+    workspaceId: s.workspaceId,
+    sourceKey: s.sourceKey,
+    targetKeys: s.targetKeys,
+    tables: s.scopeTables,
+    structureDefaults: s.structureDefaults,
+  });
+  const selectionSignature = (selection: CompareSelection) => JSON.stringify(selection);
   const commit = useCallback((update: (current: Model) => Model) => {
     if (!mounted.current) return;
-    const next = update(latest.current);
+    const current = latest.current;
+    const next = update(current);
+    if (current.compareTask && ['RUNNING', 'CANCELLING'].includes(current.compareTask.status)) {
+      for (const key of [
+        'workspaceId',
+        'sourceKey',
+        'targetKeys',
+        'scopeTables',
+        'structureDefaults',
+      ] as const)
+        Object.assign(next, { [key]: current[key] });
+    }
+    if (
+      next.compareConfirmation &&
+      selectionSignature(compareSelection(next)) !== selectionSignature(next.compareConfirmation)
+    )
+      next.compareConfirmation = undefined;
     latest.current = next;
     dispatch({ type: 'replace', value: next });
   }, []);
   const set = useCallback(
-    <K extends keyof Model>(key: K, value: Model[K]) => commit((s) => ({ ...s, [key]: value })),
+    <K extends keyof Model>(key: K, value: Model[K]) =>
+      commit((s) => ({
+        ...s,
+        [key]: value,
+        ...(key === 'databasesText' ? { connectionTest: undefined } : {}),
+      })),
     [commit],
   );
   const patch = useCallback(
@@ -73,6 +119,7 @@ function useBusinessController() {
         ...s,
         [key]: { ...s[key], ...value },
         ...(key === 'settingsForm' ? { settingsDirty: true } : {}),
+        ...(key === 'connectionForm' ? { connectionTest: undefined } : {}),
       })),
     [commit],
   );
@@ -106,6 +153,62 @@ function useBusinessController() {
       commit((s) => ({
         ...s,
         state,
+        dbCache: Object.fromEntries(
+          Object.entries(s.dbCache).filter(
+            ([id]) =>
+              JSON.stringify(s.state.connections.find((c) => c.id === id)) ===
+                JSON.stringify(state.connections.find((c) => c.id === id)) &&
+              state.connections.some((c) => c.id === id),
+          ),
+        ),
+        treeChildren: Object.fromEntries(
+          Object.entries(s.treeChildren).filter(([key]) =>
+            state.connections.some(
+              (c) =>
+                (key === c.id || key.startsWith(c.id + '/')) &&
+                JSON.stringify(c) ===
+                  JSON.stringify(s.state.connections.find((old) => old.id === c.id)),
+            ),
+          ),
+        ),
+        connectionSelection: s.connectionSelection.filter((id) =>
+          state.connections.some((c) => c.id === id),
+        ),
+        connectionTests: Object.fromEntries(
+          Object.entries(s.connectionTests).filter(
+            ([id]) =>
+              state.connections.some((c) => c.id === id) &&
+              JSON.stringify(s.state.connections.find((c) => c.id === id)) ===
+                JSON.stringify(state.connections.find((c) => c.id === id)),
+          ),
+        ),
+        dbLoading: Object.fromEntries(
+          Object.entries(s.dbLoading).filter(([id]) => state.connections.some((c) => c.id === id)),
+        ),
+        dbErrors: Object.fromEntries(
+          Object.entries(s.dbErrors).filter(([id]) => state.connections.some((c) => c.id === id)),
+        ),
+        connectionForm:
+          s.connectionForm.id &&
+          s.state.connections.some((c) => c.id === s.connectionForm.id) &&
+          !state.connections.some((c) => c.id === s.connectionForm.id)
+            ? emptyConnection(s.workspaceId)
+            : s.connectionForm,
+        sourceKey:
+          s.sourceKey && !state.connections.some((c) => c.id === fromKey(s.sourceKey).connectionId)
+            ? ''
+            : s.sourceKey,
+        targetKeys: s.targetKeys.filter((key) =>
+          state.connections.some((c) => c.id === fromKey(key).connectionId),
+        ),
+        scopeTables:
+          s.sourceKey && !state.connections.some((c) => c.id === fromKey(s.sourceKey).connectionId)
+            ? []
+            : s.scopeTables,
+        currentTable:
+          s.currentTable && state.connections.some((c) => c.id === s.currentTable!.ref.connectionId)
+            ? s.currentTable
+            : undefined,
         workspaceId: state.workspaces.some((w) => w.id === s.workspaceId)
           ? s.workspaceId
           : state.workspaces[0]?.id || 'default',
@@ -127,9 +230,24 @@ function useBusinessController() {
   }
   function navigate(page: Page) {
     set('page', page);
+    if (preview && page === 'import' && !latest.current.importRows.length) void loadImportExample();
+  }
+  async function loadImportExample() {
+    if (!preview) return;
+    commit((s) => ({
+      ...s,
+      importFormat: 'navicat',
+      importName: '示例连接（虚构数据）.ncx',
+      importFileToken: '',
+      importText:
+        '<Connections><Connection ConnectionName="示例连接" Host="192.0.2.100" Port="3306" UserName="demo_user" /></Connections>',
+    }));
+    await action(() => parseImport());
   }
   function switchWorkspace(id: string) {
+    if (comparisonActive()) return;
     requests.current.clear();
+    databaseLoads.current.clear();
     commit((s) => ({
       ...s,
       workspaceId: id,
@@ -142,9 +260,14 @@ function useBusinessController() {
       currentChangeId: '',
       detail: undefined,
       rollback: undefined,
-      tableTabs: [],
-      activeTableTab: '',
+      currentTable: undefined,
       dbCache: {},
+      dbLoading: {},
+      dbErrors: {},
+      connectionSelection: [],
+      connectionTest: undefined,
+      connectionTests: {},
+      connectionDialog: false,
       treeChildren: {},
       historySelection: [],
       currentVersionId: '',
@@ -155,15 +278,65 @@ function useBusinessController() {
       exportSql: '',
     }));
   }
+  async function loadDatabaseOptions(force = false, onlyId?: string) {
+    const s = latest.current;
+    const connections = s.state.connections.filter(
+      (c) => c.workspaceIds.includes(s.workspaceId) && (!onlyId || c.id === onlyId),
+    );
+    await Promise.all(
+      connections.map(async (connection) => {
+        const id = connection.id;
+        if (!force && latest.current.dbCache[id] !== undefined) return;
+        const signature = JSON.stringify(connection);
+        const pending = databaseLoads.current.get(id);
+        if (pending && pending.signature === signature && pending.workspace === s.workspaceId)
+          return pending.promise;
+        const valid = request('databases:' + id);
+        const current = () =>
+          valid() &&
+          JSON.stringify(latest.current.state.connections.find((c) => c.id === id)) === signature;
+        commit((v) => ({
+          ...v,
+          dbLoading: { ...v.dbLoading, [id]: true },
+          dbErrors: { ...v.dbErrors, [id]: '' },
+        }));
+        const loading = (async () => {
+          try {
+            const databases = await api<string[]>('databases.list', { connectionId: id });
+            if (current()) commit((v) => ({ ...v, dbCache: { ...v.dbCache, [id]: databases } }));
+          } catch (error) {
+            if (current())
+              commit((v) => ({
+                ...v,
+                dbErrors: {
+                  ...v.dbErrors,
+                  [id]: error instanceof Error ? error.message : String(error),
+                },
+              }));
+          } finally {
+            if (current()) commit((v) => ({ ...v, dbLoading: { ...v.dbLoading, [id]: false } }));
+          }
+        })();
+        databaseLoads.current.set(id, { signature, workspace: s.workspaceId, promise: loading });
+        await loading;
+        if (databaseLoads.current.get(id)?.promise === loading) databaseLoads.current.delete(id);
+      }),
+    );
+  }
+  useEffect(() => {
+    if (!m.loading && ['scope', 'templates', 'export'].includes(m.page)) void loadDatabaseOptions();
+  }, [m.loading, m.page, m.workspaceId, m.state.connections]);
   async function loadTree(node: TreeNode) {
     if (!['connection', 'database'].includes(node.type)) return;
     const valid = request('tree:' + node.key);
     await action(async () => {
       let children: TreeNode[];
       if (node.type === 'connection') {
-        const databases = await api<string[]>('databases.list', {
-          connectionId: node.connectionId,
-        });
+        const databases =
+          latest.current.dbCache[node.connectionId!] ??
+          (await api<string[]>('databases.list', {
+            connectionId: node.connectionId,
+          }));
         if (!valid()) return;
         children = databases.map((database) => ({
           key: `${node.connectionId}/${database}`,
@@ -199,7 +372,7 @@ function useBusinessController() {
     const id = refKey(node.ref) + '/' + node.table;
     const valid = request('table');
     await action(async () => {
-      let tab = latest.current.tableTabs.find((t) => t.id === id);
+      let tab = latest.current.currentTable?.id === id ? latest.current.currentTable : undefined;
       if (!tab) {
         const model = await api<Table>('table.get', { ref: node.ref, table: node.table });
         tab = { id, ref: node.ref!, table: node.table!, model };
@@ -207,35 +380,22 @@ function useBusinessController() {
       if (valid())
         commit((s) => ({
           ...s,
-          tableTabs: s.tableTabs.some((t) => t.id === id) ? s.tableTabs : [...s.tableTabs, tab!],
-          activeTableTab: id,
+          currentTable: tab,
           page: 'table',
         }));
     });
   }
   async function refreshTable() {
-    const tab = latest.current.tableTabs.find((t) => t.id === latest.current.activeTableTab);
+    const tab = latest.current.currentTable;
     if (!tab) return;
     const valid = request('table:' + tab.id);
     await action(async () => {
       const model = await api<Table>('table.get', { ref: tab.ref, table: tab.table });
-      if (valid())
+      if (valid() && latest.current.currentTable?.id === tab.id)
         commit((s) => ({
           ...s,
-          tableTabs: s.tableTabs.map((t) => (t.id === tab.id ? { ...t, model } : t)),
+          currentTable: { ...tab, model },
         }));
-    });
-  }
-  function closeTable(id: string) {
-    commit((s) => {
-      const tabs = s.tableTabs.filter((t) => t.id !== id);
-      const active = s.activeTableTab === id ? tabs[0]?.id || '' : s.activeTableTab;
-      return {
-        ...s,
-        tableTabs: tabs,
-        activeTableTab: active,
-        page: s.page === 'table' && !active ? (s.plan ? 'diff' : 'scope') : s.page,
-      };
     });
   }
   async function loadScope(
@@ -259,6 +419,7 @@ function useBusinessController() {
           data: !!preselect && t.name === preselect && mode === 'data',
           keyColumns: [],
           keyText: '',
+          structureOptions: { ...s.structureDefaults },
         })),
         targetKeys: s.targetKeys.filter((k) => k !== source),
       }));
@@ -266,19 +427,36 @@ function useBusinessController() {
     });
   }
   async function beginSync(node?: TreeNode, mode: 'structure' | 'data' = 'structure') {
+    if (comparisonActive()) {
+      navigate('scope');
+      return;
+    }
+    const previousSource = latest.current.sourceKey;
     navigate('scope');
+    if (!node && latest.current.sourceKey && latest.current.scopeTables.length) return;
+    const valid = request('beginSync');
+    await loadDatabaseOptions();
+    if (!valid() || latest.current.page !== 'scope') return;
+    if (!node && latest.current.sourceKey !== previousSource) return;
     const source = node?.ref
       ? refKey(node.ref)
       : latest.current.sourceKey || dbOptions(latest.current)[0]?.value || '';
     if (source) await loadScope(source, node?.table, mode);
   }
-  function setScopeAll(on: boolean, type: 'structure' | 'data') {
-    commit((s) => ({
-      ...s,
-      scopeTables: s.scopeTables.map((t) =>
-        t.name.toLowerCase().includes(s.tableSearch.toLowerCase()) ? { ...t, [type]: on } : t,
-      ),
-    }));
+  function toggleScope(type: 'structure' | 'data') {
+    commit((s) => {
+      const matches = (table: ScopeTable) =>
+        table.name.toLowerCase().includes(s.tableSearch.toLowerCase());
+      const visible = s.scopeTables.filter(matches);
+      if (!visible.length) return s;
+      const selected = !visible.every((table) => table[type]);
+      return {
+        ...s,
+        scopeTables: s.scopeTables.map((table) =>
+          matches(table) ? { ...table, [type]: selected } : table,
+        ),
+      };
+    });
   }
   function updateScope(name: string, fields: Partial<ScopeTable>) {
     commit((s) => ({
@@ -293,66 +471,240 @@ function useBusinessController() {
         name: t.name,
         structure: t.structure,
         data: t.data,
-        keyColumns: splitKeys(t.keyText || ''),
+        keyColumns: t.keyText === undefined ? t.keyColumns : splitKeys(t.keyText),
+        structureOptions: { ...effectiveOptions(t.structureOptions) },
       }));
   async function compare() {
+    if (comparisonActive() || latest.current.compareConfirmation || compareStarting.current) return;
     const s = latest.current;
-    const valid = request('compare');
-    await action(async () => {
-      const plan = await api<SyncPlan>('sync.compare', {
-        workspaceId: s.workspaceId,
-        source: fromKey(s.sourceKey),
-        targets: s.targetKeys.map(fromKey),
-        tables: choices(s.scopeTables),
+    if (!s.sourceKey || !s.targetKeys.length || !choices(s.scopeTables).length) return;
+    const empty = s.scopeTables.find(
+      (t) => t.structure && !Object.values(effectiveOptions(t.structureOptions)).some(Boolean),
+    );
+    if (empty) {
+      void message.warning(`请选择结构细项：${empty.name}`);
+      return;
+    }
+    set('compareConfirmation', copyModel(compareSelection(s)));
+  }
+  function dismissCompareConfirmation() {
+    set('compareConfirmation', undefined);
+  }
+  async function startConfirmedCompare(pending: CompareSelection) {
+    if (
+      latest.current.compareConfirmation !== pending ||
+      compareStarting.current ||
+      comparisonActive()
+    )
+      return;
+    if (selectionSignature(compareSelection(latest.current)) !== selectionSignature(pending)) {
+      dismissCompareConfirmation();
+      void message.warning('比较范围已变化，请重新确认');
+      return;
+    }
+    compareStarting.current = true;
+    const compareId = crypto.randomUUID();
+    commit((s) => ({
+      ...s,
+      compareConfirmation: undefined,
+      plan: undefined,
+      selectedIds: [],
+      currentChangeId: '',
+      compareStartedAt: Date.now(),
+      compareFinishedAt: 0,
+      compareTransportError: '',
+      compareTask: {
+        compareId,
+        status: 'RUNNING',
+        progress: {
+          table: '',
+          phase: '准备比较',
+          completed: 0,
+          total: choices(pending.tables).length * (1 + pending.targetKeys.length),
+          rows: 0,
+        },
+      },
+    }));
+    try {
+      await api<{ compareId: string }>('sync.compare.start', {
+        compareId,
+        workspaceId: pending.workspaceId,
+        source: fromKey(pending.sourceKey),
+        targets: pending.targetKeys.map(fromKey),
+        tables: choices(pending.tables),
       });
       if (
-        !valid() ||
-        latest.current.sourceKey !== s.sourceKey ||
-        latest.current.targetKeys !== s.targetKeys ||
-        latest.current.scopeTables !== s.scopeTables
+        latest.current.compareTask?.compareId === compareId &&
+        latest.current.compareTask.status === 'CANCELLING'
       )
-        return;
-      const changes = plan.targets.flatMap((t) => t.changes);
-      commit((v) => ({
-        ...v,
+        await requestCompareCancel(compareId);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : String(error);
+      if (text.includes('超时')) {
+        const task = latest.current.compareTask;
+        if (task?.compareId === compareId) set('compareTask', { ...task, status: 'CANCELLING' });
+        set('compareTransportError', '比较启动通信超时，正在请求停止并核验任务状态');
+        await requestCompareCancel(compareId);
+      } else if (latest.current.compareTask?.compareId === compareId) {
+        commit((s) => ({
+          ...s,
+          compareTask: s.compareTask && { ...s.compareTask, status: 'FAILED', error: text },
+          compareFinishedAt: Date.now(),
+        }));
+      }
+    } finally {
+      compareStarting.current = false;
+    }
+  }
+  async function requestCompareCancel(compareId: string) {
+    if (compareCancelPending.current) return;
+    compareCancelPending.current = true;
+    try {
+      await api('sync.compare.cancel', { compareId });
+    } catch (error) {
+      if (latest.current.compareTask?.compareId === compareId)
+        set(
+          'compareTransportError',
+          `停止请求尚未确认，将继续核验：${error instanceof Error ? error.message : String(error)}`,
+        );
+    } finally {
+      compareCancelPending.current = false;
+    }
+  }
+  async function stopCompare() {
+    const task = latest.current.compareTask;
+    if (!task || !['RUNNING', 'CANCELLING'].includes(task.status)) return;
+    set('compareTask', { ...task, status: 'CANCELLING' });
+    if (!compareStarting.current) await requestCompareCancel(task.compareId);
+  }
+  function receiveCompare(task: CompareTask) {
+    const current = latest.current.compareTask;
+    if (
+      !current ||
+      current.compareId !== task.compareId ||
+      !['RUNNING', 'CANCELLING'].includes(current.status)
+    )
+      return;
+    const status =
+      current.status === 'CANCELLING' && task.status === 'RUNNING' ? 'CANCELLING' : task.status;
+    if (status === 'COMPLETED' && !task.plan) return; // Fetch the plan from get; events intentionally omit it.
+    commit((s) => ({
+      ...s,
+      compareTask: { ...current, ...task, status, plan: undefined },
+      compareTransportError: '',
+      ...(['COMPLETED', 'CANCELLED', 'FAILED'].includes(status)
+        ? { compareFinishedAt: Date.now() }
+        : {}),
+    }));
+    if (status === 'COMPLETED' && task.plan) {
+      const plan = task.plan;
+      const changes = plan.targets.flatMap((target) => target.changes);
+      commit((s) => ({
+        ...s,
         plan,
-        selectedIds: changes.filter((c) => c.selected && !c.blocked).map((c) => c.id),
-        currentChangeId: changes.find((c) => !c.blocked)?.id || '',
-        diffTab: s.scopeTables.some((t) => t.structure) ? 'structure' : 'data',
-        page: 'diff',
+        selectedIds: changes
+          .filter((change) => change.selected && !change.blocked)
+          .map((change) => change.id),
+        currentChangeId: changes.find((change) => !change.blocked)?.id || '',
+        diffTab: plan.tables.some((table) => table.structure) ? 'structure' : 'data',
+        page: s.page === 'scope' ? 'diff' : s.page,
       }));
-    });
+    }
+  }
+  function applyStructureDefaults(template = false) {
+    commit((s) =>
+      template
+        ? {
+            ...s,
+            templateForm: {
+              ...s.templateForm,
+              tables: s.templateForm.tables.map((table) =>
+                table.structure
+                  ? { ...table, structureOptions: { ...s.templateStructureDefaults } }
+                  : table,
+              ),
+            },
+          }
+        : {
+            ...s,
+            scopeTables: s.scopeTables.map((table) =>
+              table.structure ? { ...table, structureOptions: { ...s.structureDefaults } } : table,
+            ),
+          },
+    );
   }
   function toggleChanges(ids: string[], checked: boolean) {
     commit((s) => ({ ...s, selectedIds: toggleIds(s.selectedIds, ids, checked) }));
   }
   async function saveSync(mode: string) {
     const s = latest.current;
-    if (!s.plan) return;
-    if (
-      mode === 'EXECUTE_AND_SAVE' &&
-      !(await confirm(
-        '执行同步',
-        `将执行已选的 ${s.selectedIds.length} 项变更，并保存同步记录与恢复资料。请确认目标数据库。`,
-        '执行并保存',
-      ))
-    )
-      return;
-    await action(async () => {
-      const r = await api<SyncRecord>('sync.save', {
-        planId: s.plan!.id,
-        selectedIds: s.selectedIds,
-        mode,
-        remark: s.scopeRemark,
-      });
-      await loadState();
-      if (latest.current.workspaceId === s.workspaceId) await openRecord(r.id);
-      void message.success(
-        mode === 'SAVE_ONLY'
-          ? '同步记录和脚本已保存，目标库未变更'
-          : '任务已创建，正在准备恢复资料',
+    if (!s.plan || !s.selectedIds.length || syncSubmitPending.current) return;
+    for (const target of s.plan.targets) {
+      const selected = target.changes.filter((change) => s.selectedIds.includes(change.id));
+      const dependent = selected.find(
+        (change) =>
+          change.kind.endsWith('_ROW') &&
+          !target.before[change.table]?.exists &&
+          !selected.some(
+            (item) => item.table === change.table && item.kind === 'CREATE_TABLE' && !item.blocked,
+          ),
       );
-    });
+      if (dependent) {
+        void message.warning(
+          `目标库 ${target.ref.database} 的 ${dependent.table} 不存在，请同时选中创建表操作`,
+        );
+        return;
+      }
+    }
+    syncSubmitPending.current = true;
+    try {
+      if (mode === 'EXECUTE_AND_SAVE' || mode === 'SAVE_ONLY') {
+        const accepted = await modal.confirm({
+          title: mode === 'SAVE_ONLY' ? '预览并保存同步脚本' : '确认执行同步',
+          centered: true,
+          width: 960,
+          content: (
+            <SyncExecutionConfirmation
+              plan={s.plan}
+              selectedIds={s.selectedIds}
+              connections={s.state.connections}
+              saveOnly={mode === 'SAVE_ONLY'}
+            />
+          ),
+          okText: mode === 'SAVE_ONLY' ? '确认保存' : '确认执行',
+          cancelText: '取消',
+        });
+        if (!accepted) return;
+        const current = latest.current;
+        if (
+          current.workspaceId !== s.workspaceId ||
+          current.plan !== s.plan ||
+          JSON.stringify(current.selectedIds) !== JSON.stringify(s.selectedIds)
+        ) {
+          void message.info(
+            '同步范围已改变，请重新确认后' + (mode === 'SAVE_ONLY' ? '保存' : '执行'),
+          );
+          return;
+        }
+      }
+      await action(async () => {
+        const r = await api<SyncRecord>('sync.save', {
+          planId: s.plan!.id,
+          selectedIds: s.selectedIds,
+          mode,
+          remark: s.scopeRemark,
+        });
+        await loadState();
+        if (latest.current.workspaceId === s.workspaceId) await openRecord(r.id);
+        void message.success(
+          mode === 'SAVE_ONLY'
+            ? '同步记录和脚本已保存，目标库未变更'
+            : '任务已创建，正在准备恢复资料',
+        );
+      });
+    } finally {
+      syncSubmitPending.current = false;
+    }
   }
   function editWorkspace(w?: Workspace) {
     const s = latest.current;
@@ -392,8 +744,19 @@ function useBusinessController() {
     commit((s) => ({
       ...s,
       connectionForm: form,
+      connectionTest: undefined,
+      connectionDialog: true,
       databasesText: form.databases.join(', '),
       page: 'connections',
+    }));
+  }
+  function closeConnection() {
+    commit((s) => ({
+      ...s,
+      connectionDialog: false,
+      connectionForm: emptyConnection(s.workspaceId),
+      connectionTest: undefined,
+      databasesText: '',
     }));
   }
   async function saveConnection() {
@@ -408,13 +771,29 @@ function useBusinessController() {
         throw new Error('请填写连接名称、服务器、用户并选择工作区');
       await api('entity.save', { kind: 'connection', value: form });
       if (latest.current.connectionForm === s.connectionForm)
-        patch('connectionForm', { id: form.id, password: '', certificatePassword: '' });
+        commit((v) => ({
+          ...v,
+          connectionDialog: false,
+          connectionForm: {
+            ...v.connectionForm,
+            id: form.id,
+            password: '',
+            certificatePassword: '',
+          },
+        }));
       for (const key of requests.current.keys())
-        if (key === 'tree:' + form.id || key.startsWith('tree:' + form.id + '/'))
+        if (
+          key === 'databases:' + form.id ||
+          key === 'tree:' + form.id ||
+          key.startsWith('tree:' + form.id + '/')
+        )
           requests.current.delete(key);
+      databaseLoads.current.delete(form.id);
       commit((v) => ({
         ...v,
         dbCache: Object.fromEntries(Object.entries(v.dbCache).filter(([key]) => key !== form.id)),
+        dbLoading: { ...v.dbLoading, [form.id]: false },
+        dbErrors: { ...v.dbErrors, [form.id]: '' },
         treeChildren: Object.fromEntries(
           Object.entries(v.treeChildren).filter(
             ([key]) => key !== form.id && !key.startsWith(form.id + '/'),
@@ -425,16 +804,57 @@ function useBusinessController() {
       void message.success('连接已保存');
     });
   }
-  async function testConnection() {
+  async function testConnection(connection?: ConnectionInfo) {
     const s = latest.current;
-    const config = { ...s.connectionForm, databases: splitKeys(s.databasesText) };
-    await action(async () => {
-      const result = await api<{ serverVersion: string }>('connections.test', {
+    const previous = connection ? s.connectionTests[connection.id] : s.connectionTest;
+    if (previous?.status === 'testing') return;
+    const config = connection
+      ? { ...connection }
+      : { ...s.connectionForm, databases: splitKeys(s.databasesText) };
+    const valid = request(connection ? 'connectionTest:' + connection.id : 'connectionTest:form');
+    const testing = { status: 'testing' as const, message: '正在测试连接' };
+    commit((v) =>
+      connection
+        ? { ...v, connectionTests: { ...v.connectionTests, [connection.id]: testing } }
+        : { ...v, connectionTest: testing },
+    );
+    let result: NonNullable<Model['connectionTest']>;
+    try {
+      const validation = connectionTestError(config);
+      if (validation) throw new Error(validation);
+      const response = await api<{ serverVersion: string }>('connections.test', {
         id: config.id,
         config,
       });
-      void message.success('连接成功 · ' + result.serverVersion);
-    });
+      result = { status: 'success', message: '连接成功 · ' + response.serverVersion };
+    } catch (error) {
+      result = {
+        status: 'error',
+        message: '连接失败 · ' + (error instanceof Error ? error.message : String(error)),
+      };
+    }
+    if (!valid()) return;
+    const current = latest.current;
+    if (connection) {
+      if (
+        current.connectionTests[connection.id] !== testing ||
+        JSON.stringify(current.state.connections.find((c) => c.id === connection.id)) !==
+          JSON.stringify(connection)
+      )
+        return;
+      commit((v) => ({ ...v, connectionTests: { ...v.connectionTests, [connection.id]: result } }));
+      if (current.page !== 'connections')
+        void message.open({
+          type: result.status === 'success' ? 'success' : 'error',
+          content: connection.name + '：' + result.message,
+        });
+    } else if (
+      current.connectionTest === testing &&
+      current.connectionForm === s.connectionForm &&
+      current.databasesText === s.databasesText
+    ) {
+      commit((v) => ({ ...v, connectionTest: result }));
+    }
   }
   async function chooseCertificate(field: 'ca' | 'clientCert') {
     const id = latest.current.connectionForm.id;
@@ -442,11 +862,60 @@ function useBusinessController() {
     if (path && latest.current.connectionForm.id === id) patch('connectionForm', { [field]: path });
   }
   async function removeEntity(kind: string, id: string) {
+    if (kind === 'connection') return removeConnections([id]);
     if (!(await confirm('删除配置', '确认删除这项配置？已有同步记录会保留。', '删除'))) return;
     await action(async () => {
       await api('entity.delete', { kind, id });
       await loadState();
     });
+  }
+  async function removeConnections(ids = latest.current.connectionSelection) {
+    const connections = latest.current.state.connections.filter((c) => ids.includes(c.id));
+    if (!connections.length) return;
+    if (
+      !(await confirm(
+        '删除连接',
+        `确认删除这 ${connections.length} 个连接配置（${connections.map((c) => c.name).join('、')}）？连接会从所有关联工作区移除，已有同步记录会保留。`,
+        '删除',
+      ))
+    )
+      return;
+    await action(async () => {
+      let deleted = 0;
+      try {
+        for (const connection of connections) {
+          await api('entity.delete', { kind: 'connection', id: connection.id });
+          deleted++;
+          requests.current.delete('databases:' + connection.id);
+          databaseLoads.current.delete(connection.id);
+          for (const key of requests.current.keys())
+            if (key === 'tree:' + connection.id || key.startsWith('tree:' + connection.id + '/'))
+              requests.current.delete(key);
+        }
+      } catch (error) {
+        throw new Error(
+          `已删除 ${deleted} 个连接，其余连接删除失败：${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        await loadState();
+      }
+      void message.success(`已删除 ${deleted} 个连接`);
+    });
+  }
+  async function refreshConnection(id: string) {
+    const connection = latest.current.state.connections.find((c) => c.id === id);
+    if (!connection) return;
+    for (const key of requests.current.keys())
+      if (key === 'tree:' + id || key.startsWith('tree:' + id + '/')) requests.current.delete(key);
+    commit((s) => ({
+      ...s,
+      treeChildren: Object.fromEntries(
+        Object.entries(s.treeChildren).filter(([key]) => key !== id && !key.startsWith(id + '/')),
+      ),
+    }));
+    await loadDatabaseOptions(true, id);
+    if (!latest.current.dbErrors[id])
+      await loadTree({ key: id, title: connection.name, type: 'connection', connectionId: id });
   }
   async function parseImport(input = latest.current) {
     const valid = request('import');
@@ -489,16 +958,66 @@ function useBusinessController() {
     });
   }
   function updateImport(id: string, fields: Partial<ImportRow>) {
+    const connectionChanged = [
+      'host',
+      'port',
+      'user',
+      'password',
+      'ssl',
+      'ca',
+      'clientCert',
+      'certificatePassword',
+    ].some((key) => key in fields);
+    if (connectionChanged) requests.current.delete('importTest:' + id);
     commit((s) => ({
       ...s,
-      importRows: s.importRows.map((r) => (r.id === id ? { ...r, ...fields } : r)),
+      importRows: s.importRows.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              ...fields,
+              ...(connectionChanged ? { connectionTest: undefined } : {}),
+            }
+          : r,
+      ),
     }));
+  }
+  async function testImportConnection(id: string) {
+    const row = latest.current.importRows.find((r) => r.id === id);
+    if (!row || row.warning || row.connectionTest?.status === 'testing') return;
+    const valid = request('importTest:' + id);
+    updateImport(id, { connectionTest: { status: 'testing', message: '正在测试连接' } });
+    const testingRow = latest.current.importRows.find((r) => r.id === id);
+    const applyResult = (status: 'success' | 'error', message: string) => {
+      if (
+        valid() &&
+        latest.current.importRows.some(
+          (r) => r.id === id && r.connectionTest === testingRow?.connectionTest,
+        )
+      )
+        updateImport(id, { connectionTest: { status, message } });
+    };
+    try {
+      const { credentialStatus, warning, selected, connectionTest, ...config } = row;
+      const validation = connectionTestError(config);
+      if (validation) throw new Error(validation);
+      const result = await api<{ serverVersion: string }>('connections.test', {
+        config: { ...config, importCredentialId: row.id },
+      });
+      applyResult('success', '连接成功 · ' + result.serverVersion);
+    } catch (error) {
+      applyResult(
+        'error',
+        '连接失败 · ' + (error instanceof Error ? error.message : String(error)),
+      );
+    }
   }
   async function submitImport() {
     const s = latest.current;
     await action(async () => {
       if (!s.importWorkspaceIds.length) throw new Error('请选择导入工作区');
       for (const row of s.importRows.filter((r) => r.selected && !r.warning)) {
+        const { connectionTest, ...connection } = row;
         const existing = s.state.connections.find(
           (c) => c.host === row.host && c.port === row.port && c.user === row.user,
         );
@@ -506,7 +1025,7 @@ function useBusinessController() {
         await api('entity.save', {
           kind: 'connection',
           value: {
-            ...row,
+            ...connection,
             id: existing && s.duplicateMode === 'update' ? existing.id : row.id,
             group: s.importGroup,
             importCredentialId: row.id,
@@ -573,6 +1092,7 @@ function useBusinessController() {
             data: false,
             keyColumns: [],
             keyText: '',
+            structureOptions: { ...latest.current.templateStructureDefaults },
           })),
         });
     });
@@ -605,6 +1125,7 @@ function useBusinessController() {
     });
   }
   async function applyTemplate(t: SyncTemplate) {
+    if (comparisonActive()) return;
     const source = refKey(t.source);
     set('sourceKey', source);
     set('targetKeys', t.targets.map(refKey));
@@ -615,7 +1136,12 @@ function useBusinessController() {
       scopeTables: s.scopeTables.map((item) => {
         const saved = t.tables.find((c) => c.name === item.name);
         return saved
-          ? { ...item, ...copyModel(saved), keyText: saved.keyColumns.join(', ') }
+          ? {
+              ...item,
+              ...copyModel(saved),
+              structureOptions: { ...effectiveOptions(saved.structureOptions) },
+              keyText: saved.keyColumns.join(', '),
+            }
           : item;
       }),
       page: 'scope',
@@ -680,12 +1206,15 @@ function useBusinessController() {
     const valid = request('record');
     const detail = await api<RecordDetail>('record.get', { id });
     if (!valid()) return;
-    const file = detail.files.find((f) => f.endsWith('02_sync.sql')) || detail.files[0] || '';
+    const file = defaultScriptFile(detail.files, 'scripts');
     commit((s) => ({
       ...s,
       detail,
       fileSelected: file,
       fileSql: '',
+      recordScripts: {},
+      recordScriptErrors: {},
+      recordScriptTargets: {},
       recordTab:
         detail.record.mode === 'EXECUTE_AND_SAVE' &&
         ['RUNNING', 'QUEUED'].includes(detail.record.status)
@@ -693,16 +1222,74 @@ function useBusinessController() {
           : 'scripts',
       page: 'record',
     }));
-    if (file) await selectFile(file);
+    await loadRecordScripts('scripts');
   }
   async function selectFile(file: string) {
     const id = latest.current.detail?.record.id;
     if (!id) return;
-    set('fileSelected', file);
+    commit((s) => ({ ...s, fileSelected: file, fileSql: '' }));
     const valid = request('file');
     const sql = await api<string>('record.file', { id, file });
     if (valid() && latest.current.detail?.record.id === id && latest.current.fileSelected === file)
       set('fileSql', sql);
+  }
+  async function changeRecordTab(tab: string) {
+    set('recordTab', tab);
+    await loadRecordScripts(tab);
+  }
+  async function loadRecordScripts(tab: string) {
+    const s = latest.current;
+    if (!s.detail || !['scripts', 'rollbackScripts'].includes(tab)) return;
+    const id = s.detail.record.id;
+    const valid = request('recordScripts');
+    // Target manifests identify the connection even when two connections use the same database name.
+    const manifests = s.detail.files.filter((file) => file.endsWith('/target.json'));
+    await Promise.all(
+      manifests.map(async (file) => {
+        const folder = file.slice(0, -'/target.json'.length);
+        if (s.recordScriptTargets[folder]) return;
+        try {
+          const ref = JSON.parse(await api<string>('record.file', { id, file })) as DbRef;
+          if (
+            valid() &&
+            latest.current.detail?.record.id === id &&
+            ref.database &&
+            ref.connectionId
+          )
+            commit((current) => ({
+              ...current,
+              recordScriptTargets: { ...current.recordScriptTargets, [folder]: ref },
+            }));
+        } catch {
+          /* Legacy archives can still display their folder label. */
+        }
+      }),
+    );
+    await Promise.all(
+      recordScriptFiles(s.detail.files, tab).map(async (file) => {
+        if (s.recordScripts[file] !== undefined) return;
+        try {
+          const sql = await api<string>('record.file', { id, file });
+          if (valid() && latest.current.detail?.record.id === id) {
+            commit((current) => ({
+              ...current,
+              recordScripts: { ...current.recordScripts, [file]: sql },
+              recordScriptErrors: { ...current.recordScriptErrors, [file]: '' },
+            }));
+          }
+        } catch (error) {
+          if (valid() && latest.current.detail?.record.id === id) {
+            commit((current) => ({
+              ...current,
+              recordScriptErrors: {
+                ...current.recordScriptErrors,
+                [file]: error instanceof Error ? error.message : String(error),
+              },
+            }));
+          }
+        }
+      }),
+    );
   }
   async function exportRecords(ids: string[], name?: string) {
     await action(async () => {
@@ -818,13 +1405,10 @@ function useBusinessController() {
     await loadExport(source, node?.table);
   }
   async function loadExport(source = latest.current.exportSource, preselect?: string) {
-    set('exportSource', source);
+    request('exportSQL');
+    commit((s) => ({ ...s, exportSource: source, exportTables: [], exportSql: '' }));
     const valid = request('exportScope');
-    if (!source) {
-      set('exportTables', []);
-      set('exportSql', '');
-      return;
-    }
+    if (!source) return;
     await action(async () => {
       const rows = await api<{ name: string; comment: string }[]>('tables.list', {
         ref: fromKey(source),
@@ -836,40 +1420,51 @@ function useBusinessController() {
         exportFilename: fromKey(source).database + '_schema.sql',
         exportSql: '',
       }));
-      if (preselect) await updateExport();
     });
   }
   async function updateExport() {
     const s = latest.current;
     const tables = s.exportTables.filter((t) => t.selected).map((t) => t.name);
+    if (s.loading || s.busy || !s.exportSource || !tables.length) return;
     const valid = request('exportSQL');
-    if (!tables.length) {
-      set('exportSql', '');
-      return;
-    }
-    await action(async () => {
-      const result = await api<{ sql: string }>('schema.export', {
-        source: fromKey(s.exportSource),
-        tables,
-        includeDrop: s.includeDrop,
+    commit((v) => ({ ...v, exportSql: '', exportGenerating: true }));
+    try {
+      await action(async () => {
+        const result = await api<{ sql: string }>('schema.export', {
+          source: fromKey(s.exportSource),
+          tables,
+          includeDrop: s.includeDrop,
+        });
+        const current = latest.current;
+        if (
+          valid() &&
+          current.exportSource === s.exportSource &&
+          current.includeDrop === s.includeDrop &&
+          JSON.stringify(current.exportTables.filter((t) => t.selected).map((t) => t.name)) ===
+            JSON.stringify(tables)
+        )
+          set('exportSql', result.sql);
       });
-      if (valid() && latest.current.exportSource === s.exportSource) set('exportSql', result.sql);
-    });
+    } finally {
+      set('exportGenerating', false);
+    }
   }
   function selectExport(names: string[]) {
+    request('exportSQL');
     commit((s) => ({
       ...s,
+      exportSql: '',
       exportTables: s.exportTables.map((t) => ({ ...t, selected: names.includes(t.name) })),
     }));
-    void updateExport();
   }
   function setIncludeDrop(value: boolean) {
-    set('includeDrop', value);
-    void updateExport();
+    if (value === latest.current.includeDrop) return;
+    request('exportSQL');
+    commit((s) => ({ ...s, includeDrop: value, exportSql: '' }));
   }
   async function saveSql() {
     const s = latest.current;
-    if (s.exportSql)
+    if (s.exportSql && !s.busy)
       await action(async () => {
         if (await api('files.save', { name: s.exportFilename, content: s.exportSql }))
           void message.success('结构 SQL 已导出');
@@ -952,10 +1547,13 @@ function useBusinessController() {
     try {
       const state = await api<State>('state.load');
       if (
-        state.records.some((r) => ['RUNNING', 'QUEUED'].includes(r.status)) &&
+        (comparisonActive() ||
+          state.records.some((r) => ['RUNNING', 'QUEUED'].includes(r.status))) &&
         !(await confirm(
           '关闭客户端',
-          '有同步任务正在执行。关闭客户端会中断任务，重启后需要核验实际状态。',
+          comparisonActive()
+            ? '有比较任务正在运行，关闭客户端会中断比较并丢弃本次结果。'
+            : '有同步任务正在执行。关闭客户端会中断任务，重启后需要核验实际状态。',
           '关闭',
         ))
       ) {
@@ -977,15 +1575,68 @@ function useBusinessController() {
       closePending.current = false;
     }
   }
-  const handlers = useRef({ loadState, closeWindow });
-  handlers.current = { loadState, closeWindow };
+  const handlers = useRef({ loadState, closeWindow, receiveCompare, requestCompareCancel });
+  handlers.current = { loadState, closeWindow, receiveCompare, requestCompareCancel };
+  const compareId = m.compareTask?.compareId;
+  const comparing = !!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status);
+  useEffect(() => {
+    if (!comparing || !compareId) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      if (compareStarting.current) {
+        timer = setTimeout(poll, 1000);
+        return;
+      }
+      try {
+        const task = await api<CompareTask>('sync.compare.get', { compareId });
+        if (active) {
+          const retryCancellation =
+            latest.current.compareTask?.status === 'CANCELLING' && task.status === 'RUNNING';
+          handlers.current.receiveCompare(task);
+          if (retryCancellation) await handlers.current.requestCompareCancel(compareId);
+        }
+      } catch (error) {
+        if (active && latest.current.compareTask?.compareId === compareId) {
+          set(
+            'compareTransportError',
+            `比较状态暂未确认：${error instanceof Error ? error.message : String(error)}`,
+          );
+          if (error instanceof Error && error.message.includes('超时')) {
+            set('compareTask', { ...latest.current.compareTask, status: 'CANCELLING' });
+            await handlers.current.requestCompareCancel(compareId);
+          }
+        }
+      }
+      if (active) timer = setTimeout(poll, 1000);
+    };
+    timer = setTimeout(poll, 1000);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [compareId, comparing]);
   useEffect(() => {
     mounted.current = true;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = onEvent((event) => {
       if (event.event === 'window-close-request') void handlers.current.closeWindow();
-      if (event.event === 'engine-error') set('engineError', String(event.message));
+      if (event.event === 'engine-error') {
+        set('engineError', String(event.message));
+        const task = latest.current.compareTask;
+        if (task && ['RUNNING', 'CANCELLING'].includes(task.status))
+          handlers.current.receiveCompare({
+            ...task,
+            status: 'FAILED',
+            error: '引擎已退出，比较中断',
+          });
+      }
+      if (event.event === 'compare-progress') {
+        const current = latest.current.compareTask;
+        if (current && event.compareId === current.compareId)
+          handlers.current.receiveCompare({ ...current, ...event } as unknown as CompareTask);
+      }
       if (event.event === 'job') {
         clearTimeout(timer);
         timer = setTimeout(async () => {
@@ -1021,7 +1672,6 @@ function useBusinessController() {
           ].includes(requested)
         ) {
           navigate(requested);
-          if (requested === 'connections') editConnection(latest.current.state.connections[0]);
           return;
         }
         set('sourceKey', 'test/shop_test');
@@ -1041,7 +1691,17 @@ function useBusinessController() {
               : t,
           ),
         }));
-        await compare();
+        // The initial browser showcase is a static fixture, not a user-triggered comparison.
+        const plan = copyModel(previewPlan);
+        commit((s) => ({
+          ...s,
+          plan,
+          page: 'diff',
+          selectedIds: plan.targets
+            .flatMap((t) => t.changes)
+            .filter((x) => x.selected && !x.blocked)
+            .map((x) => x.id),
+        }));
       }
     })();
     return () => {
@@ -1064,22 +1724,31 @@ function useBusinessController() {
     loadTree,
     openTable,
     refreshTable,
-    closeTable,
     beginSync,
     loadScope,
-    setScopeAll,
+    toggleScope,
     updateScope,
     compare,
+    startConfirmedCompare,
+    dismissCompareConfirmation,
+    stopCompare,
+    applyStructureDefaults,
     toggleChanges,
     saveSync,
     editWorkspace,
     saveWorkspace,
     editConnection,
+    closeConnection,
     saveConnection,
     testConnection,
+    loadDatabaseOptions,
+    refreshConnection,
+    removeConnections,
+    testImportConnection,
     chooseCertificate,
     removeEntity,
     readImport,
+    loadImportExample,
     parseImport,
     updateImport,
     submitImport,
@@ -1092,6 +1761,7 @@ function useBusinessController() {
     markVersion,
     editVersion,
     openRecord,
+    changeRecordTab,
     selectFile,
     exportRecords,
     auditRecord,

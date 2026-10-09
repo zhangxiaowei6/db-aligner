@@ -3,13 +3,83 @@ import {
   isValidElement,
   useId,
   useLayoutEffect,
+  useRef,
   useState,
+  type CSSProperties,
+  type ThHTMLAttributes,
   type ReactElement,
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Form, Table, Tag, type TableProps } from 'antd';
-import { statusColor, statusLabel } from '../model';
+import { Button, Form, Table, Tag, type ButtonProps, type TableProps } from 'antd';
+import { CheckOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons';
+import { statusColor, statusLabel, type ConnectionTestResult } from '../model';
+
+export function SelectionToggle({
+  total,
+  selected,
+  onToggle,
+  children,
+  ...props
+}: Omit<ButtonProps, 'onClick'> & {
+  total: number;
+  selected: number;
+  onToggle: (checked: boolean) => void;
+}) {
+  const checked = total > 0 && selected === total;
+  const partial = selected > 0 && !checked;
+  return (
+    <Button
+      {...props}
+      size={props.size || 'small'}
+      disabled={!total || props.disabled}
+      type={checked ? 'primary' : 'default'}
+      aria-pressed={checked}
+      icon={checked ? <CheckOutlined /> : partial ? <MinusOutlined /> : undefined}
+      title={partial ? '部分选中，点击全选' : checked ? '点击取消全部选择' : '点击全选'}
+      onClick={() => onToggle(!checked)}
+    >
+      {children}
+    </Button>
+  );
+}
+
+export function ConnectionTestButton({
+  result,
+  ...props
+}: ButtonProps & { result?: ConnectionTestResult }) {
+  return (
+    <Button
+      {...props}
+      className={`connection-test-button ${result ? `test-${result.status}` : ''} ${props.className || ''}`}
+      loading={result?.status === 'testing'}
+      title={
+        result?.status === 'success' || result?.status === 'error' ? '再次测试连接' : undefined
+      }
+      icon={
+        result?.status === 'success' ? (
+          <CheckOutlined />
+        ) : result?.status === 'error' ? (
+          <CloseOutlined />
+        ) : undefined
+      }
+      iconPlacement="end"
+    >
+      测试连接
+    </Button>
+  );
+}
+export function ConnectionTestFeedback({ result }: { result?: ConnectionTestResult }) {
+  return result ? (
+    <div
+      role="status"
+      aria-live="polite"
+      className={`connection-test-feedback test-${result.status}`}
+    >
+      {result.message}
+    </div>
+  ) : null;
+}
 
 export function Field({
   label,
@@ -45,14 +115,173 @@ export function Panel({
     </section>
   );
 }
-export function DataTable<T extends object>(props: TableProps<T>) {
+type ResizeHeaderProps = ThHTMLAttributes<HTMLTableCellElement> & {
+  columnWidth?: number;
+  columnLabel?: string;
+  onResizeColumn?: (width: number) => void;
+};
+function ResizeHeader({
+  columnWidth,
+  columnLabel,
+  onResizeColumn,
+  children,
+  ...props
+}: ResizeHeaderProps) {
+  const drag = useRef<{ x: number; width: number } | null>(null);
   return (
-    <Table<T>
-      bordered
-      size="middle"
-      pagination={{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: true }}
-      {...props}
-    />
+    <th {...props}>
+      {children}
+      {onResizeColumn && (
+        <span
+          className="column-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={`调整${columnLabel || '列'}宽度`}
+          aria-valuemin={64}
+          aria-valuemax={4000}
+          aria-valuenow={Math.round(columnWidth || 64)}
+          tabIndex={0}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            drag.current = {
+              x: event.clientX,
+              width: event.currentTarget.parentElement!.getBoundingClientRect().width,
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (drag.current)
+              onResizeColumn(
+                Math.max(64, Math.min(4000, drag.current.width + event.clientX - drag.current.x)),
+              );
+          }}
+          onPointerUp={(event) => {
+            drag.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId))
+              event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+          onPointerCancel={() => {
+            drag.current = null;
+          }}
+          onLostPointerCapture={() => {
+            drag.current = null;
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+              event.preventDefault();
+              event.stopPropagation();
+              onResizeColumn(
+                Math.max(
+                  64,
+                  Math.min(4000, (columnWidth || 64) + (event.key === 'ArrowRight' ? 16 : -16)),
+                ),
+              );
+            }
+          }}
+        />
+      )}
+    </th>
+  );
+}
+export function DataTable<T extends object>(props: TableProps<T>) {
+  const [widths, setWidths] = useState<Record<string, number>>({});
+  const [lastResized, setLastResized] = useState('');
+  const host = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
+  useLayoutEffect(() => {
+    const element = host.current;
+    if (!element) return;
+    const update = () => setAvailableWidth(Math.floor(element.getBoundingClientRect().width));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const utilityWidth =
+    (props.rowSelection ? Number(props.rowSelection.columnWidth) || 48 : 0) +
+    (props.expandable?.expandedRowRender ? Number(props.expandable.columnWidth) || 48 : 0);
+  let baseWidth = utilityWidth;
+  let flexibleCount = 0;
+  const leafKeys: string[] = [];
+  function measure(columns: NonNullable<TableProps<T>['columns']>, path = '') {
+    columns.forEach((column, index) => {
+      const key = `${path}/${String(column.key ?? ('dataIndex' in column ? column.dataIndex : undefined) ?? index)}`;
+      if ('children' in column) return measure(column.children, key);
+      leafKeys.push(key);
+      const base = typeof column.width === 'number' ? column.width : 180;
+      baseWidth += widths[key] ?? base;
+      if (widths[key] === undefined && base > 100 && column.key !== 'actions') flexibleCount++;
+    });
+  }
+  measure(props.columns || []);
+  // Only unedited content columns absorb spare space; a dragged column keeps its requested width.
+  const spare = Math.max(0, availableWidth - baseWidth - 2);
+  const fallbackKeys =
+    flexibleCount === 0
+      ? leafKeys.filter((key) => leafKeys.length === 1 || key !== lastResized)
+      : [];
+  let totalWidth = 0;
+  function resizeColumns(
+    columns: NonNullable<TableProps<T>['columns']>,
+    path = '',
+  ): typeof columns {
+    return columns.map((column, index) => {
+      const key = `${path}/${String(column.key ?? ('dataIndex' in column ? column.dataIndex : undefined) ?? index)}`;
+      if ('children' in column) return { ...column, children: resizeColumns(column.children, key) };
+      const base = typeof column.width === 'number' ? column.width : 180;
+      const flexible = widths[key] === undefined && base > 100 && column.key !== 'actions';
+      const width =
+        (widths[key] ?? base) +
+        (flexible
+          ? spare / flexibleCount
+          : fallbackKeys.includes(key)
+            ? spare / fallbackKeys.length
+            : 0);
+      totalWidth += width;
+      return {
+        ...column,
+        width,
+        onHeaderCell: (current) => ({
+          ...column.onHeaderCell?.(current),
+          columnWidth: width,
+          columnLabel: typeof column.title === 'string' ? column.title : undefined,
+          onResizeColumn: (next: number) => {
+            setLastResized(key);
+            setWidths((old) => ({ ...old, [key]: next }));
+          },
+        }),
+      };
+    });
+  }
+  const columns = resizeColumns(props.columns || []);
+  totalWidth += utilityWidth;
+  return (
+    <div ref={host} className="data-table-host">
+      <Table<T>
+        bordered
+        size="middle"
+        pagination={{
+          defaultPageSize: 20,
+          hideOnSinglePage: (props.dataSource?.length || 0) <= 20,
+          showSizeChanger: true,
+        }}
+        {...props}
+        className={`resizable-data-table ${props.className || ''}`}
+        style={{ ...props.style, '--data-table-width': `${totalWidth}px` } as CSSProperties}
+        tableLayout="fixed"
+        scroll={{ ...props.scroll, x: totalWidth }}
+        rowSelection={props.rowSelection ? { columnWidth: 48, ...props.rowSelection } : undefined}
+        expandable={props.expandable ? { columnWidth: 48, ...props.expandable } : undefined}
+        columns={columns}
+        components={{
+          ...props.components,
+          header: { ...props.components?.header, cell: ResizeHeader },
+        }}
+      />
+    </div>
   );
 }
 export function Status({ value }: { value: string }) {

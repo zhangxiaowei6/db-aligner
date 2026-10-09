@@ -16,8 +16,8 @@ public final class Sql {
 
   public static String header() {
     return "SET NAMES utf8mb4;\n"
-               + "SET SESSION sql_mode = TRIM(BOTH ',' FROM REPLACE(CONCAT(',',@@sql_mode,','),"
-               + " ',NO_BACKSLASH_ESCAPES,', ','));\n";
+        + "SET SESSION sql_mode = TRIM(BOTH ',' FROM REPLACE(CONCAT(',',@@sql_mode,','),"
+        + " ',NO_BACKSLASH_ESCAPES,', ','));\n";
   }
 
   public static String id(String s) {
@@ -126,6 +126,86 @@ public final class Sql {
             c.comment(),
             c.generation(),
             c.collation()));
+  }
+
+  /** Locate COMMENT outside quoted identifiers, literals and type/default expressions. */
+  public static String withColumnComment(String definition, String comment) {
+    char quote = 0;
+    int depth = 0, start = -1, end = -1;
+    for (int i = 0; i < definition.length(); i++) {
+      char ch = definition.charAt(i);
+      if (quote != 0) {
+        if (ch == '\\' && quote != '`') {
+          i++;
+          continue;
+        }
+        if (ch == quote) {
+          if (i + 1 < definition.length() && definition.charAt(i + 1) == quote) i++;
+          else quote = 0;
+        }
+        continue;
+      }
+      if (ch == '\'' || ch == '"' || ch == '`') {
+        quote = ch;
+        continue;
+      }
+      if (ch == '(') depth++;
+      if (ch == ')') depth--;
+      if (depth == 0
+          && definition.regionMatches(true, i, "COMMENT", 0, 7)
+          && (i == 0 || Character.isWhitespace(definition.charAt(i - 1)))
+          && i + 7 < definition.length()
+          && Character.isWhitespace(definition.charAt(i + 7))) {
+        start = i;
+        int j = i + 7;
+        while (j < definition.length() && Character.isWhitespace(definition.charAt(j))) j++;
+        if (j == definition.length()
+            || (definition.charAt(j) != '\'' && definition.charAt(j) != '"'))
+          throw new IllegalArgumentException("无法解析字段注释");
+        char literal = definition.charAt(j++);
+        boolean closed = false;
+        while (j < definition.length()) {
+          char c = definition.charAt(j++);
+          if (c == '\\') {
+            j++;
+            continue;
+          }
+          if (c == literal) {
+            if (j < definition.length() && definition.charAt(j) == literal) {
+              j++;
+              continue;
+            }
+            closed = true;
+            break;
+          }
+        }
+        if (!closed) throw new IllegalArgumentException("无法解析字段注释");
+        end = j;
+        break;
+      }
+    }
+    String base =
+        start < 0
+            ? definition
+            : definition.substring(0, start).stripTrailing()
+                + " "
+                + definition.substring(end).stripLeading();
+    return base.strip()
+        + (comment == null || comment.isEmpty() ? "" : " COMMENT " + quote(comment));
+  }
+
+  public static Column columnWithComment(Column base, String comment, int ordinal) {
+    return new Column(
+        base.name(),
+        base.type(),
+        base.nullable(),
+        base.defaultValue(),
+        base.extra(),
+        comment,
+        ordinal,
+        withColumnComment(base.definition(), comment),
+        base.generation(),
+        base.collation());
   }
 
   public static String schemaHash(Table t) {

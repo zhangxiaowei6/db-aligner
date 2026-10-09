@@ -57,7 +57,7 @@ public final class Archives {
 
   public List<String> inverse(SyncRecord r, TargetPlan tp, Change x) {
     var result = new ArrayList<>(x.rollbackSql);
-    if (x.kind.equals("DROP_COLUMN") || x.kind.equals("MODIFY_COLUMN")) {
+    if (x.kind.equals("DROP_COLUMN") || x.kind.equals("MODIFY_COLUMN") && !x.commentOnly()) {
       var old = tp.before.get(x.table);
       String name = x.label;
       var pk = old.primaryKey();

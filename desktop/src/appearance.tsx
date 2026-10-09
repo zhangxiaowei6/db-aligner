@@ -56,7 +56,7 @@ export function AppearanceProvider({
           token: { fontFamily: "'Segoe UI', 'Microsoft YaHei UI', sans-serif", fontSize: 14 },
         }}
       >
-        <App>
+        <App message={{ top: 80, duration: 3, maxCount: 3 }}>
           <ThemeSurface>{children}</ThemeSurface>
         </App>
       </ConfigProvider>
@@ -84,7 +84,12 @@ function ThemeSurface({ children }: { children: ReactNode }) {
     '--hover-bg': token.controlItemBgHover,
     '--danger': token.colorError,
     '--success': token.colorSuccess,
+    '--success-text': token.colorSuccessText,
+    '--success-bg': token.colorSuccessBg,
+    '--danger-text': token.colorErrorText,
+    '--danger-bg': token.colorErrorBg,
     '--warning': token.colorWarning,
+    '--warning-bg': token.colorWarningBg,
     '--shadow': token.boxShadowSecondary,
   } as CSSProperties;
   return (

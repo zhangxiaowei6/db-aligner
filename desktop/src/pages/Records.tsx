@@ -12,17 +12,18 @@ import {
   Space,
   Tabs,
 } from 'antd';
-import { ArrowRightOutlined, FileOutlined, KeyOutlined, SearchOutlined } from '@ant-design/icons';
+import { KeyOutlined, SearchOutlined } from '@ant-design/icons';
 import { useController } from '../controller';
 import { date, displayValue, modeLabel, refKey, statusLabel, statusOf } from '../model';
 import { DataTable, Field, Footer, Panel, Status } from '../components/shared';
 import SqlView from '../components/SqlView';
 import type { Column, Step, SyncRecord, TargetResult } from '../types';
+import { recordScriptFiles } from '../sync-scripts';
 
 export function TablePage() {
   const c = useController();
   const { m } = c;
-  const tab = m.tableTabs.find((t) => t.id === m.activeTableTab);
+  const tab = m.currentTable;
   if (!tab) return <Empty description="从左侧双击表名查看结构" />;
   const table = tab.model;
   const indexes = (
@@ -127,7 +128,7 @@ export function TablePage() {
       ) : (
         <SqlView sql={table.createSql} />
       )}
-      <p className="hint">查看结构后可从右键菜单发起同步，已打开的任务保留在原标签页。</p>
+      <p className="hint">从左侧双击表名切换表结构，右键菜单可发起同步或导出。</p>
     </>
   );
 }
@@ -297,6 +298,11 @@ export function RecordPage() {
   const record = detail.record;
   const source = record.plan?.source || record.source;
   const changes = record.plan?.targets.flatMap((t) => t.changes) || [];
+  const selectedTargets = record.plan?.targets.filter((target) =>
+    target.changes.some((change) => record.selectedIds.includes(change.id) && !change.blocked),
+  );
+  const rollbackScripts = m.recordTab === 'rollbackScripts';
+  const scriptFiles = recordScriptFiles(detail.files, m.recordTab);
   return (
     <>
       <div className="record-summary">
@@ -305,13 +311,30 @@ export function RecordPage() {
           <span>{date(record.createdAt)}</span>
           <span>
             {source?.database} →{' '}
-            {record.plan?.targets.length ?? record.targetCount ?? record.results.length} 个目标库
+            {selectedTargets?.length ?? record.targetCount ?? record.results.length} 个目标库
           </span>
           <span>{record.plan?.tables.length ?? record.tables?.length ?? 0} 张表</span>
         </Space>
         <dl className="metadata top-gap">
           <dt>本次备注</dt>
           <dd>{record.remark || '—'}</dd>
+          {!!selectedTargets?.length && (
+            <>
+              <dt>目标数据库</dt>
+              <dd>
+                {selectedTargets
+                  .map((target) => {
+                    const connection = m.state.connections.find(
+                      (item) => item.id === target.ref.connectionId,
+                    );
+                    return connection
+                      ? `${connection.name} / ${target.ref.database}`
+                      : target.ref.database;
+                  })
+                  .join('；')}
+              </dd>
+            </>
+          )}
           <dt>所属版本</dt>
           <dd>
             {m.state.versions.find((v) => v.id === m.state.versionLinks[record.id])?.number ||
@@ -326,66 +349,74 @@ export function RecordPage() {
           title="已保存同步脚本；外部执行结果需登记与校验。导出后可在 Navicat 等工具中执行。"
         />
       )}
-      {!!detail.verification?.checks?.length && (
-        <Panel title="当前状态核验" className="top-gap">
-          <p className="hint">{detail.verification.notice}</p>
-          <DataTable
-            rowKey={(row) => `${row.target || ''}/${row.table}/${row.label}`}
-            dataSource={detail.verification.checks}
-            columns={[
-              { title: '表', dataIndex: 'table' },
-              { title: '变更项', dataIndex: 'label' },
-              { title: '目标当前状态', dataIndex: 'currentState' },
-              { title: '恢复资料与限制', dataIndex: 'recoveryStatus' },
-            ]}
-          />
-        </Panel>
-      )}
       <Tabs
         className="top-gap"
         activeKey={m.recordTab}
-        onChange={(value) => c.set('recordTab', value)}
+        onChange={(value) => void c.action(() => c.changeRecordTab(value))}
         items={[
-          { key: 'scripts', label: '脚本与恢复资料' },
+          { key: 'scripts', label: '执行脚本' },
+          { key: 'rollbackScripts', label: '回滚脚本' },
           { key: 'results', label: '执行结果' },
-          ...(record.mode === 'SAVE_ONLY' ? [{ key: 'external', label: '外部执行校验' }] : []),
+          { key: 'external', label: '外部执行校验' },
         ]}
       />
-      {m.recordTab === 'scripts' ? (
-        <div className="record-script-layout">
-          <Panel title="脚本包">
-            <div className="file-list">
-              {detail.files.map((file) => (
-                <button
-                  key={file}
-                  className={m.fileSelected === file ? 'active' : ''}
-                  onClick={() => void c.action(() => c.selectFile(file))}
-                >
-                  <FileOutlined />
-                  {file}
-                </button>
-              ))}
-            </div>
-            {!detail.files.length && <Empty description="档案不可用或已清理" />}
-          </Panel>
-          <section>
-            <SqlView sql={m.fileSql || '-- 选择文件查看内容'} />
-            <Panel title="导出后执行流程" className="top-gap">
-              <div className="export-flow">
-                <span>1　执行备份步骤</span>
-                <ArrowRightOutlined />
-                <span>2　执行同步脚本</span>
-                <ArrowRightOutlined />
-                <span>3　执行校验并返回核验</span>
-              </div>
-              <p className="hint">
-                回滚前需确认恢复资料已完成，并检查目标库后续变更。完整差异文件仅用于审阅。
-              </p>
-            </Panel>
-          </section>
+      {['scripts', 'rollbackScripts'].includes(m.recordTab) ? (
+        <div className="record-sql-sections">
+          {scriptFiles.map((file) => {
+            const folder = file.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
+            const ref = m.recordScriptTargets[folder];
+            const target = ref?.database || folder.replace(/^[a-f0-9]{12}-/, '') || '目标数据库';
+            const connection = m.state.connections.find((item) => item.id === ref?.connectionId);
+            return (
+              <section
+                key={file}
+                aria-label={`${target} ${rollbackScripts ? '回滚脚本' : '执行脚本'}`}
+              >
+                <div className="section-heading">
+                  <h3>
+                    {target}
+                    {connection ? ` / ${connection.name}` : ''}
+                  </h3>
+                </div>
+                {m.recordScriptErrors[file] ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    title="脚本加载失败"
+                    description={m.recordScriptErrors[file]}
+                    action={
+                      <Button onClick={() => void c.action(() => c.changeRecordTab(m.recordTab))}>
+                        重试
+                      </Button>
+                    }
+                  />
+                ) : (
+                  <SqlView sql={m.recordScripts[file] ?? '-- 正在加载脚本内容'} />
+                )}
+              </section>
+            );
+          })}
+          {!scriptFiles.length && (
+            <Empty description={detail.files.length ? '暂无此类脚本' : '档案不可用或已清理'} />
+          )}
         </div>
       ) : m.recordTab === 'results' ? (
         <>
+          {!!detail.verification?.checks?.length && (
+            <Panel title="当前状态核验" className="bottom-gap">
+              <p className="hint">{detail.verification.notice}</p>
+              <DataTable
+                rowKey={(row) => `${row.target || ''}/${row.table}/${row.label}`}
+                dataSource={detail.verification.checks}
+                columns={[
+                  { title: '表', dataIndex: 'table' },
+                  { title: '变更项', dataIndex: 'label' },
+                  { title: '目标当前状态', dataIndex: 'currentState' },
+                  { title: '恢复资料与限制', dataIndex: 'recoveryStatus' },
+                ]}
+              />
+            </Panel>
+          )}
           <DataTable<TargetResult>
             rowKey={(row) => refKey(row.ref)}
             dataSource={record.results}
@@ -456,6 +487,8 @@ export function RecordPage() {
             ))}
           </div>
         </>
+      ) : record.mode !== 'SAVE_ONLY' ? (
+        <Empty description="本记录由客户端执行，请在“执行结果”中查看状态与日志" />
       ) : (
         <Panel>
           <div className="section-heading">
@@ -656,7 +689,7 @@ export function RecordDrawers() {
                 title: '操作',
                 width: 80,
                 render: (_, row) => (
-                  <Button danger type="link" onClick={() => void c.clearArchive(row.id)}>
+                  <Button danger size="small" onClick={() => void c.clearArchive(row.id)}>
                     清理
                   </Button>
                 ),

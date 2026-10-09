@@ -283,17 +283,7 @@ public final class External {
       throws Exception {
     return switch (x.kind) {
       case "CREATE_TABLE" -> actual.exists && sameColumns(source, actual);
-      case "ADD_COLUMN", "MODIFY_COLUMN" ->
-          actual.columns.stream()
-              .anyMatch(
-                  c ->
-                      c.name().equals(x.label)
-                          && source.columns.stream()
-                              .anyMatch(
-                                  s ->
-                                      s.name().equals(c.name())
-                                          && Sql.columnSignature(s)
-                                              .equals(Sql.columnSignature(c))));
+      case "ADD_COLUMN", "MODIFY_COLUMN" -> matchesColumn(x, actual, source);
       case "DROP_COLUMN" -> actual.columns.stream().noneMatch(c -> c.name().equals(x.label));
       case "ADD_INDEX", "REPLACE_INDEX" ->
           actual.indexes.stream()
@@ -338,5 +328,25 @@ public final class External {
                   actual.primaryKey().isEmpty() ? x.matchColumns : actual.primaryKey());
       default -> false;
     };
+  }
+
+  static boolean matchesColumn(Change change, Table actual, Table source) throws Exception {
+    var expected =
+        change.after.containsKey("column")
+            ? Json.MAPPER.treeToValue(Json.node(change.after.get("column")), Column.class)
+            : source.columns.stream()
+                .filter(c -> c.name().equals(change.label))
+                .findFirst()
+                .orElse(null);
+    var column =
+        actual.columns.stream().filter(c -> c.name().equals(change.label)).findFirst().orElse(null);
+    if (expected == null
+        || column == null
+        || !Sql.columnSignature(expected).equals(Sql.columnSignature(column))) return false;
+    if (change.after.containsKey("previous")) {
+      int index = actual.columns.indexOf(column);
+      return index > 0 && actual.columns.get(index - 1).name().equals(change.after.get("previous"));
+    }
+    return !Boolean.TRUE.equals(change.after.get("first")) || actual.columns.indexOf(column) == 0;
   }
 }

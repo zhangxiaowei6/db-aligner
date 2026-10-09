@@ -1,10 +1,22 @@
-import { Alert, Button, Drawer, Form, Input, InputNumber, Segmented, Select, Space } from 'antd';
+import {
+  Alert,
+  Button,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
+  Segmented,
+  Select,
+  Space,
+  Spin,
+} from 'antd';
 import { DownloadOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useAppearance } from '../appearance';
 import { useController } from '../controller';
 import { api } from '../api';
 import { dbOptions } from '../model';
-import { DataTable, Field, Footer, Panel } from '../components/shared';
+import { DataTable, Field, Footer, Panel, SelectionToggle } from '../components/shared';
+import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import SqlView from '../components/SqlView';
 import type { ThemeMode } from '../types';
 
@@ -132,7 +144,6 @@ export function SettingsPage() {
         </section>
       </div>
       <Footer>
-        <Button onClick={c.cancelSettings}>取消修改</Button>
         <Button type="primary" loading={!!m.busy} onClick={() => void c.saveSettings()}>
           保存设置
         </Button>
@@ -143,10 +154,12 @@ export function SettingsPage() {
 export function ExportPage() {
   const c = useController();
   const { m } = c;
+  const selectedCount = m.exportTables.filter((t) => t.selected).length;
   return (
     <>
       <div className="export-layout">
-        <Panel title="导出范围">
+        <Panel title="导出范围" className="export-scope">
+          <DatabaseOptionsStatus />
           <Form layout="vertical">
             <Field label="来源数据库">
               <Select
@@ -158,30 +171,35 @@ export function ExportPage() {
               />
             </Field>
           </Form>
-          <DataTable
-            rowKey="name"
-            dataSource={m.exportTables}
-            rowSelection={{
-              selectedRowKeys: m.exportTables.filter((t) => t.selected).map((t) => t.name),
-              preserveSelectedRowKeys: true,
-              onChange: (keys) => c.selectExport(keys as string[]),
-            }}
-            columns={[
-              { title: '表名', dataIndex: 'name' },
-              { title: '备注', dataIndex: 'comment' },
-            ]}
-          />
-          <Space className="top-gap">
-            <Button type="text" onClick={() => c.selectExport(m.exportTables.map((t) => t.name))}>
+          <div className="export-table-scroll" tabIndex={0} aria-label="导出表列表">
+            <DataTable
+              rowKey="name"
+              dataSource={m.exportTables}
+              rowSelection={{
+                selectedRowKeys: m.exportTables.filter((t) => t.selected).map((t) => t.name),
+                preserveSelectedRowKeys: true,
+                onChange: (keys) => c.selectExport(keys as string[]),
+              }}
+              columns={[
+                { title: '表名', dataIndex: 'name', ellipsis: true },
+                { title: '备注', dataIndex: 'comment', ellipsis: true },
+              ]}
+            />
+          </div>
+          <div className="export-selection-bar">
+            <SelectionToggle
+              total={m.exportTables.length}
+              selected={selectedCount}
+              onToggle={(checked) =>
+                c.selectExport(checked ? m.exportTables.map((t) => t.name) : [])
+              }
+            >
               全选
-            </Button>
-            <Button type="text" onClick={() => c.selectExport([])}>
-              取消全选
-            </Button>
-          </Space>
-          <p className="hint">已选 {m.exportTables.filter((t) => t.selected).length} 张表</p>
+            </SelectionToggle>
+            <span className="hint">已选 {selectedCount} 张表</span>
+          </div>
         </Panel>
-        <section>
+        <section className="export-preview-column">
           <Panel title="导出选项">
             <Segmented
               value={m.includeDrop ? 'drop' : 'create'}
@@ -218,11 +236,42 @@ export function ExportPage() {
               不含 DROP 时，目标已有同名表会导致 CREATE TABLE 报错，请先检查结构。
             </p>
           </Panel>
-          <div className="section-heading top-gap">
-            <h2>SQL 预览</h2>
-            <span className="hint">{m.includeDrop ? '包含 DROP' : '不含 DROP'} · 不含表数据</span>
-          </div>
-          <SqlView sql={m.exportSql || '-- 勾选表后生成结构 SQL'} />
+          <section className="export-preview" aria-label="SQL 预览" aria-busy={m.exportGenerating}>
+            <div className="section-heading">
+              <h2>SQL 预览</h2>
+              <Space wrap>
+                <span className="hint">
+                  {m.includeDrop ? '包含 DROP' : '不含 DROP'} · 不含表数据
+                </span>
+                <Button
+                  aria-label="生成预览 SQL"
+                  disabled={
+                    !m.exportSource || !selectedCount || m.loading || !!m.busy || m.exportGenerating
+                  }
+                  loading={m.exportGenerating}
+                  onClick={() => void c.updateExport()}
+                >
+                  {m.exportGenerating ? '正在生成…' : '生成预览 SQL'}
+                </Button>
+              </Space>
+            </div>
+            {m.exportGenerating && (
+              <div className="export-generation-status" role="status">
+                <Spin size="small" />
+                <span>正在读取所选表结构并生成 SQL，请稍候…</span>
+              </div>
+            )}
+            <SqlView
+              sql={
+                m.exportSql ||
+                (m.exportGenerating
+                  ? '-- 正在生成结构 SQL…'
+                  : selectedCount
+                    ? '-- 点击“生成预览 SQL”生成结构 SQL'
+                    : '-- 请选择表后，点击“生成预览 SQL”')
+              }
+            />
+          </section>
         </section>
       </div>
       <Footer>
@@ -230,7 +279,7 @@ export function ExportPage() {
         <Button
           type="primary"
           icon={<DownloadOutlined />}
-          disabled={!m.exportSql}
+          disabled={!m.exportSql || !!m.busy}
           loading={!!m.busy}
           onClick={() => void c.saveSql()}
         >

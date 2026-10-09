@@ -1,10 +1,12 @@
 import type {
   Change,
+  CompareTask,
   ConnectionInfo,
   DbRef,
   RollbackItem,
   RollbackPlan,
   State,
+  StructureOptions,
   SyncPlan,
   SyncRecord,
   SyncTemplate,
@@ -12,6 +14,7 @@ import type {
   TableChoice,
   Workspace,
 } from './types';
+import { allStructureOptions } from './structure-options';
 
 export type Page =
   | 'scope'
@@ -40,6 +43,7 @@ export interface ReviewNode {
   id: string;
   label: string;
   type: string;
+  targetKey?: string;
   children?: ReviewNode[];
   change?: Change;
   item?: RollbackItem;
@@ -58,10 +62,22 @@ export interface RecordDetail {
   files: string[];
 }
 export type ScopeTable = TableChoice & { comment: string };
+export interface CompareSelection {
+  workspaceId: string;
+  sourceKey: string;
+  targetKeys: string[];
+  tables: ScopeTable[];
+  structureDefaults: StructureOptions;
+}
+export type ConnectionTestResult = {
+  status: 'testing' | 'success' | 'error';
+  message: string;
+};
 export type ImportRow = ConnectionInfo & {
   credentialStatus: string;
   warning?: string;
   selected: boolean;
+  connectionTest?: ConnectionTestResult;
 };
 export interface Model {
   state: State;
@@ -71,10 +87,19 @@ export interface Model {
   loading: boolean;
   engineError: string;
   dbCache: Record<string, string[]>;
+  dbLoading: Record<string, boolean>;
+  dbErrors: Record<string, string>;
   treeChildren: Record<string, TreeNode[]>;
   sourceKey: string;
   targetKeys: string[];
   scopeTables: ScopeTable[];
+  structureDefaults: StructureOptions;
+  templateStructureDefaults: StructureOptions;
+  compareConfirmation?: CompareSelection;
+  compareTask?: CompareTask;
+  compareStartedAt: number;
+  compareFinishedAt: number;
+  compareTransportError: string;
   tableSearch: string;
   scopeRemark: string;
   plan?: SyncPlan;
@@ -82,13 +107,16 @@ export interface Model {
   diffTab: string;
   currentChangeId: string;
   diffSearch: string;
-  tableTabs: { id: string; ref: DbRef; table: string; model: Table }[];
-  activeTableTab: string;
+  currentTable?: { id: string; ref: DbRef; table: string; model: Table };
   structureTab: string;
   workspaceForm: Workspace;
   connectionForm: ConnectionInfo;
+  connectionDialog: boolean;
+  connectionTest?: ConnectionTestResult;
+  connectionTests: Record<string, ConnectionTestResult>;
   databasesText: string;
   connectionSearch: string;
+  connectionSelection: string[];
   importFileToken: string;
   importWorkspaceIds: string[];
   importFormat: string;
@@ -111,6 +139,9 @@ export interface Model {
   detail?: RecordDetail;
   fileSelected: string;
   fileSql: string;
+  recordScripts: Record<string, string>;
+  recordScriptErrors: Record<string, string>;
+  recordScriptTargets: Record<string, DbRef>;
   recordTab: string;
   externalDrawer: boolean;
   externalIds: string[];
@@ -124,6 +155,7 @@ export interface Model {
   exportTables: { name: string; comment: string; selected: boolean }[];
   includeDrop: boolean;
   exportSql: string;
+  exportGenerating: boolean;
   exportFilename: string;
   settingsForm: State['settings'];
   settingsDirty: boolean;
@@ -171,23 +203,31 @@ export function initialModel(): Model {
     loading: true,
     engineError: '',
     dbCache: {},
+    dbLoading: {},
+    dbErrors: {},
     treeChildren: {},
     sourceKey: '',
     targetKeys: [],
     scopeTables: [],
+    structureDefaults: { ...allStructureOptions },
+    templateStructureDefaults: { ...allStructureOptions },
+    compareStartedAt: 0,
+    compareFinishedAt: 0,
+    compareTransportError: '',
     tableSearch: '',
     scopeRemark: '',
     selectedIds: [],
     diffTab: 'structure',
     currentChangeId: '',
     diffSearch: '',
-    tableTabs: [],
-    activeTableTab: '',
     structureTab: 'columns',
     workspaceForm: { id: '', name: '', description: '', connectionIds: [] },
     connectionForm: emptyConnection('default'),
+    connectionDialog: false,
+    connectionTests: {},
     databasesText: '',
     connectionSearch: '',
+    connectionSelection: [],
     importFileToken: '',
     importWorkspaceIds: ['default'],
     importFormat: 'navicat',
@@ -217,6 +257,9 @@ export function initialModel(): Model {
     currentVersionId: '',
     fileSelected: '',
     fileSql: '',
+    recordScripts: {},
+    recordScriptErrors: {},
+    recordScriptTargets: {},
     recordTab: 'scripts',
     externalDrawer: false,
     externalIds: [],
@@ -229,6 +272,7 @@ export function initialModel(): Model {
     exportTables: [],
     includeDrop: false,
     exportSql: '',
+    exportGenerating: false,
     exportFilename: 'schema.sql',
     settingsForm: { ...settings },
     settingsDirty: false,
@@ -336,16 +380,19 @@ export function reviewNodes(m: Model): ReviewNode[] {
       id: refKey(t.ref),
       label: t.ref.database,
       type: 'database',
+      targetKey: refKey(t.ref),
       children: [...new Set(t.changes.map((c) => c.table))]
         .map((table) => ({
           id: `${refKey(t.ref)}/${table}`,
           label: table,
           type: 'table',
+          targetKey: refKey(t.ref),
           children: t.changes
             .filter(
               (c) =>
                 c.table === table &&
-                (m.diffTab === 'data' ? c.kind.endsWith('_ROW') : !c.kind.endsWith('_ROW')) &&
+                (c.kind === 'BLOCKED' ||
+                  (m.diffTab === 'data' ? c.kind.endsWith('_ROW') : !c.kind.endsWith('_ROW'))) &&
                 (!m.diffSearch ||
                   `${c.table} ${c.label} ${c.kind}`
                     .toLowerCase()

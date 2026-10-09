@@ -2,7 +2,6 @@ import {
   Alert,
   Button,
   Checkbox,
-  Dropdown,
   Empty,
   Form,
   Input,
@@ -26,7 +25,6 @@ import { useController } from '../controller';
 import {
   changesOf,
   dbOptions,
-  displayValue,
   kindLabels,
   leaves,
   recoveryNodes,
@@ -36,12 +34,19 @@ import {
   type ReviewNode,
   type ScopeTable,
 } from '../model';
-import { DataTable, Field, Footer, Panel } from '../components/shared';
+import { DataTable, Field, Footer, Panel, SelectionToggle } from '../components/shared';
+import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
+import { DiffInspector } from '../components/DiffInspector';
 import SqlView from '../components/SqlView';
+import {
+  StructureOptionsEditor,
+  TableStructureOptions,
+} from '../components/StructureOptionsEditor';
 
 export function ScopePage() {
   const c = useController();
   const { m } = c;
+  const comparing = !!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status);
   if (!m.state.connections.length)
     return (
       <div className="onboarding">
@@ -66,14 +71,17 @@ export function ScopePage() {
   return (
     <>
       <div className="scope-layout">
-        <Panel title="来源与目标">
+        <Panel title="来源与目标" className="scope-panel">
+          <DatabaseOptionsStatus />
           <Form layout="vertical">
             <div className="source-target-form">
               <Field label="来源数据库">
                 <Select
+                  disabled={comparing}
                   showSearch
                   optionFilterProp="label"
-                  placeholder="展开左侧连接加载数据库"
+                  placeholder="选择来源数据库"
+                  loading={Object.values(m.dbLoading).some(Boolean)}
                   value={m.sourceKey || undefined}
                   options={options}
                   onChange={(value) => void c.loadScope(value)}
@@ -82,9 +90,11 @@ export function ScopePage() {
               <ArrowRightOutlined className="flow-arrow" />
               <Field label="目标数据库（可多选）">
                 <Select
+                  className="target-database-select"
+                  disabled={comparing}
                   mode="multiple"
+                  loading={Object.values(m.dbLoading).some(Boolean)}
                   optionFilterProp="label"
-                  maxTagCount="responsive"
                   value={m.targetKeys}
                   placeholder="选择目标库"
                   options={options.filter((o) => o.value !== m.sourceKey)}
@@ -105,34 +115,62 @@ export function ScopePage() {
           </div>
           <div className="scope-toolbar">
             <Space wrap>
-              <Button type="text" onClick={() => c.setScopeAll(true, 'structure')}>
-                全选结构
-              </Button>
-              <Button type="text" onClick={() => c.setScopeAll(false, 'structure')}>
-                取消结构
-              </Button>
-              <Button type="text" onClick={() => c.setScopeAll(true, 'data')}>
-                全选数据
-              </Button>
-              <Button type="text" onClick={() => c.setScopeAll(false, 'data')}>
-                取消数据
-              </Button>
+              {(['structure', 'data'] as const).map((kind) => {
+                return (
+                  <SelectionToggle
+                    key={kind}
+                    disabled={comparing}
+                    total={filtered.length}
+                    selected={filtered.filter((table) => table[kind]).length}
+                    onToggle={() => c.toggleScope(kind)}
+                  >
+                    {kind === 'structure' ? '结构' : '数据'}
+                  </SelectionToggle>
+                );
+              })}
             </Space>
             <span className="hint">只读取已选表的结构与数据</span>
           </div>
+          <div className="structure-defaults">
+            <strong>统一结构默认</strong>
+            <StructureOptionsEditor
+              value={m.structureDefaults}
+              disabled={comparing}
+              onChange={(options) => c.set('structureDefaults', options)}
+            />
+            <Button
+              size="small"
+              disabled={comparing || !m.scopeTables.some((table) => table.structure)}
+              onClick={() => c.applyStructureDefaults()}
+            >
+              应用到当前已选结构表
+            </Button>
+          </div>
           <DataTable<ScopeTable>
+            size="small"
+            className="scope-table"
             rowKey="name"
             dataSource={filtered}
             locale={{ emptyText: '选择源库后加载表名' }}
             columns={[
               {
                 title: '表名',
+                key: 'name',
+                width: 240,
+                ellipsis: true,
                 render: (_, row) => (
-                  <>
-                    <TableOutlined /> {row.name}
-                    <div className="secondary">{row.comment}</div>
-                  </>
+                  <span className="table-name-cell">
+                    <TableOutlined />
+                    <span title={row.name}>{row.name}</span>
+                  </span>
                 ),
+              },
+              {
+                title: '表说明',
+                dataIndex: 'comment',
+                width: 240,
+                ellipsis: true,
+                render: (value: string) => value || '无表注释',
               },
               {
                 title: '表结构',
@@ -140,9 +178,22 @@ export function ScopePage() {
                 align: 'center',
                 render: (_, row) => (
                   <Checkbox
+                    disabled={comparing}
                     checked={row.structure}
                     aria-label={`${row.name} 表结构`}
                     onChange={(e) => c.updateScope(row.name, { structure: e.target.checked })}
+                  />
+                ),
+              },
+              {
+                title: '结构细项',
+                width: 130,
+                render: (_, row) => (
+                  <TableStructureOptions
+                    label={`${row.name} 结构细项`}
+                    value={row.structureOptions}
+                    disabled={comparing || !row.structure}
+                    onChange={(options) => c.updateScope(row.name, { structureOptions: options })}
                   />
                 ),
               },
@@ -152,6 +203,7 @@ export function ScopePage() {
                 align: 'center',
                 render: (_, row) => (
                   <Checkbox
+                    disabled={comparing}
                     checked={row.data}
                     aria-label={`${row.name} 基础数据`}
                     onChange={(e) => c.updateScope(row.name, { data: e.target.checked })}
@@ -164,7 +216,7 @@ export function ScopePage() {
                 render: (_, row) => (
                   <Input
                     value={row.keyText}
-                    disabled={!row.data}
+                    disabled={comparing || !row.data}
                     placeholder="默认主键；复合键用逗号分隔"
                     aria-label={`${row.name} 匹配键`}
                     onChange={(e) => c.updateScope(row.name, { keyText: e.target.value })}
@@ -192,7 +244,7 @@ export function ScopePage() {
           ))}
           <Space orientation="vertical">
             <Button onClick={() => c.editTemplate()}>将当前范围保存为模板</Button>
-            <Button type="text" onClick={() => c.editTemplate(templates[0])}>
+            <Button size="small" onClick={() => c.editTemplate(templates[0])}>
               管理模板
             </Button>
           </Space>
@@ -205,9 +257,11 @@ export function ScopePage() {
         </span>
         <Button
           type="primary"
-          loading={!!m.busy}
+          loading={comparing}
           disabled={
             !m.sourceKey ||
+            comparing ||
+            !!m.compareConfirmation ||
             !m.targetKeys.length ||
             !m.scopeTables.some((t) => t.structure || t.data)
           }
@@ -225,18 +279,13 @@ export function DiffPage() {
   const plan = m.plan;
   if (!plan) return <Empty description="先选择同步范围并比较" />;
   const nodes = reviewNodes(m);
-  const visible = nodes.flatMap(leaves);
-  const change =
-    visible.find((v) => v.id === m.currentChangeId) ||
-    visible.find((v) => !v.blocked) ||
-    visible[0];
-  const target = plan.targets.find(
-    (t) => `${t.ref.connectionId}/${t.ref.database}` === change?.targetKey,
-  );
-  const columnSource =
-    change && plan.sourceSnapshot[change.table]?.columns.find((col) => col.name === change.label);
-  const columnTarget =
-    change && target?.before[change.table]?.columns.find((col) => col.name === change.label);
+  const flatten = (items: ReviewNode[]): ReviewNode[] =>
+    items.flatMap((node) => [node, ...flatten(node.children || [])]);
+  const allNodes = flatten(nodes);
+  const inspected =
+    allNodes.find((node) => node.id === m.currentChangeId) ||
+    allNodes.find((node) => node.change && !node.change.blocked) ||
+    allNodes.find((node) => node.change);
   return (
     <>
       <div className="source-summary">
@@ -260,22 +309,7 @@ export function DiffPage() {
           </small>
         </div>
         <Space className="summary-actions">
-          <Button onClick={() => c.navigate('scope')}>调整同步范围</Button>
-          <Button onClick={() => void c.beginSync()}>新建同步</Button>
-          <Dropdown
-            menu={{
-              items: [
-                { key: 'export', label: '导出表结构' },
-                { key: 'template', label: '保存同步模板' },
-              ],
-              onClick: ({ key }) => {
-                if (key === 'export') void c.beginExport();
-                else c.editTemplate();
-              },
-            }}
-          >
-            <Button>更多</Button>
-          </Dropdown>
+          <Button onClick={() => c.navigate('scope')}>上一步</Button>
         </Space>
       </div>
       <div className="table-chips">
@@ -322,9 +356,13 @@ export function DiffPage() {
             pagination={false}
             dataSource={nodes}
             expandable={{ defaultExpandAllRows: true }}
+            rowClassName={(row) => (row.id === inspected?.id ? 'diff-inspected-row' : '')}
             onRow={(row) => ({
-              onClick: () => {
-                if (row.change) c.set('currentChangeId', row.change.id);
+              onClick: () => c.set('currentChangeId', row.id),
+              tabIndex: 0,
+              'aria-selected': row.id === inspected?.id,
+              onKeyDown: (event) => {
+                if (event.key === 'Enter') c.set('currentChangeId', row.id);
               },
             })}
             columns={[
@@ -383,77 +421,19 @@ export function DiffPage() {
           />
         </section>
         <aside className="diff-inspector">
-          {change ? (
-            <>
-              <h2>
-                {change.targetKey.split('/').slice(1).join('/')} / {change.table} / {change.label}
-              </h2>
-              <dl className="metadata">
-                <dt>目标库</dt>
-                <dd>{target?.ref.database}</dd>
-                <dt>表名</dt>
-                <dd>{change.table}</dd>
-                <dt>变更类型</dt>
-                <dd>{kindLabels[change.kind] || change.kind}</dd>
-              </dl>
-              {change.blocked && <Alert type="error" showIcon title={change.reason} />}
-              {change.kind.endsWith('_ROW') ? (
-                <>
-                  <h3>字段值对比</h3>
-                  <p className="hint">按唯一匹配键定位记录，保留目标库主键。</p>
-                  <DataTable
-                    rowKey="name"
-                    pagination={false}
-                    dataSource={[
-                      ...new Set([...Object.keys(change.before), ...Object.keys(change.after)]),
-                    ].map((name) => ({
-                      name,
-                      before: change.before[name],
-                      after: change.after[name],
-                    }))}
-                    columns={[
-                      { title: '字段', dataIndex: 'name' },
-                      { title: '同步前', dataIndex: 'before', render: displayValue },
-                      { title: '同步后', dataIndex: 'after', render: displayValue },
-                    ]}
-                  />
-                </>
-              ) : (
-                (columnSource || columnTarget) && (
-                  <>
-                    <h3>字段定义对比</h3>
-                    <div className="definition-cards">
-                      {[columnTarget, columnSource].map((col, i) => (
-                        <div className="definition-card" key={i}>
-                          <h4>{i === 0 ? '目标库现状' : '源库定义'}</h4>
-                          {col ? (
-                            <dl className="metadata">
-                              <dt>字段名</dt>
-                              <dd>{col.name}</dd>
-                              <dt>数据类型</dt>
-                              <dd>{col.type}</dd>
-                              <dt>允许空</dt>
-                              <dd>{col.nullable ? 'YES' : 'NO'}</dd>
-                              <dt>默认值</dt>
-                              <dd>{col.defaultValue ?? 'NULL'}</dd>
-                              <dt>注释</dt>
-                              <dd>{col.comment || '—'}</dd>
-                            </dl>
-                          ) : (
-                            <p>不存在该字段</p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )
-              )}
-              <h3>SQL 预览</h3>
-              <SqlView sql={change.sql || '-- 此项不可执行'} />
-            </>
-          ) : (
-            <Empty description="选择变更项查看详情" />
-          )}
+          <DiffInspector
+            plan={plan}
+            node={inspected}
+            selectedIds={m.selectedIds}
+            onInspect={(change) =>
+              c.commit((state) => ({
+                ...state,
+                currentChangeId: change.id,
+                diffSearch: '',
+                diffTab: change.kind.endsWith('_ROW') ? 'data' : 'structure',
+              }))
+            }
+          />
         </aside>
       </div>
       <Footer help="同步脚本与记录自动保存；执行前准备回滚资料。">

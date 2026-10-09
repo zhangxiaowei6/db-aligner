@@ -1,5 +1,5 @@
 {
   "passed" : true,
   "checks" : [ "isolated preload bridge", "real renderer IPC through trusted main frame", "no password in renderer state", "import credentials remain in main process", "system-encrypted password file", "real packaged JDBC connection", "exact BIGINT and DECIMAL presentation over packaged IPC", "real engine comparison", "save-only record", "packaged execution and archive", "verified recovery material", "packaged rollback", "default schema export has no DROP", "UTF-8 Chinese object names across packaged IPC", "explicit DROP export", "native archive recovery" ],
-  "at" : "2026-10-09T07:46:56.144Z"
+  "at" : "2026-10-09T10:24:10.196Z"
 }

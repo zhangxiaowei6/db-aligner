@@ -1,4 +1,19 @@
-import type { Appearance, DesktopBridge, State, Table, SyncPlan, ThemeMode } from './types';
+import type {
+  Appearance,
+  CompareTask,
+  ConnectionInfo,
+  DesktopBridge,
+  State,
+  Table,
+  SyncPlan,
+  ThemeMode,
+  DbRef,
+  TableChoice,
+} from './types';
+import { connectionTestError } from './connection-validation';
+import { executionScript } from './sync-scripts';
+import { commentOnly, fullStructure } from './structure-options';
+import { previewStructureChange } from './preview-structure';
 const listeners = new Set<(event: Record<string, unknown>) => void>();
 let themeMode: ThemeMode = 'system';
 const currentAppearance = (): Appearance => ({
@@ -160,8 +175,27 @@ export const previewPlan: SyncPlan = {
   ],
   sourceSnapshot: {
     sys_dict: previewTable,
-    sys_menu: { ...previewTable, name: 'sys_menu', comment: '菜单表' },
-    sys_user: { ...previewTable, name: 'sys_user', comment: '用户表' },
+    sys_menu: {
+      ...previewTable,
+      name: 'sys_menu',
+      comment: '菜单表',
+      indexes: [
+        ...previewTable.indexes,
+        {
+          name: 'idx_code',
+          unique: true,
+          type: 'BTREE',
+          columns: ['code'],
+          definition: 'UNIQUE KEY `idx_code` (`code`)',
+        },
+      ],
+    },
+    sys_user: {
+      ...previewTable,
+      name: 'sys_user',
+      comment: '用户表',
+      createSql: previewTable.createSql.replace('sys_dict', 'sys_user'),
+    },
   },
   targets: connections.slice(1).map((c, i) => ({
     ref: { connectionId: c.id, database: c.databases[0]! },
@@ -171,10 +205,49 @@ export const previewPlan: SyncPlan = {
     before: {
       sys_dict: {
         ...previewTable,
-        columns: previewTable.columns.filter((c) => c.name !== 'remark'),
+        columns: previewTable.columns
+          .filter((c) => c.name !== 'remark')
+          .map((column) =>
+            column.name === 'dict_name'
+              ? {
+                  ...column,
+                  type: 'varchar(64)',
+                  comment: '旧字典名称',
+                  definition: "`dict_name` varchar(64) NOT NULL COMMENT '旧字典名称'",
+                }
+              : column,
+          ),
       },
-      sys_menu: { ...previewTable, name: 'sys_menu' },
-      sys_user: { ...previewTable, name: 'sys_user' },
+      sys_menu: {
+        ...previewTable,
+        name: 'sys_menu',
+        columns: [
+          ...previewTable.columns,
+          {
+            name: 'old_code',
+            type: 'varchar(32)',
+            nullable: true,
+            defaultValue: null,
+            extra: '',
+            comment: '旧编码',
+            ordinal: 6,
+            definition: '`old_code` varchar(32) DEFAULT NULL',
+          },
+        ],
+      },
+      sys_user:
+        i === 2
+          ? {
+              ...previewTable,
+              name: 'sys_user',
+              exists: false,
+              columns: [],
+              indexes: [],
+              createSql: '',
+              comment: '',
+              rows: [],
+            }
+          : { ...previewTable, name: 'sys_user', comment: '旧用户表说明' },
     },
     changes:
       i === 0
@@ -220,33 +293,170 @@ export const previewPlan: SyncPlan = {
               before: { id: 8007, code: 'ORDER_STATUS', dict_name: '订单状态（旧）', sort: 10 },
               after: { id: 8007, code: 'ORDER_STATUS', dict_name: '订单状态', sort: 20 },
             },
-            change(
-              'd2',
-              'sys_dict',
-              'ADD_ROW',
-              'code = PAYMENT_TYPE',
-              "INSERT INTO `shop_a`.`sys_dict` (`code`,`dict_name`) VALUES ('PAYMENT_TYPE','支付方式');",
-            ),
-            change(
-              'd3',
-              'sys_dict',
-              'DELETE_ROW',
-              'code = LEGACY_FLAG',
-              "DELETE FROM `shop_a`.`sys_dict` WHERE `code`='LEGACY_FLAG';",
-              true,
-            ),
+            {
+              ...change(
+                'd2',
+                'sys_dict',
+                'ADD_ROW',
+                'code = PAYMENT_TYPE',
+                "INSERT INTO `shop_a`.`sys_dict` (`code`,`dict_name`) VALUES ('PAYMENT_TYPE','支付方式');",
+              ),
+              after: { code: 'PAYMENT_TYPE', dict_name: '支付方式' },
+            },
+            {
+              ...change(
+                'd3',
+                'sys_dict',
+                'DELETE_ROW',
+                'code = LEGACY_FLAG',
+                "DELETE FROM `shop_a`.`sys_dict` WHERE `code`='LEGACY_FLAG';",
+                true,
+              ),
+              before: { code: 'LEGACY_FLAG', dict_name: '旧标记' },
+            },
           ]
         : [
             change(
               'x' + i,
               'sys_user',
-              'TABLE_COMMENT',
-              '表注释',
-              'ALTER TABLE `shop_' + String.fromCharCode(97 + i) + "`.`sys_user` COMMENT='用户表';",
+              i === 2 ? 'CREATE_TABLE' : 'TABLE_COMMENT',
+              i === 2 ? '创建表' : '表注释',
+              i === 2
+                ? previewTable.createSql.replace('`sys_dict`', '`shop_c`.`sys_user`')
+                : 'ALTER TABLE `shop_' +
+                    String.fromCharCode(97 + i) +
+                    "`.`sys_user` COMMENT='用户表';",
             ),
           ].map((x) => ({ ...x, targetKey: c.id + '/' + c.databases[0] })),
   })),
 };
+// Virtual archive samples let reviewers inspect both script tabs without connecting to a database.
+const previewRollback: Record<string, string> = {
+  c1: 'ALTER TABLE `shop_a`.`sys_dict` DROP COLUMN `remark`;',
+  c2: "ALTER TABLE `shop_a`.`sys_dict` MODIFY COLUMN `dict_name` varchar(64) NOT NULL COMMENT '旧字典名称';",
+  c3: 'ALTER TABLE `shop_a`.`sys_menu` DROP INDEX `idx_code`;',
+  c4: 'ALTER TABLE `shop_a`.`sys_menu` ADD COLUMN `old_code` varchar(32) DEFAULT NULL;',
+  d1: "UPDATE `shop_a`.`sys_dict` SET `dict_name`='订单状态（旧）', `sort`=10 WHERE `code`='ORDER_STATUS';",
+  d2: "DELETE FROM `shop_a`.`sys_dict` WHERE `code`='PAYMENT_TYPE';",
+  d3: "INSERT INTO `shop_a`.`sys_dict` (`code`,`dict_name`) VALUES ('LEGACY_FLAG','旧标记');",
+  x1: "ALTER TABLE `shop_b`.`sys_user` COMMENT='旧用户表说明';",
+  x2: 'DROP TABLE `shop_c`.`sys_user`;',
+};
+for (const target of previewPlan.targets) {
+  for (const change of target.changes) {
+    change.rollbackSql = previewRollback[change.id] ? [previewRollback[change.id]] : [];
+  }
+}
+export function buildPreviewPlan(source: DbRef, targets: DbRef[], tables: TableChoice[]): SyncPlan {
+  const plan = structuredClone(previewPlan);
+  plan.id = 'PREVIEW-PLAN-' + crypto.randomUUID();
+  plan.source = source;
+  plan.tables = tables;
+  plan.sourceSnapshot = Object.fromEntries(
+    tables.map((table) => [
+      table.name,
+      plan.sourceSnapshot[table.name] || { ...structuredClone(previewTable), name: table.name },
+    ]),
+  );
+  plan.targets = targets.map((ref) => {
+    const fixture = structuredClone(
+      previewPlan.targets.find(
+        (target) =>
+          target.ref.connectionId === ref.connectionId && target.ref.database === ref.database,
+      ) || previewPlan.targets[0],
+    );
+    const originalDatabase = fixture.ref.database;
+    fixture.ref = ref;
+    fixture.label = ref.database;
+    fixture.before = Object.fromEntries(
+      tables.map((table) => [
+        table.name,
+        fixture.before[table.name] || { ...structuredClone(previewTable), name: table.name },
+      ]),
+    );
+    fixture.changes = fixture.changes
+      .flatMap((change) => {
+        const choice = tables.find((table) => table.name === change.table);
+        if (!choice) return [];
+        const result = previewStructureChange(
+          change,
+          choice,
+          plan.sourceSnapshot[choice.name],
+          fixture.before[choice.name],
+          originalDatabase,
+        );
+        return result ? [result] : [];
+      })
+      .filter((change) => {
+        const choice = tables.find((table) => table.name === change.table);
+        return choice && (change.kind.endsWith('_ROW') ? choice.data : choice.structure);
+      })
+      .map((change) => ({
+        ...change,
+        id: `${ref.connectionId}/${ref.database}/${change.id}`,
+        targetKey: `${ref.connectionId}/${ref.database}`,
+        sql: change.sql.replaceAll('`' + originalDatabase + '`', '`' + ref.database + '`'),
+        rollbackSql: change.rollbackSql.map((sql) =>
+          sql.replaceAll('`' + originalDatabase + '`', '`' + ref.database + '`'),
+        ),
+      }));
+    for (const choice of tables) {
+      if (
+        choice.data &&
+        choice.structure &&
+        fixture.before[choice.name].exists &&
+        fixture.changes.some(
+          (item) =>
+            item.table === choice.name &&
+            ['ADD_COLUMN', 'DROP_COLUMN', 'MODIFY_COLUMN'].includes(item.kind) &&
+            !commentOnly(item),
+        )
+      ) {
+        fixture.changes = fixture.changes.filter(
+          (item) => item.table !== choice.name || !item.kind.endsWith('_ROW'),
+        );
+        fixture.changes.push({
+          ...change(
+            `${ref.connectionId}/${ref.database}/${choice.name}/structure-first`,
+            choice.name,
+            'BLOCKED',
+            '先同步字段结构',
+            '',
+            true,
+          ),
+          targetKey: `${ref.connectionId}/${ref.database}`,
+          blocked: true,
+          selected: false,
+          reason: '该表字段定义发生变化，请先同步结构，再重新比较基础数据',
+        });
+      }
+      if (
+        (!choice.structure || !fullStructure(choice.structureOptions)) &&
+        !fixture.before[choice.name].exists
+      ) {
+        fixture.changes = fixture.changes.filter((item) => item.table !== choice.name);
+        fixture.changes.push({
+          ...change(
+            `${ref.connectionId}/${ref.database}/${choice.name}/missing`,
+            choice.name,
+            'BLOCKED',
+            '目标表不存在',
+            '',
+            true,
+          ),
+          targetKey: `${ref.connectionId}/${ref.database}`,
+          blocked: true,
+          selected: false,
+          reason: choice.structure
+            ? '部分结构细项不能创建完整表，请启用全部结构细项或先创建目标表'
+            : '请启用表结构同步或先创建目标表',
+        });
+      }
+    }
+    return fixture;
+  });
+  return plan;
+}
 const state: State = {
   workspaces: [
     { id: 'default', name: '跨境电商项目', description: '管理字典、菜单和各站点数据库' },
@@ -316,6 +526,17 @@ const state: State = {
   },
   external: [],
 };
+const comparedPlans = new Map<string, SyncPlan>([[previewPlan.id, structuredClone(previewPlan)]]);
+const compareTasks = new Map<string, CompareTask>();
+const previewEvent = (task: CompareTask) =>
+  listeners.forEach((fn) =>
+    fn({
+      event: 'compare-progress',
+      compareId: task.compareId,
+      status: task.status,
+      progress: task.progress,
+    }),
+  );
 export const previewBridge: DesktopBridge = {
   async invoke<T>(method: string, p: Record<string, unknown> = {}): Promise<T> {
     let result: unknown;
@@ -342,9 +563,16 @@ export const previewBridge: DesktopBridge = {
           password: '',
         }));
         break;
-      case 'connections.test':
+      case 'connections.test': {
+        const config = p.config ?? state.connections.find((c) => c.id === p.id);
+        const validation = connectionTestError(config);
+        if (validation) throw new Error(validation);
+        await new Promise((resolve) => window.setTimeout(resolve, 350));
+        if ((config as ConnectionInfo)?.password === 'preview-fail')
+          throw new Error('密码验证失败（虚构预览数据）');
         result = { serverVersion: '8.4.8 · 虚构预览数据' };
         break;
+      }
       case 'ping':
         result = { version: '0.1.0', protocol: 1 };
         break;
@@ -361,14 +589,83 @@ export const previewBridge: DesktopBridge = {
           { name: 'sys_user', comment: '用户表' },
           { name: 'orders', comment: '订单表' },
           { name: 'order_items', comment: '订单明细表' },
+          { name: 'order_refund_schedule_with_a_long_table_name', comment: '长表名截断示例' },
         ];
         break;
       case 'table.get':
         result = { ...previewTable, name: p.table };
         break;
-      case 'sync.compare':
-        result = structuredClone(previewPlan);
+      case 'sync.compare': {
+        result = buildPreviewPlan(
+          p.source as DbRef,
+          p.targets as DbRef[],
+          p.tables as TableChoice[],
+        );
+        comparedPlans.set((result as SyncPlan).id, result as SyncPlan);
         break;
+      }
+      case 'sync.compare.start': {
+        if (
+          [...compareTasks.values()].some((task) => ['RUNNING', 'CANCELLING'].includes(task.status))
+        )
+          throw new Error('已有比较任务');
+        const compareId = String(p.compareId || crypto.randomUUID());
+        const tables = p.tables as TableChoice[],
+          targets = p.targets as DbRef[];
+        const task: CompareTask = {
+          compareId,
+          status: 'RUNNING',
+          progress: {
+            table: '',
+            phase: '准备比较（虚构预览）',
+            completed: 0,
+            total: tables.length * (1 + targets.length),
+            rows: 0,
+          },
+        };
+        compareTasks.set(compareId, task);
+        const tick = () => {
+          if (task.status !== 'RUNNING') return;
+          task.progress.completed++;
+          task.progress.table = tables[(task.progress.completed - 1) % tables.length]?.name || '';
+          task.progress.ref =
+            task.progress.completed <= tables.length
+              ? (p.source as DbRef)
+              : targets[Math.floor((task.progress.completed - tables.length - 1) / tables.length)];
+          task.progress.phase = '比较表（虚构预览）';
+          if (task.progress.completed >= task.progress.total) {
+            task.plan = buildPreviewPlan(p.source as DbRef, targets, tables);
+            task.status = 'COMPLETED';
+            comparedPlans.set(task.plan.id, task.plan);
+          }
+          previewEvent(task);
+          if (task.status === 'RUNNING') setTimeout(tick, 350);
+        };
+        setTimeout(tick, 350);
+        setTimeout(() => compareTasks.delete(compareId), 600_000);
+        result = { compareId };
+        break;
+      }
+      case 'sync.compare.get': {
+        const task = compareTasks.get(String(p.compareId));
+        if (!task) throw new Error('比较任务不存在或已过期');
+        result = structuredClone(task);
+        break;
+      }
+      case 'sync.compare.cancel': {
+        const task = compareTasks.get(String(p.compareId));
+        if (!task) throw new Error('比较任务不存在或已过期');
+        if (task.status === 'RUNNING') {
+          task.status = 'CANCELLING';
+          previewEvent(task);
+          setTimeout(() => {
+            task.status = 'CANCELLED';
+            previewEvent(task);
+          }, 100);
+        }
+        result = { compareId: task.compareId, status: task.status };
+        break;
+      }
       case 'entity.save': {
         const key = (
           {
@@ -401,19 +698,32 @@ export const previewBridge: DesktopBridge = {
         result = { ok: true };
         break;
       }
-      case 'sync.save':
+      case 'sync.save': {
         if (p.mode === 'EXECUTE_AND_SAVE')
           throw new Error('浏览器预览不会执行数据库操作，请使用桌面客户端');
+        const plan = comparedPlans.get(String(p.planId));
+        if (!plan) throw new Error('比较结果已失效，请重新比较');
         result = {
           ...state.records[0],
           id: 'PREVIEW-' + Date.now(),
+          plan: structuredClone(plan),
+          source: plan.source,
+          tables: plan.tables,
+          targetCount: plan.targets.length,
+          createdAt: new Date().toISOString(),
+          mode: 'SAVE_ONLY',
+          status: 'UNEXECUTED',
+          results: [],
           selectedIds: p.selectedIds,
           remark: p.remark,
         };
         state.records.unshift(result as State['records'][number]);
         break;
+      }
       case 'schema.export': {
         const opts = p as { includeDrop: boolean; tables: string[] };
+        // Simulate an async database read so the browser preview shows the loading state.
+        await new Promise((resolve) => setTimeout(resolve, 800));
         result = {
           sql:
             '-- 浏览器设计预览\n' +
@@ -428,29 +738,54 @@ export const previewBridge: DesktopBridge = {
         };
         break;
       }
-      case 'record.get':
+      case 'record.get': {
+        const record = state.records.find((r) => r.id === p.id);
         result = {
-          record: state.records.find((r) => r.id === p.id),
+          record,
           events: [],
           external: state.external.find((e) => e.id === p.id) || {},
           files: [
             'README.txt',
-            'shop_a/01_prepare_backup.sql',
-            'shop_a/02_sync.sql',
-            'shop_a/03_verify.sql',
-            'shop_a/04_rollback.sql',
+            ...(record?.plan?.targets || []).flatMap((target) =>
+              (target.changes.some(
+                (change) => record?.selectedIds.includes(change.id) && !change.blocked,
+              )
+                ? [
+                    'target.json',
+                    '01_prepare_backup.sql',
+                    '02_sync.sql',
+                    '03_verify.sql',
+                    '04_rollback.sql',
+                  ]
+                : ['target.json', '00_full_diff.sql']
+              ).map((name) => `${target.ref.database}/${name}`),
+            ),
           ],
         };
         break;
+      }
       case 'record.file': {
         const record = state.records.find((r) => r.id === p.id);
         const file = String(p.file);
-        const selected = previewPlan.targets[0]!.changes.filter((c) =>
-          record?.selectedIds.includes(c.id),
+        const target = record?.plan?.targets.find((item) =>
+          file.startsWith(item.ref.database + '/'),
         );
+        const selected =
+          target?.changes.filter((c) => record?.selectedIds.includes(c.id) && !c.blocked) || [];
+        if (file.endsWith('target.json')) {
+          result = JSON.stringify(target?.ref);
+          break;
+        }
         result = file.endsWith('02_sync.sql')
-          ? '-- 浏览器设计预览：仅包含勾选项\n' + selected.map((c) => c.sql).join('\n\n')
-          : '-- 浏览器设计预览\n-- 正式客户端按目标库生成备份、同步、校验、回滚脚本。\n-- 本页示例不连接或执行数据库，请在桌面客户端查看真实档案。';
+          ? '-- 浏览器设计预览：仅包含勾选项\n' + executionScript(selected)
+          : file.endsWith('04_rollback.sql')
+            ? '-- 浏览器设计预览：以下是虚构的回滚示例\n' +
+              [...selected]
+                .reverse()
+                .flatMap((change) => change.rollbackSql)
+                .map((sql) => (sql.endsWith(';') ? sql : sql + ';'))
+                .join('\n\n')
+            : '-- 浏览器设计预览\n-- 正式客户端按目标库生成备份、同步、校验、回滚脚本。\n-- 本页示例不连接或执行数据库，请在桌面客户端查看真实档案。';
         break;
       }
       case 'version.save': {

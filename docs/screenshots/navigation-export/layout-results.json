@@ -1,0 +1,94 @@
+{
+  "light": [
+    {
+      "codeHeight": 384,
+      "codeOverflow": 974,
+      "columns": "383.391px 661.609px",
+      "footerBottom": 1056,
+      "footerTop": 991,
+      "height": 1056,
+      "layoutBottom": 967,
+      "pageOverflow": 0,
+      "previewBottom": 967,
+      "sqlHeight": 421,
+      "width": 1488
+    },
+    {
+      "codeHeight": 115,
+      "codeOverflow": 1243,
+      "columns": "275.391px 469.609px",
+      "footerBottom": 760,
+      "footerTop": 695,
+      "height": 760,
+      "layoutBottom": 671,
+      "pageOverflow": 0,
+      "previewBottom": 671,
+      "sqlHeight": 167,
+      "width": 1180
+    },
+    {
+      "codeHeight": 408,
+      "codeOverflow": 950,
+      "columns": "538.906px 938.094px",
+      "footerBottom": 1080,
+      "footerTop": 1015,
+      "height": 1080,
+      "layoutBottom": 991,
+      "pageOverflow": 0,
+      "previewBottom": 991,
+      "sqlHeight": 445,
+      "width": 1920
+    },
+    {
+      "codeHeight": 335,
+      "codeOverflow": 1023,
+      "columns": "485px",
+      "footerBottom": 760,
+      "footerTop": 695,
+      "height": 760,
+      "layoutBottom": 1547.171875,
+      "pageOverflow": 876,
+      "previewBottom": 1547.171875,
+      "sqlHeight": 372,
+      "width": 900
+    }
+  ],
+  "dark": [
+    {
+      "codeHeight": 384,
+      "footerBottom": 1056,
+      "height": 1056,
+      "pageOverflow": 0,
+      "sqlHeight": 421,
+      "theme": "dark",
+      "width": 1488
+    },
+    {
+      "codeHeight": 115,
+      "footerBottom": 760,
+      "height": 760,
+      "pageOverflow": 0,
+      "sqlHeight": 167,
+      "theme": "dark",
+      "width": 1180
+    },
+    {
+      "codeHeight": 408,
+      "footerBottom": 1080,
+      "height": 1080,
+      "pageOverflow": 0,
+      "sqlHeight": 445,
+      "theme": "dark",
+      "width": 1920
+    },
+    {
+      "codeHeight": 335,
+      "footerBottom": 760,
+      "height": 760,
+      "pageOverflow": 876,
+      "sqlHeight": 372,
+      "theme": "dark",
+      "width": 900
+    }
+  ]
+}

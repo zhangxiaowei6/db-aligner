@@ -33,6 +33,8 @@ export interface Column {
   comment: string;
   ordinal: number;
   definition: string;
+  generation?: string;
+  collation?: string;
 }
 export interface Table {
   name: string;
@@ -55,6 +57,31 @@ export interface TableChoice {
   data: boolean;
   keyColumns: string[];
   keyText?: string;
+  structureOptions?: StructureOptions;
+}
+export interface StructureOptions {
+  columns: boolean;
+  columnOrder: boolean;
+  tableComment: boolean;
+  columnComments: boolean;
+  indexes: boolean;
+  foreignKeys: boolean;
+  tableCollation: boolean;
+}
+export interface CompareProgress {
+  ref?: DbRef;
+  table: string;
+  phase: string;
+  completed: number;
+  total: number;
+  rows: number;
+}
+export interface CompareTask {
+  compareId: string;
+  status: 'RUNNING' | 'CANCELLING' | 'CANCELLED' | 'COMPLETED' | 'FAILED';
+  progress: CompareProgress;
+  error?: string;
+  plan?: SyncPlan;
 }
 export interface Change {
   id: string;
@@ -70,6 +97,7 @@ export interface Change {
   selected: boolean;
   blocked: boolean;
   reason: string;
+  changedParts?: string[];
 }
 export interface TargetPlan {
   ref: DbRef;

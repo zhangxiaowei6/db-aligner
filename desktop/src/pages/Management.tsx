@@ -1,8 +1,35 @@
-import { Button, Checkbox, Empty, Form, Input, InputNumber, Radio, Select, Space, Tag } from 'antd';
-import { DeleteOutlined, PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
+import {
+  StructureOptionsEditor,
+  TableStructureOptions,
+} from '../components/StructureOptionsEditor';
+import {
+  Button,
+  Checkbox,
+  Empty,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Radio,
+  Select,
+  Space,
+  Tag,
+} from 'antd';
+import { PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
+import { useEffect } from 'react';
+import { connectionTestError } from '../connection-validation';
 import { useController } from '../controller';
+import { preview } from '../api';
 import { dbOptions, type ImportRow } from '../model';
-import { DataTable, Field, Footer, Panel } from '../components/shared';
+import {
+  ConnectionTestButton,
+  ConnectionTestFeedback,
+  DataTable,
+  Field,
+  Footer,
+  Panel,
+} from '../components/shared';
+import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import type { ConnectionInfo, TableChoice, Workspace } from '../types';
 
 export function WorkspacesPage() {
@@ -14,7 +41,7 @@ export function WorkspacesPage() {
       <section>
         <div className="section-heading">
           <h2>项目工作区</h2>
-          <Button icon={<PlusOutlined />} onClick={() => c.editWorkspace()}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => c.editWorkspace()}>
             新建工作区
           </Button>
         </div>
@@ -66,9 +93,6 @@ export function WorkspacesPage() {
           <Button type="primary" loading={!!m.busy} onClick={() => void c.saveWorkspace()}>
             保存工作区
           </Button>
-          <Button onClick={() => c.editWorkspace(m.state.workspaces.find((w) => w.id === form.id))}>
-            取消修改
-          </Button>
           {m.state.workspaces.some((w) => w.id === form.id) && (
             <Button danger onClick={() => void c.removeEntity('workspace', form.id)}>
               删除
@@ -83,6 +107,12 @@ export function ConnectionsPage() {
   const c = useController();
   const { m } = c;
   const f = m.connectionForm;
+  const [connectionFields] = Form.useForm();
+  useEffect(() => {
+    if (!m.connectionDialog) return;
+    connectionFields.resetFields();
+    connectionFields.setFieldsValue(f);
+  }, [m.connectionDialog, f.id, connectionFields]);
   const filtered = m.state.connections.filter((conn) =>
     `${conn.name} ${conn.host} ${conn.group}`
       .toLowerCase()
@@ -90,9 +120,9 @@ export function ConnectionsPage() {
   );
   const workspaces = m.state.workspaces.map((w) => ({ value: w.id, label: w.name }));
   return (
-    <div className="management-layout">
+    <>
       <section>
-        <div className="section-heading">
+        <div className="section-heading connection-toolbar">
           <Input
             prefix={<SearchOutlined />}
             placeholder="搜索连接名称、地址"
@@ -100,7 +130,15 @@ export function ConnectionsPage() {
             onChange={(e) => c.set('connectionSearch', e.target.value)}
           />
           <Space>
-            <Button icon={<PlusOutlined />} onClick={() => c.editConnection()}>
+            <Button
+              danger
+              disabled={!m.connectionSelection.length}
+              loading={!!m.busy}
+              onClick={() => void c.removeConnections()}
+            >
+              批量删除{m.connectionSelection.length ? `（${m.connectionSelection.length}）` : ''}
+            </Button>
+            <Button type="primary" onClick={() => c.editConnection()}>
               新建连接
             </Button>
             <Button onClick={() => c.navigate('import')}>导入</Button>
@@ -109,6 +147,12 @@ export function ConnectionsPage() {
         <DataTable<ConnectionInfo>
           rowKey="id"
           dataSource={filtered}
+          rowSelection={{
+            selectedRowKeys: m.connectionSelection,
+            preserveSelectedRowKeys: true,
+            onChange: (keys) => c.set('connectionSelection', keys as string[]),
+            getCheckboxProps: (row) => ({ 'aria-label': `选择连接 ${row.name}` }),
+          }}
           locale={{ emptyText: '新建连接或导入已有会话' }}
           onRow={(row) => ({ onClick: () => c.editConnection(row) })}
           columns={[
@@ -124,43 +168,135 @@ export function ConnectionsPage() {
                 </Tag>
               ),
             },
+            {
+              title: '操作',
+              key: 'actions',
+              width: 240,
+              render: (_, row) => (
+                <div onClick={(event) => event.stopPropagation()}>
+                  <Space size={8} wrap>
+                    <ConnectionTestButton
+                      size="small"
+                      result={m.connectionTests[row.id]}
+                      disabled={!!connectionTestError(row)}
+                      aria-label={`测试连接 ${row.name}`}
+                      onClick={() => void c.testConnection(row)}
+                    />
+                    <Button
+                      danger
+                      size="small"
+                      aria-label={`删除连接 ${row.name}`}
+                      onClick={() => void c.removeConnections([row.id])}
+                    >
+                      删除
+                    </Button>
+                  </Space>
+                  <ConnectionTestFeedback result={m.connectionTests[row.id]} />
+                </div>
+              ),
+            },
           ]}
         />
       </section>
-      <Panel title="连接配置">
-        <Form layout="vertical">
-          <Field label="连接名称" required>
+      <Modal
+        title={
+          m.state.connections.some((connection) => connection.id === f.id) ? '编辑连接' : '新建连接'
+        }
+        open={m.connectionDialog}
+        onCancel={c.closeConnection}
+        centered
+        width={720}
+        footer={
+          <div className="connection-dialog-footer">
+            <div className="connection-dialog-test">
+              <ConnectionTestButton
+                aria-label="测试连接"
+                result={m.connectionTest}
+                disabled={!!connectionTestError(f) || !f.workspaceIds.length}
+                onClick={() => void c.testConnection()}
+              />
+              <ConnectionTestFeedback result={m.connectionTest} />
+            </div>
+            <Space>
+              <Button
+                type="primary"
+                loading={!!m.busy}
+                onClick={() =>
+                  void connectionFields
+                    .validateFields()
+                    .then(() => c.saveConnection())
+                    .catch(() => {})
+                }
+              >
+                保存连接
+              </Button>
+              <Button onClick={c.closeConnection}>取消</Button>
+            </Space>
+          </div>
+        }
+        destroyOnHidden
+        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
+      >
+        <Form form={connectionFields} layout="vertical" validateTrigger="onBlur">
+          <Form.Item
+            label="连接名称"
+            name="name"
+            rules={[{ required: true, whitespace: true, message: '请输入连接名称' }]}
+          >
             <Input
               value={f.name}
               onChange={(e) => c.patch('connectionForm', { name: e.target.value })}
             />
-          </Field>
+          </Form.Item>
           <div className="form-pair">
-            <Field label="服务器地址" required>
+            <Form.Item
+              label="服务器地址"
+              name="host"
+              rules={[
+                { required: true, whitespace: true, message: '请输入服务器地址' },
+                { pattern: /^[a-zA-Z0-9.\-:\[\]]+$/, message: '请输入有效的服务器地址' },
+              ]}
+            >
               <Input
                 value={f.host}
                 onChange={(e) => c.patch('connectionForm', { host: e.target.value })}
               />
-            </Field>
-            <Field label="端口">
+            </Form.Item>
+            <Form.Item
+              label="端口"
+              name="port"
+              rules={[
+                {
+                  required: true,
+                  type: 'integer',
+                  min: 1,
+                  max: 65535,
+                  message: '请输入 1–65535 的整数端口',
+                },
+              ]}
+            >
               <InputNumber
                 value={f.port}
                 min={1}
                 max={65535}
                 onChange={(value) => {
-                  if (value !== null) c.patch('connectionForm', { port: value });
+                  c.patch('connectionForm', { port: value ?? 0 });
                 }}
                 style={{ width: '100%' }}
               />
-            </Field>
+            </Form.Item>
           </div>
           <div className="form-pair">
-            <Field label="用户名" required>
+            <Form.Item
+              label="用户名"
+              name="user"
+              rules={[{ required: true, whitespace: true, message: '请输入用户名' }]}
+            >
               <Input
                 value={f.user}
                 onChange={(e) => c.patch('connectionForm', { user: e.target.value })}
               />
-            </Field>
+            </Form.Item>
             <Field label="密码">
               <Input.Password
                 value={f.password}
@@ -182,14 +318,18 @@ export function ConnectionsPage() {
               onChange={(e) => c.patch('connectionForm', { group: e.target.value })}
             />
           </Field>
-          <Field label="关联工作区" required>
+          <Form.Item
+            label="关联工作区"
+            name="workspaceIds"
+            rules={[{ required: true, type: 'array', min: 1, message: '请选择至少一个工作区' }]}
+          >
             <Select
               mode="multiple"
               value={f.workspaceIds}
               options={workspaces}
               onChange={(workspaceIds) => c.patch('connectionForm', { workspaceIds })}
             />
-          </Field>
+          </Form.Item>
           <Form.Item>
             <Checkbox
               checked={f.ssl}
@@ -231,29 +371,8 @@ export function ConnectionsPage() {
             </>
           )}
         </Form>
-        <Space wrap>
-          <Button loading={!!m.busy} onClick={() => void c.testConnection()}>
-            测试连接
-          </Button>
-          <Button type="primary" loading={!!m.busy} onClick={() => void c.saveConnection()}>
-            保存连接
-          </Button>
-          <Button
-            onClick={() => c.editConnection(m.state.connections.find((conn) => conn.id === f.id))}
-          >
-            取消修改
-          </Button>
-          {m.state.connections.some((conn) => conn.id === f.id) && (
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => void c.removeEntity('connection', f.id)}
-              aria-label="删除连接"
-            />
-          )}
-        </Space>
-      </Panel>
-    </div>
+      </Modal>
+    </>
   );
 }
 export function ImportPage() {
@@ -280,7 +399,13 @@ export function ImportPage() {
             选择会话文件
           </Button>
           <span>{m.importName || '也可粘贴 XML / JSON 内容'}</span>
+          {preview && <Button onClick={() => void c.loadImportExample()}>重新加载示例</Button>}
         </div>
+        {preview && (
+          <p className="hint">
+            示例仅模拟连接测试；先填写有效的必填参数，密码填写 preview-fail 可查看失败状态。
+          </p>
+        )}
         <Input.TextArea
           rows={4}
           value={m.importText}
@@ -336,7 +461,29 @@ export function ImportPage() {
                     />
                   ),
                 },
-                { title: '说明', render: (_, row) => row.warning || row.credentialStatus },
+                {
+                  title: '说明',
+                  key: 'description',
+                  width: 240,
+                  render: (_, row) => row.warning || row.credentialStatus,
+                },
+                {
+                  title: '测试连接',
+                  key: 'connectionTest',
+                  width: 300,
+                  render: (_, row) => (
+                    <div className="import-connection-test">
+                      <ConnectionTestButton
+                        size="small"
+                        disabled={!!row.warning || !!connectionTestError(row)}
+                        result={row.connectionTest}
+                        aria-label={`测试 ${row.name} 连接`}
+                        onClick={() => void c.testImportConnection(row.id)}
+                      />
+                      <ConnectionTestFeedback result={row.connectionTest} />
+                    </div>
+                  ),
+                },
               ]}
             />
           </div>
@@ -397,7 +544,7 @@ export function TemplatesPage() {
       <section>
         <div className="section-heading">
           <h2>已保存模板</h2>
-          <Button icon={<PlusOutlined />} onClick={() => c.editTemplate()}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => c.editTemplate()}>
             新建模板
           </Button>
         </div>
@@ -417,6 +564,7 @@ export function TemplatesPage() {
         {!templates.length && <Empty description="尚未保存模板" />}
       </section>
       <Panel title={f.name || '新建同步模板'}>
+        <DatabaseOptionsStatus />
         <Form layout="vertical">
           <Field label="模板名称" required>
             <Input
@@ -450,6 +598,16 @@ export function TemplatesPage() {
             />
           </Field>
         </Form>
+        <div className="structure-defaults">
+          <strong>统一结构默认</strong>
+          <StructureOptionsEditor
+            value={m.templateStructureDefaults}
+            onChange={(options) => c.set('templateStructureDefaults', options)}
+          />
+          <Button size="small" onClick={() => c.applyStructureDefaults(true)}>
+            应用到当前已选结构表
+          </Button>
+        </div>
         <DataTable<TableChoice>
           rowKey="name"
           dataSource={f.tables}
@@ -480,6 +638,20 @@ export function TemplatesPage() {
               ),
             },
             {
+              title: '结构细项',
+              width: 130,
+              render: (_, row) => (
+                <TableStructureOptions
+                  label={`${row.name} 模板结构细项`}
+                  value={row.structureOptions}
+                  disabled={!row.structure}
+                  onChange={(options) =>
+                    c.updateTemplateTable(row.name, { structureOptions: options })
+                  }
+                />
+              ),
+            },
+            {
               title: '匹配键',
               render: (_, row) => (
                 <Input
@@ -495,12 +667,6 @@ export function TemplatesPage() {
         <Space className="top-gap" wrap>
           <Button type="primary" loading={!!m.busy} onClick={() => void c.saveTemplate()}>
             保存模板
-          </Button>
-          <Button
-            disabled={!m.state.templates.some((t) => t.id === f.id)}
-            onClick={() => c.editTemplate(m.state.templates.find((t) => t.id === f.id))}
-          >
-            取消修改
           </Button>
           {m.state.templates.some((t) => t.id === f.id) && (
             <>

@@ -1,4 +1,50 @@
-# Data Sync 设计实现 QA
+# 导航栏与手动结构导出验收（2026-10-09）
+
+final result: passed
+
+## 2026-10-09：比较进度、停止与结构细项补充验收
+
+在当前布局和已有交互基础上加入全局比较进度、比较二次确认和复用的七项结构编辑器。生产浏览器浅色 / 深色流程验证逐表调整、确认摘要中的例外、数据风险默认未勾选且禁止开始、跨页面保留停止入口、停止后保留匹配键和结构细项、重新比较，以及仅保存的原有确认。完整结果见 [浏览器验收报告](docs/react-ui-qa.json)，33 项检查通过，`errors` 为空；[原生窗口验收](docs/react-desktop-qa.json) 6 项通过。
+
+已查看 [比较确认浅色](docs/screenshots/react-ant-design/compare-confirmation-light.png)、[范围深色](docs/screenshots/react-ant-design/scope-options-dark.png)；七项编辑和逐表例外清晰可读，长确认内容在弹窗中滚动，底部确认与取消保持可操作。另保存 [逐表编辑](docs/screenshots/react-ant-design/table-options-light.png)、[运行进度](docs/screenshots/react-ant-design/compare-running-light.png)、[跨页面停止](docs/screenshots/react-ant-design/compare-stopped-dark.png)。截图使用虚构预览数据，JDBC 取消和执行 / 核验 / 回滚结果见 [本轮验证记录](docs/validation.md)。
+
+仅修改注释等细项时，差异详情左栏标为“本次计划定义”，显示保留目标属性后的实际结果。范围、工作区在任务运行和停止清理期间锁定；停止无需额外确认。全表数据的判定、旧事件、重复点击、范围变化、启动期间停止和通信异常由前端测试补充验证。原生关闭测试使用隔离资料目录中的状态样本；本轮未把该检查描述为真实数据库比较的桌面端验收。
+
+## 本轮设计依据与证据
+
+- 用户选定本会话第三张概念图的导航样式：窄功能栏与数据库资源栏并列。设计源图：[selected-reference.png](docs/screenshots/navigation-export/selected-reference.png)，1487 × 1058 px。
+- 同尺寸实现：[settings-light.png](docs/screenshots/navigation-export/settings-light.png)，浏览器视口 1488 × 1056 CSS px、截图密度 1。源图仅缩放 1–2 px 差异后，与实现并排放入 [settings-comparison.png](docs/screenshots/navigation-export/settings-comparison.png)；已实际查看该对照。
+- 本轮范围为导航结构和表结构导出。保留现有原生标题栏、真实设置字段与设置页布局；导航栏宽 80 px，资源栏默认 280 px（小窗口 256 px），并可拖拽。概念图中右侧表单的排列不是本轮重构目标。
+- 稳定构建预览：[preview-final.png](docs/screenshots/navigation-export/preview-final.png)，1280 × 720 px。资源树展开、设置菜单选中，控制台错误为 0；本地预览使用虚构连接。
+
+## 五项视觉核对
+
+- 字体与排版：沿用 Segoe UI / Microsoft YaHei 与 Ant Design 字号；导航文字 13 px、图标 22 px，入口同时显示图标与文字。表名保持单行、省略与完整标题。
+- 间距与层级：功能栏独立，设置固定在底部；工作区、连接操作和树组成连续资源栏。移除旧白色树卡片、底部白色导航块与“功能导航”标题；资源树和主内容独立滚动。
+- 配色与状态：背景、边框和选中态使用现有主题变量；浅色与深色均检查。拖拽区域背景透明，键盘聚焦只保留中性细线，未出现蓝色粗线。
+- 图片与图标：保留现有应用 logo，使用现有 Ant Design 图标，未使用新绘制的图标或图片替代控件。
+- 文案与内容：保留四个功能入口及原有真实表单内容；SQL 提示明确要求点击“生成预览 SQL”，不会暗示全选即生成。
+
+## 布局与行为验收
+
+- 浅色、深色各检查 1488 × 1056、1180 × 760、1920 × 1080、900 × 760。截图与 [高度测量记录](docs/screenshots/navigation-export/layout-results.json) 均已保存。
+- 双栏页面没有整体纵向溢出，SQL 预览底部与导出布局底部对齐；代码内部滚动，操作栏在视口内。最小桌面尺寸预览高度 167 px；窄屏单栏允许页面滚动，预览保留独立高度。
+- 检查全选仅改变选择、按钮生成完整 SQL、DROP 变化立即清空旧 SQL 并禁用导出，以及数据库右键导出入口。最小窗口 DROP 警示状态见 [export-drop-minimum.png](docs/screenshots/navigation-export/export-drop-minimum.png)。
+- 检查四个功能导航入口、资源树展开与键盘调整宽度：右方向键使资源栏从 280 px 变为 296 px，左方向键恢复；命中区透明。鼠标拖拽逻辑与原有指针捕获机制保留。
+- 前端类型检查与最终构建通过。现有前端套件 63 项通过（串行运行并使用 15 秒测试超时）；追加的 32 张表跨页全选／取消一行／完整生成范围测试单独通过，导出页共覆盖 8 个用例。
+
+## 检查与修正记录
+
+1. 初次全高布局检查发现 Ant Design 当前包装为 `.ant-spin`，原选择器未覆盖，长 SQL 仍撑高页面。补齐包装层的弹性高度后再次检查，页面溢出为 0，预览填满剩余空间。
+2. 最小窗口下 DROP 警示占据过多高度。为选项区设置最大高度与独立滚动后重新截图，SQL、生成按钮和底部操作栏仍可达。
+3. 按用户反馈将上下分块的侧栏改为选定的窄功能栏加资源树结构，去掉拖拽蓝色高亮；并排对照与浅／深色窗口检查没有剩余 P0/P1/P2 问题。
+4. 开发服务在并行热更新时曾产生 Provider 上下文错误；最终另启构建产物预览复核四个导航入口，控制台错误为 0。交付预览使用该稳定构建。
+
+剩余验证边界：界面截图使用浏览器虚构数据；未在本轮连接真实数据库或运行 Electron 安装包验收。现有后端 SQL 接口未修改。
+
+---
+
+# Data Sync 设计实现 QA（既有记录保留）
 
 2026-10-09 已完成 React + Ant Design 迁移。最新结果见 [验证记录](docs/validation.md)、[界面自动验收](docs/react-ui-qa.json)、[原生窗口验收](docs/react-desktop-qa.json)。最新截图使用 Ant Design 默认控件与主题，位于 [截图目录](docs/screenshots/react-ant-design)。
 

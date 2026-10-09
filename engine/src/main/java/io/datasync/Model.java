@@ -45,14 +45,67 @@ public final class Model {
     }
   }
 
+  public record StructureOptions(
+      boolean columns,
+      boolean columnOrder,
+      boolean tableComment,
+      boolean columnComments,
+      boolean indexes,
+      boolean foreignKeys,
+      boolean tableCollation) {
+    public static StructureOptions all() {
+      return new StructureOptions(true, true, true, true, true, true, true);
+    }
+
+    public boolean full() {
+      return columns
+          && columnOrder
+          && tableComment
+          && columnComments
+          && indexes
+          && foreignKeys
+          && tableCollation;
+    }
+
+    public boolean any() {
+      return columns
+          || columnOrder
+          || tableComment
+          || columnComments
+          || indexes
+          || foreignKeys
+          || tableCollation;
+    }
+  }
+
   public record TableChoice(
-      String name, boolean structure, boolean data, List<String> keyColumns) {}
+      String name,
+      boolean structure,
+      boolean data,
+      List<String> keyColumns,
+      StructureOptions structureOptions) {
+    public TableChoice(String name, boolean structure, boolean data, List<String> keyColumns) {
+      this(name, structure, data, keyColumns, null);
+    }
+
+    public StructureOptions options() {
+      return structureOptions == null ? StructureOptions.all() : structureOptions;
+    }
+  }
 
   public static class Change {
     public String id, targetKey, table, kind, label, sql, reason = "";
     public boolean risk, selected, blocked;
     public List<String> rollbackSql = new ArrayList<>();
     public List<String> matchColumns = new ArrayList<>();
+    public List<String> changedParts;
+
+    public boolean commentOnly() {
+      return "MODIFY_COLUMN".equals(kind)
+          && changedParts != null
+          && changedParts.equals(List.of("columnComments"));
+    }
+
     public Map<String, Object> before = new LinkedHashMap<>(), after = new LinkedHashMap<>();
   }
 
