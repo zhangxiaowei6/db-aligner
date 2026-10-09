@@ -1,0 +1,27 @@
+{
+  "name": "data-sync-tool",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "desktop"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w desktop",
+    "desktop": "npm run desktop -w desktop",
+    "build": "npm run build -w desktop",
+    "test": "npm run test -w desktop && npm run engine:test",
+    "typecheck": "npm run typecheck -w desktop",
+    "engine:build": "powershell -ExecutionPolicy Bypass -File scripts/mvn.ps1 package",
+    "engine:test": "powershell -ExecutionPolicy Bypass -File scripts/mvn.ps1 test",
+    "bootstrap": "powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1",
+    "dist": "npm run engine:build && npm run build && npm run runtime && npm run licenses && npm run dist -w desktop",
+    "runtime": "powershell -ExecutionPolicy Bypass -File scripts/runtime.ps1",
+    "licenses": "powershell -ExecutionPolicy Bypass -File scripts/licenses.ps1",
+    "format": "prettier --write desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md",
+    "format:check": "prettier --check desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "prettier": "^3.6.2"
+  }
+}

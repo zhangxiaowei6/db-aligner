@@ -1,0 +1,14 @@
+node_modules/
+desktop/dist/
+desktop/dist-electron/
+engine/target/
+release/
+.tools/
+.local-data/
+*.log
+*.sqlite*
+*.ncx
+data-sources.json
+dataSources.xml
+.env*
+!*.example

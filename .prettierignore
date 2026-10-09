@@ -1,0 +1,9 @@
+node_modules
+.tools
+release
+desktop/dist
+desktop/dist-electron
+engine/target
+licenses
+docs/screenshots
+package-lock.json

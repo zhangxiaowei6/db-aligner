@@ -1,0 +1,88 @@
+{
+  "name": "data-sync-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "desktop": "npm run build:electron && node scripts/dev.mjs",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --external:electron --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs",
+    "build": "vue-tsc --noEmit && vite build && npm run build:electron",
+    "typecheck": "vue-tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "vitest run",
+    "dist": "electron-builder --win nsis"
+  },
+  "dependencies": {
+    "vue": "3.5.43",
+    "element-plus": "^2.11.0",
+    "@element-plus/icons-vue": "^2.3.2"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "^26.0.12",
+    "vite": "^7.2.2",
+    "@vitejs/plugin-vue": "^6.0.2",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.1.3",
+    "esbuild": "^0.25.12",
+    "vitest": "^3.2.4",
+    "@types/node": "^24.0.0"
+  },
+  "build": {
+    "appId": "io.datasync.desktop",
+    "productName": "Data Sync",
+    "directories": {
+      "output": "../release"
+    },
+    "electronDist": "../node_modules/electron/dist",
+    "files": [
+      "dist/**",
+      "dist-electron/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../engine/target/engine.jar",
+        "to": "engine/engine.jar"
+      },
+      {
+        "from": "../engine/target/lib",
+        "to": "engine/lib"
+      },
+      {
+        "from": "../.tools/runtime",
+        "to": "runtime"
+      },
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "../licenses",
+        "to": "licenses"
+      },
+      {
+        "from": "../LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "../NOTICE",
+        "to": "NOTICE"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "license": "../LICENSE"
+    }
+  },
+  "description": "Project workspaces and auditable MySQL schema/data synchronization",
+  "author": "Data Sync contributors",
+  "license": "Apache-2.0"
+}

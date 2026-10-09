@@ -1,0 +1,6 @@
+{
+    "sourceCommit":  "1c417fbfc2f7",
+    "sourceUrl":  "https://api.adoptium.net/v3/binary/version/jdk-21.0.12.1+1/windows/x64/sources/hotspot/normal/eclipse",
+    "version":  "21.0.12.1+1",
+    "repository":  "https://github.com/adoptium/jdk21u"
+}
