@@ -12,6 +12,7 @@ import { api, onEvent, preview, windowAction } from './api';
 import { previewPlan } from './preview';
 import { copyModel } from './copy';
 import { connectionTestError } from './connection-validation';
+import { connectionSignature, normalizeOrganization } from './connection-organization';
 import { SyncExecutionConfirmation } from './components/SyncExecutionConfirmation';
 import { effectiveOptions } from './structure-options';
 import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
@@ -36,6 +37,7 @@ import {
 import type {
   CompareTask,
   ConnectionInfo,
+  ConnectionGroup,
   DbRef,
   RollbackPlan,
   State,
@@ -76,6 +78,13 @@ function useBusinessController() {
     if (!mounted.current) return;
     const current = latest.current;
     const next = update(current);
+    if (current.page === 'export' && next.page !== 'export') {
+      next.exportSql = '';
+      next.exportPreview = undefined;
+      next.exportGenerating = false;
+      requests.current.delete('exportSQL');
+      requests.current.delete('exportScope');
+    }
     if (current.compareTask && ['RUNNING', 'CANCELLING'].includes(current.compareTask.status)) {
       for (const key of [
         'workspaceId',
@@ -132,12 +141,13 @@ function useBusinessController() {
       requests.current.get(name) === id &&
       latest.current.workspaceId === workspace;
   }
-  async function action<T>(fn: () => Promise<T>): Promise<T | undefined> {
+  async function action<T>(fn: () => Promise<T>, silent = false): Promise<T | undefined> {
     commit((s) => ({ ...s, busy: s.busy + 1 }));
     try {
       return await fn();
     } catch (e) {
-      if (mounted.current) void message.error(e instanceof Error ? e.message : String(e));
+      if (mounted.current && !silent)
+        void message.error(e instanceof Error ? e.message : String(e));
     } finally {
       commit((s) => ({ ...s, busy: Math.max(0, s.busy - 1) }));
     }
@@ -148,7 +158,7 @@ function useBusinessController() {
   async function loadState(resetSettings = false) {
     const valid = request('state');
     try {
-      const state = await api<State>('state.load');
+      const state = normalizeOrganization(await api<State>('state.load'));
       if (!valid()) return;
       commit((s) => ({
         ...s,
@@ -156,8 +166,8 @@ function useBusinessController() {
         dbCache: Object.fromEntries(
           Object.entries(s.dbCache).filter(
             ([id]) =>
-              JSON.stringify(s.state.connections.find((c) => c.id === id)) ===
-                JSON.stringify(state.connections.find((c) => c.id === id)) &&
+              connectionSignature(s.state.connections.find((c) => c.id === id)) ===
+                connectionSignature(state.connections.find((c) => c.id === id)) &&
               state.connections.some((c) => c.id === id),
           ),
         ),
@@ -166,8 +176,8 @@ function useBusinessController() {
             state.connections.some(
               (c) =>
                 (key === c.id || key.startsWith(c.id + '/')) &&
-                JSON.stringify(c) ===
-                  JSON.stringify(s.state.connections.find((old) => old.id === c.id)),
+                connectionSignature(c) ===
+                  connectionSignature(s.state.connections.find((old) => old.id === c.id)),
             ),
           ),
         ),
@@ -178,8 +188,8 @@ function useBusinessController() {
           Object.entries(s.connectionTests).filter(
             ([id]) =>
               state.connections.some((c) => c.id === id) &&
-              JSON.stringify(s.state.connections.find((c) => c.id === id)) ===
-                JSON.stringify(state.connections.find((c) => c.id === id)),
+              connectionSignature(s.state.connections.find((c) => c.id === id)) ===
+                connectionSignature(state.connections.find((c) => c.id === id)),
           ),
         ),
         dbLoading: Object.fromEntries(
@@ -248,6 +258,7 @@ function useBusinessController() {
     if (comparisonActive()) return;
     requests.current.clear();
     databaseLoads.current.clear();
+    resetSync();
     commit((s) => ({
       ...s,
       workspaceId: id,
@@ -287,14 +298,15 @@ function useBusinessController() {
       connections.map(async (connection) => {
         const id = connection.id;
         if (!force && latest.current.dbCache[id] !== undefined) return;
-        const signature = JSON.stringify(connection);
+        const signature = connectionSignature(connection);
         const pending = databaseLoads.current.get(id);
         if (pending && pending.signature === signature && pending.workspace === s.workspaceId)
           return pending.promise;
         const valid = request('databases:' + id);
         const current = () =>
           valid() &&
-          JSON.stringify(latest.current.state.connections.find((c) => c.id === id)) === signature;
+          connectionSignature(latest.current.state.connections.find((c) => c.id === id)) ===
+            signature;
         commit((v) => ({
           ...v,
           dbLoading: { ...v.dbLoading, [id]: true },
@@ -403,6 +415,7 @@ function useBusinessController() {
     preselect?: string,
     mode: 'structure' | 'data' = 'structure',
   ) {
+    requests.current.delete('beginSync');
     commit((s) => ({ ...s, sourceKey: source, scopeTables: [] }));
     const valid = request('scope');
     if (!source) return false;
@@ -426,21 +439,39 @@ function useBusinessController() {
       return true;
     });
   }
+  function resetSync() {
+    for (const key of ['scope', 'beginSync', 'templateScope']) requests.current.delete(key);
+    const initial = initialModel();
+    commit((s) => ({
+      ...s,
+      sourceKey: '',
+      targetKeys: [],
+      scopeTables: [],
+      structureDefaults: initial.structureDefaults,
+      tableSearch: '',
+      scopeRemark: '',
+      plan: undefined,
+      selectedIds: [],
+      currentChangeId: '',
+      diffSearch: '',
+      diffTab: 'structure',
+      compareConfirmation: undefined,
+      compareScope: undefined,
+      compareTask: undefined,
+      compareStartedAt: 0,
+      compareFinishedAt: 0,
+      compareTransportError: '',
+    }));
+  }
   async function beginSync(node?: TreeNode, mode: 'structure' | 'data' = 'structure') {
-    if (comparisonActive()) {
-      navigate('scope');
-      return;
-    }
-    const previousSource = latest.current.sourceKey;
+    if (comparisonActive()) return;
+    resetSync();
     navigate('scope');
-    if (!node && latest.current.sourceKey && latest.current.scopeTables.length) return;
+    if (!node?.ref) return;
     const valid = request('beginSync');
     await loadDatabaseOptions();
     if (!valid() || latest.current.page !== 'scope') return;
-    if (!node && latest.current.sourceKey !== previousSource) return;
-    const source = node?.ref
-      ? refKey(node.ref)
-      : latest.current.sourceKey || dbOptions(latest.current)[0]?.value || '';
+    const source = refKey(node.ref);
     if (source) await loadScope(source, node?.table, mode);
   }
   function toggleScope(type: 'structure' | 'data') {
@@ -507,6 +538,7 @@ function useBusinessController() {
     commit((s) => ({
       ...s,
       compareConfirmation: undefined,
+      compareScope: copyModel(pending),
       plan: undefined,
       selectedIds: [],
       currentChangeId: '',
@@ -737,10 +769,14 @@ function useBusinessController() {
       void message.success('工作区已保存');
     });
   }
-  function editConnection(c?: ConnectionInfo) {
+  function editConnection(c?: ConnectionInfo, group?: string) {
     const form = c
       ? { ...copyModel(c), password: '', certificatePassword: '' }
-      : { ...emptyConnection(latest.current.workspaceId), id: crypto.randomUUID() };
+      : {
+          ...emptyConnection(latest.current.workspaceId),
+          id: crypto.randomUUID(),
+          ...(group ? { group } : {}),
+        };
     commit((s) => ({
       ...s,
       connectionForm: form,
@@ -759,6 +795,55 @@ function useBusinessController() {
       databasesText: '',
     }));
   }
+  function editGroup(group?: ConnectionGroup) {
+    commit((s) => ({ ...s, groupDialog: true, groupForm: group, groupName: group?.name || '' }));
+  }
+  async function saveGroup() {
+    const s = latest.current;
+    const name = s.groupName.trim();
+    await action(async () => {
+      if (!name) throw new Error('请输入分组名称');
+      const group = await api<ConnectionGroup>('connectionGroups.save', {
+        id: s.groupForm?.id,
+        name,
+      });
+      commit((v) => ({
+        ...v,
+        groupDialog: false,
+        connectionForm:
+          v.connectionDialog && (!s.groupForm || v.connectionForm.group === s.groupForm.name)
+            ? { ...v.connectionForm, group: group.name }
+            : v.connectionForm,
+        importGroup: s.groupForm && v.importGroup === s.groupForm.name ? group.name : v.importGroup,
+      }));
+      await loadState();
+      void message.success('分组已保存');
+    });
+  }
+  function chooseConnectionGroup(connection: ConnectionInfo) {
+    const group = latest.current.state.connectionGroups.find((g) => g.name === connection.group);
+    commit((s) => ({ ...s, moveConnectionId: connection.id, moveGroupId: group?.id || '' }));
+  }
+  async function moveConnection(
+    connectionId: string,
+    groupId: string,
+    placement: 'before' | 'after' | 'last',
+    anchorConnectionId?: string,
+    silent = false,
+  ) {
+    if (latest.current.organizationSaving) return;
+    set('organizationSaving', true);
+    try {
+      await action(async () => {
+        await api('connections.move', { connectionId, groupId, placement, anchorConnectionId });
+        set('moveConnectionId', '');
+        await loadState();
+        if (!silent) void message.success('连接分组与顺序已保存');
+      }, silent);
+    } finally {
+      set('organizationSaving', false);
+    }
+  }
   async function saveConnection() {
     const s = latest.current;
     const form = {
@@ -769,6 +854,8 @@ function useBusinessController() {
     await action(async () => {
       if (!form.name.trim() || !form.host.trim() || !form.user.trim() || !form.workspaceIds.length)
         throw new Error('请填写连接名称、服务器、用户并选择工作区');
+      const validation = connectionTestError(form);
+      if (validation) throw new Error(validation);
       await api('entity.save', { kind: 'connection', value: form });
       if (latest.current.connectionForm === s.connectionForm)
         commit((v) => ({
@@ -1126,6 +1213,7 @@ function useBusinessController() {
   }
   async function applyTemplate(t: SyncTemplate) {
     if (comparisonActive()) return;
+    resetSync();
     const source = refKey(t.source);
     set('sourceKey', source);
     set('targetKeys', t.targets.map(refKey));
@@ -1398,27 +1486,27 @@ function useBusinessController() {
     commit((v) => ({
       ...v,
       page: 'export',
-      includeDrop: false,
-      exportSql: '',
+      includeDrop: v.page === 'export' ? v.includeDrop : false,
+      exportSql: v.page === 'export' ? v.exportSql : '',
+      exportPreview: v.page === 'export' ? v.exportPreview : undefined,
       exportSource: source,
     }));
     await loadExport(source, node?.table);
   }
   async function loadExport(source = latest.current.exportSource, preselect?: string) {
-    request('exportSQL');
-    commit((s) => ({ ...s, exportSource: source, exportTables: [], exportSql: '' }));
+    commit((s) => ({ ...s, exportSource: source, exportTables: [] }));
     const valid = request('exportScope');
     if (!source) return;
     await action(async () => {
       const rows = await api<{ name: string; comment: string }[]>('tables.list', {
         ref: fromKey(source),
       });
-      if (!valid() || latest.current.exportSource !== source) return;
+      if (!valid() || latest.current.page !== 'export' || latest.current.exportSource !== source)
+        return;
       commit((s) => ({
         ...s,
         exportTables: rows.map((t) => ({ ...t, selected: !!preselect && t.name === preselect })),
         exportFilename: fromKey(source).database + '_schema.sql',
-        exportSql: '',
       }));
     });
   }
@@ -1427,7 +1515,7 @@ function useBusinessController() {
     const tables = s.exportTables.filter((t) => t.selected).map((t) => t.name);
     if (s.loading || s.busy || !s.exportSource || !tables.length) return;
     const valid = request('exportSQL');
-    commit((v) => ({ ...v, exportSql: '', exportGenerating: true }));
+    commit((v) => ({ ...v, exportGenerating: true }));
     try {
       await action(async () => {
         const result = await api<{ sql: string }>('schema.export', {
@@ -1435,32 +1523,26 @@ function useBusinessController() {
           tables,
           includeDrop: s.includeDrop,
         });
-        const current = latest.current;
-        if (
-          valid() &&
-          current.exportSource === s.exportSource &&
-          current.includeDrop === s.includeDrop &&
-          JSON.stringify(current.exportTables.filter((t) => t.selected).map((t) => t.name)) ===
-            JSON.stringify(tables)
-        )
-          set('exportSql', result.sql);
+        if (valid() && latest.current.page === 'export')
+          commit((v) => ({
+            ...v,
+            exportSql: result.sql,
+            exportPreview: { source: s.exportSource, tables, includeDrop: s.includeDrop },
+          }));
       });
     } finally {
       set('exportGenerating', false);
     }
   }
   function selectExport(names: string[]) {
-    request('exportSQL');
     commit((s) => ({
       ...s,
-      exportSql: '',
       exportTables: s.exportTables.map((t) => ({ ...t, selected: names.includes(t.name) })),
     }));
   }
   function setIncludeDrop(value: boolean) {
     if (value === latest.current.includeDrop) return;
-    request('exportSQL');
-    commit((s) => ({ ...s, includeDrop: value, exportSql: '' }));
+    commit((s) => ({ ...s, includeDrop: value }));
   }
   async function saveSql() {
     const s = latest.current;
@@ -1697,6 +1779,20 @@ function useBusinessController() {
           ...s,
           plan,
           page: 'diff',
+          compareScope: copyModel(compareSelection(s)),
+          compareStartedAt: Date.now() - 57_000,
+          compareFinishedAt: Date.now(),
+          compareTask: {
+            compareId: 'PREVIEW-SHOWCASE',
+            status: 'COMPLETED',
+            progress: {
+              table: '',
+              phase: '',
+              rows: 0,
+              completed: plan.tables.length * (1 + plan.targets.length),
+              total: plan.tables.length * (1 + plan.targets.length),
+            },
+          },
           selectedIds: plan.targets
             .flatMap((t) => t.changes)
             .filter((x) => x.selected && !x.blocked)
@@ -1738,6 +1834,10 @@ function useBusinessController() {
     editWorkspace,
     saveWorkspace,
     editConnection,
+    editGroup,
+    saveGroup,
+    chooseConnectionGroup,
+    moveConnection,
     closeConnection,
     saveConnection,
     testConnection,

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Alert, Breadcrumb, Button, Dropdown, Empty, Menu, Select, Space, Spin, Tree } from 'antd';
 import {
   BookOutlined,
+  ApiOutlined,
   ClockCircleOutlined,
   CheckOutlined,
   CloseOutlined,
@@ -25,6 +26,8 @@ import { ExportPage, SettingsPage } from './pages/SettingsExport';
 import appLogo from '../build/icon.png';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
+import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
+import { connectionGroupName, orderedConnections } from './connection-organization';
 
 function Shell() {
   const [sidebarWidth, setSidebarWidth] = useState(() => (window.innerWidth <= 1300 ? 256 : 280));
@@ -33,6 +36,7 @@ function Shell() {
     setSidebarWidth(Math.max(240, Math.min(640, window.innerWidth * 0.45, width)));
   const c = useController();
   const { m } = c;
+  const comparing = !!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status);
   const workspace = m.state.workspaces.find((w) => w.id === m.workspaceId);
   const connections = m.state.connections.filter((conn) =>
     conn.workspaceIds.includes(m.workspaceId),
@@ -49,33 +53,41 @@ function Shell() {
       const children = m.treeChildren[node.key] || node.children;
       return { ...node, ...(children ? { children: children.map(withChildren) } : {}) };
     }
-    return [...new Set(connections.map((conn) => conn.group || '数据库连接'))].map((group) =>
+    return m.state.connectionGroups.map((group) =>
       withChildren({
-        key: `group:${encodeURIComponent(group)}`,
-        title: group,
+        key: `group:${group.id}`,
+        title: group.name,
+        groupId: group.id,
         type: 'group',
-        children: connections
-          .filter((conn) => (conn.group || '数据库连接') === group)
+        children: orderedConnections(connections)
+          .filter((conn) => connectionGroupName(conn) === group.name)
           .map((conn) => ({
             key: conn.id,
             title: conn.name,
             type: 'connection',
             connectionId: conn.id,
+            groupId: group.id,
             isLeaf: false,
           })),
       }),
     );
-  }, [m.state.connections, m.workspaceId, m.treeChildren]);
+  }, [m.state.connections, m.state.connectionGroups, m.workspaceId, m.treeChildren]);
   function nodeMenu(node: TreeNode) {
     if (node.type === 'group')
       return {
         items: [
           { key: 'new', label: '新建连接', icon: <PlusOutlined /> },
           { key: 'import', label: '导入连接', icon: <FileOutlined /> },
+          { key: 'group-edit', label: '编辑分组' },
         ],
         onClick: ({ key }: { key: string }) => {
-          if (key === 'new') c.editConnection();
-          else c.navigate('import');
+          if (key === 'group-edit')
+            c.editGroup(m.state.connectionGroups.find((group) => group.id === node.groupId));
+          else if (key === 'new') c.editConnection(undefined, node.title);
+          else {
+            c.set('importGroup', node.title);
+            c.navigate('import');
+          }
         },
       };
     if (node.type === 'connection') {
@@ -83,6 +95,7 @@ function Shell() {
       return {
         items: [
           { key: 'edit', label: '编辑连接' },
+          { key: 'group', label: '更换分组' },
           {
             key: 'test',
             disabled: test?.status === 'testing',
@@ -106,6 +119,7 @@ function Shell() {
           const connection = connections.find((item) => item.id === node.connectionId);
           if (!connection) return;
           if (key === 'edit') c.editConnection(connection);
+          if (key === 'group') c.chooseConnectionGroup(connection);
           if (key === 'test') void c.testConnection(connection);
           if (key === 'refresh') void c.refreshConnection(connection.id);
           if (key === 'delete') void c.removeConnections([connection.id]);
@@ -119,8 +133,8 @@ function Shell() {
             { type: 'divider' as const },
           ]
         : []),
-      { key: 'structure', label: '同步表结构…', icon: <DatabaseOutlined /> },
-      { key: 'data', label: '同步表数据…', icon: <TableOutlined /> },
+      { key: 'structure', label: '同步表结构…', icon: <DatabaseOutlined />, disabled: comparing },
+      { key: 'data', label: '同步表数据…', icon: <TableOutlined />, disabled: comparing },
       { type: 'divider' as const },
       { key: 'export', label: '导出表结构…', icon: <FileOutlined /> },
     ];
@@ -194,7 +208,13 @@ function Shell() {
                 : m.page,
           ]}
           items={[
-            { key: 'scope', icon: <PlusOutlined />, label: '新建同步' },
+            {
+              key: 'scope',
+              icon: <PlusOutlined />,
+              label: '新建同步',
+              disabled: comparing,
+              title: comparing ? '请先停止当前比较' : undefined,
+            },
             { key: 'templates', icon: <BookOutlined />, label: '同步模板' },
             { key: 'history', icon: <ClockCircleOutlined />, label: '同步历史' },
           ]}
@@ -248,18 +268,85 @@ function Shell() {
             <div className="connection-actions">
               <Button onClick={() => c.editConnection()}>新建连接</Button>
               <Button onClick={() => c.navigate('import')}>导入连接</Button>
+              <Button className="new-group-button" size="small" onClick={() => c.editGroup()}>
+                新建分组
+              </Button>
             </div>
           </div>
           <div className="tree-scroll">
-            {connections.length ? (
+            {tree.length ? (
               <Tree<TreeNode>
                 style={{ background: 'transparent' }}
-                key={
-                  m.workspaceId +
-                  connections.map((conn) => `${conn.id}:${conn.name}:${conn.group}`).join(',')
-                }
+                key={m.workspaceId}
                 treeData={tree}
                 blockNode
+                draggable={
+                  m.organizationSaving
+                    ? false
+                    : {
+                        icon: false,
+                        nodeDraggable: (node) =>
+                          (node as unknown as TreeNode).type === 'connection',
+                      }
+                }
+                allowDrop={({ dragNode, dropNode, dropPosition }) =>
+                  !m.organizationSaving &&
+                  dragNode.type === 'connection' &&
+                  dragNode.key !== dropNode.key &&
+                  (dropNode.type === 'group'
+                    ? true
+                    : dropNode.type === 'connection' && dropPosition !== 0)
+                }
+                onDrop={(info) => {
+                  if (info.dragNode.type !== 'connection') return;
+                  // The tree maps the upper half of a group's first child to its parent.
+                  // Use the actual hovered row so that this gap inserts before the first connection.
+                  const hoveredRow = (info.event.target as Element).closest('.ant-tree-treenode');
+                  const hoveredLabel = hoveredRow?.querySelector<HTMLElement>('.tree-label');
+                  const anchorId = hoveredLabel?.dataset.connectionId;
+                  const hoveredGroupId = hoveredLabel?.dataset.groupId;
+                  if (anchorId && hoveredGroupId && anchorId !== info.dragNode.connectionId) {
+                    const bounds = hoveredRow!.getBoundingClientRect();
+                    void c.moveConnection(
+                      info.dragNode.connectionId!,
+                      hoveredGroupId,
+                      info.event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after',
+                      anchorId,
+                      true,
+                    );
+                    return;
+                  }
+                  const groupId = info.node.groupId;
+                  if (hoveredGroupId && !anchorId) {
+                    void c.moveConnection(
+                      info.dragNode.connectionId!,
+                      hoveredGroupId,
+                      'last',
+                      undefined,
+                      true,
+                    );
+                    return;
+                  }
+                  if (!groupId) return;
+                  if (info.node.type === 'group')
+                    void c.moveConnection(
+                      info.dragNode.connectionId!,
+                      groupId,
+                      'last',
+                      undefined,
+                      true,
+                    );
+                  else if (info.node.type === 'connection' && info.dropToGap) {
+                    const position = info.dropPosition - Number(info.node.pos.split('-').at(-1));
+                    void c.moveConnection(
+                      info.dragNode.connectionId!,
+                      groupId,
+                      position < 0 ? 'before' : 'after',
+                      info.node.connectionId,
+                      true,
+                    );
+                  }
+                }}
                 expandAction="doubleClick"
                 onDoubleClick={(_, node) => {
                   if (node.type === 'table') void c.openTable(node);
@@ -273,13 +360,22 @@ function Shell() {
                     <FolderOutlined />
                   ) : node.type === 'table' ? (
                     <TableOutlined />
+                  ) : node.type === 'connection' ? (
+                    <ApiOutlined />
                   ) : (
                     <DatabaseOutlined />
                   );
                 }}
                 titleRender={(node) => {
                   const label = (
-                    <span className="tree-label" title={node.title}>
+                    <span
+                      className="tree-label"
+                      title={node.title}
+                      data-connection-id={
+                        node.type === 'connection' ? node.connectionId : undefined
+                      }
+                      data-group-id={node.groupId}
+                    >
                       {node.title}
                     </span>
                   );
@@ -454,6 +550,7 @@ function Shell() {
         <div id="page-footer" />
       </main>
       <RecordDrawers />
+      <ConnectionOrganizationDialogs />
     </div>
   );
 }

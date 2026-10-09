@@ -230,6 +230,21 @@ export function HistoryPage() {
           />
           <p className="hint">保存记录与执行状态分别展示。点击记录查看脚本、执行结果及回滚资料。</p>
         </>
+      ) : !versions.length ? (
+        <div className="version-empty">
+          <Empty
+            description={
+              <>
+                <strong>暂无版本</strong>
+                <p>在同步记录中选择记录，点击“标记版本”创建版本</p>
+              </>
+            }
+          >
+            <Button type="primary" onClick={() => c.set('historyTab', 'records')}>
+              前往同步记录
+            </Button>
+          </Empty>
+        </div>
       ) : (
         <div className="version-layout">
           <section>
@@ -247,7 +262,6 @@ export function HistoryPage() {
                 </span>
               </button>
             ))}
-            {!versions.length && <Empty description="在同步记录中勾选多条记录后标记版本" />}
           </section>
           {version ? (
             <section>
@@ -283,7 +297,7 @@ export function HistoryPage() {
               </p>
             </section>
           ) : (
-            <Empty description="选择版本查看详情" />
+            <section className="hint version-placeholder">选择左侧版本查看详情</section>
           )}
         </div>
       )}

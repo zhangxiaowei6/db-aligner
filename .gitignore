@@ -2,7 +2,6 @@ node_modules/
 desktop/dist/
 desktop/dist-electron/
 engine/target/
-release/
 .tools/
 .local-data/
 *.log
@@ -13,3 +12,4 @@ dataSources.xml
 .env*
 !*.example
 /.idea/
+/release/

@@ -241,7 +241,9 @@ export function ExportPage() {
               <h2>SQL 预览</h2>
               <Space wrap>
                 <span className="hint">
-                  {m.includeDrop ? '包含 DROP' : '不含 DROP'} · 不含表数据
+                  {m.exportPreview ? '已生成预览 · ' : ''}
+                  {(m.exportPreview?.includeDrop ?? m.includeDrop) ? '包含 DROP' : '不含 DROP'} ·
+                  不含表数据
                 </span>
                 <Button
                   aria-label="生成预览 SQL"

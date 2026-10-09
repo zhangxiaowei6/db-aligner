@@ -8,7 +8,7 @@ import { dbOptions, initialModel, selection, type TreeNode } from './model';
 import { previewPlan, previewTable } from './preview';
 import { DiffPage, ScopePage } from './pages/Sync';
 import { ConnectionsPage, ImportPage } from './pages/Management';
-import { RecordPage } from './pages/Records';
+import { HistoryPage, RecordPage } from './pages/Records';
 import type { Appearance, State, SyncTemplate } from './types';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
@@ -571,8 +571,8 @@ describe('React business state and protocol', () => {
     await act(async () => {
       await controller.beginSync();
     });
-    expect(controller.m.sourceKey).toBe('source/a');
-    expect(controller.m.scopeTables[0].name).toBe('dict');
+    expect(controller.m.sourceKey).toBe('');
+    expect(controller.m.scopeTables).toEqual([]);
     expect(bridge.invoke.mock.calls.filter(([method]) => method === 'databases.list')).toHaveLength(
       1,
     );
@@ -940,6 +940,10 @@ describe('React business state and protocol', () => {
       })),
     );
     await screen.findByText('修改了：数据类型、注释');
+    expect(screen.queryByText('变更内容', { selector: 'th' })).toBeNull();
+    const modifiedRow = screen.getByRole('checkbox', { name: '选择 dict_name' }).closest('tr')!;
+    const modifiedCell = within(modifiedRow).getByText('修改字段').closest('td')!;
+    expect(within(modifiedCell).getByText('数据类型、注释')).toBeTruthy();
     const header = screen.getByText('源库定义', { selector: 'th' }).closest('tr')!;
     expect(
       within(header)
@@ -1311,5 +1315,276 @@ describe('React business state and protocol', () => {
     await screen.findByRole('dialog');
     await userEvent.click(screen.getByRole('button', { name: /^关\s*闭$/ }));
     await waitFor(() => expect(bridge.window).toHaveBeenCalledWith('close-confirmed'));
+  });
+});
+
+describe('new sync sessions and progress summaries', () => {
+  it('resets temporary state without removing saved history and ignores old scope responses', async () => {
+    await ready();
+    const delayed = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockImplementationOnce(() => delayed.promise);
+    let loading!: Promise<boolean | undefined>;
+    act(() => {
+      loading = controller.loadScope('source/a');
+    });
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        targetKeys: ['source/b'],
+        plan: structuredClone(previewPlan),
+        selectedIds: ['c1'],
+        scopeRemark: 'old',
+        tableSearch: 'old',
+        diffSearch: 'old',
+        currentChangeId: 'c1',
+        compareTask: {
+          compareId: 'old',
+          status: 'COMPLETED',
+          progress: { table: 'old', phase: '生成差异', completed: 2, total: 2, rows: 0 },
+        },
+      })),
+    );
+    const history = controller.m.state.records;
+    await act(async () => {
+      await controller.beginSync();
+    });
+    await act(async () => {
+      delayed.resolve([{ name: 'stale', comment: '' }]);
+      await loading;
+    });
+    expect(controller.m.sourceKey).toBe('');
+    expect(controller.m.targetKeys).toEqual([]);
+    expect(controller.m.scopeTables).toEqual([]);
+    expect(controller.m.plan).toBeUndefined();
+    expect(controller.m.compareTask).toBeUndefined();
+    expect(controller.m.scopeRemark).toBe('');
+    expect(controller.m.diffSearch).toBe('');
+    expect(controller.m.state.records).toEqual(history);
+  });
+  it('starts contextual sync fresh and loads only the requested table mode', async () => {
+    await ready();
+    act(() => controller.set('targetKeys', ['source/a']));
+    await act(async () => {
+      await controller.beginSync(
+        {
+          key: 'source/b/dict',
+          title: 'dict',
+          type: 'table',
+          ref: { connectionId: 'source', database: 'b' },
+          table: 'dict',
+        },
+        'data',
+      );
+    });
+    expect(controller.m.sourceKey).toBe('source/b');
+    expect(controller.m.targetKeys).toEqual([]);
+    expect(controller.m.scopeTables[0]).toMatchObject({
+      name: 'dict',
+      structure: false,
+      data: true,
+    });
+  });
+  it('renders whole-comparison results instead of the last processed table', async () => {
+    await ready(<CompareProgressPanel />);
+    const plan = structuredClone(previewPlan);
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        page: 'diff',
+        plan,
+        compareStartedAt: Date.now() - 2000,
+        compareFinishedAt: Date.now(),
+        compareTask: {
+          compareId: 'done',
+          status: 'COMPLETED',
+          progress: {
+            table: 'last_table_sentinel',
+            phase: '生成差异',
+            ref: plan.targets[0].ref,
+            completed: 12,
+            total: 12,
+            rows: 0,
+          },
+        },
+      })),
+    );
+    expect(screen.getByText('比较完成')).toBeTruthy();
+    const panel = screen.getByRole('region', { name: '比较进度' });
+    expect(panel.textContent).toContain('已比较 3 张表');
+    expect(panel.textContent).not.toContain('last_table_sentinel');
+    expect(panel.textContent).not.toContain('读取 0 行');
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        plan: {
+          ...plan,
+          targets: plan.targets.map((target, i) =>
+            i === 0 ? { ...target, error: 'offline', changes: [] } : target,
+          ),
+        },
+      })),
+    );
+    expect(screen.getByText('比较结束，部分目标库失败')).toBeTruthy();
+  });
+  it('labels the current source database and hides row counters for structure reads', async () => {
+    await ready(<CompareProgressPanel />);
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        compareScope: {
+          workspaceId: 'default',
+          sourceKey: 'source/a',
+          targetKeys: ['source/b'],
+          tables: [{ name: 'dict', structure: true, data: false, comment: '', keyColumns: [] }],
+          structureDefaults: allStructureOptions,
+        },
+        compareTask: {
+          compareId: 'running',
+          status: 'RUNNING',
+          progress: {
+            table: 'dict',
+            phase: '读取源表结构',
+            ref: { connectionId: 'source', database: 'a' },
+            completed: 0,
+            total: 2,
+            rows: 0,
+          },
+        },
+      })),
+    );
+    expect(screen.getByText(/当前处理：源库 来源 \/ a \/ dict/)).toBeTruthy();
+    expect(screen.queryByText(/当前阶段已读取/)).toBeNull();
+  });
+});
+
+describe('connection port input', () => {
+  it('preserves out-of-range raw text on blur and Enter and prevents testing and saving', async () => {
+    await ready(<ConnectionsPage />);
+    await userEvent.click(screen.getByRole('cell', { name: '来源' }));
+    const port = screen.getByLabelText('端口') as HTMLInputElement;
+    expect(port.value).toBe('3306');
+    await userEvent.clear(port);
+    await userEvent.type(port, '33063306');
+    await userEvent.keyboard('{Enter}{Tab}');
+    expect(port.value).toBe('33063306');
+    expect(controller.m.connectionForm.port).toBe(0);
+    expect(await screen.findByText('请输入 1–65535 的整数端口')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '测试连接' }).hasAttribute('disabled')).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: '保存连接' }));
+    expect(bridge.invoke.mock.calls.some(([method]) => method === 'entity.save')).toBe(false);
+    await userEvent.clear(port);
+    await userEvent.type(port, '13306');
+    await userEvent.tab();
+    await userEvent.click(screen.getByRole('button', { name: '保存连接' }));
+    await waitFor(() =>
+      expect(
+        bridge.invoke.mock.calls.find(([method]) => method === 'entity.save')?.[1],
+      ).toMatchObject({ value: { port: 13306 } }),
+    );
+    expect(controller.m.state.connections[0].port).toBe(3306);
+  }, 15000);
+  it('reinitializes canceled edits and new connections without clamping valid 65535', async () => {
+    await ready(<ConnectionsPage />);
+    act(() => controller.editConnection({ ...controller.m.state.connections[0], port: 65535 }));
+    expect(((await screen.findByLabelText('端口')) as HTMLInputElement).value).toBe('65535');
+    await userEvent.clear(screen.getByLabelText('端口'));
+    await userEvent.type(screen.getByLabelText('端口'), '12345');
+    await userEvent.click(screen.getByRole('button', { name: /^取\s*消$/ }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    act(() => controller.editConnection());
+    expect(((await screen.findByLabelText('端口')) as HTMLInputElement).value).toBe('3306');
+  }, 15000);
+});
+
+it('renders one version empty state and links to saved synchronization records', async () => {
+  await ready(<HistoryPage />);
+  act(() => controller.set('historyTab', 'versions'));
+  expect(screen.getByText('暂无版本')).toBeTruthy();
+  expect(document.querySelectorAll('.ant-empty')).toHaveLength(1);
+  expect(screen.queryByText('选择版本查看详情')).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: '前往同步记录' }));
+  expect(controller.m.historyTab).toBe('records');
+});
+
+it('silently saves drag moves and retains the existing order when a drag save fails', async () => {
+  await ready();
+  const groupId = controller.m.state.connectionGroups[0].id;
+  const originalConnections = structuredClone(controller.m.state.connections);
+  bridge.invoke.mockResolvedValueOnce({ ok: true });
+  await act(async () => controller.moveConnection('source', groupId, 'last', undefined, true));
+  expect(bridge.invoke).toHaveBeenCalledWith('connections.move', {
+    connectionId: 'source',
+    groupId,
+    placement: 'last',
+    anchorConnectionId: undefined,
+  });
+  expect(document.querySelector('.ant-message-notice')).toBeNull();
+  bridge.invoke.mockRejectedValueOnce(new Error('拖拽保存失败'));
+  await act(async () => controller.moveConnection('source', groupId, 'last', undefined, true));
+  expect(document.querySelector('.ant-message-notice')).toBeNull();
+  expect(controller.m.state.connections).toEqual(originalConnections);
+  expect(controller.m.organizationSaving).toBe(false);
+});
+
+describe('export preview retention', () => {
+  const exportNode: TreeNode = {
+    key: 'source/a/dict',
+    title: 'dict',
+    type: 'table',
+    ref: { connectionId: 'source', database: 'a' },
+    table: 'dict',
+  };
+  it('keeps generated SQL while changing options and source, and replaces it only after regeneration', async () => {
+    await ready();
+    await act(async () => controller.beginExport(exportNode));
+    bridge.invoke.mockResolvedValueOnce({ sql: 'CREATE TABLE `dict` (`id` int);' });
+    await act(async () => controller.updateExport());
+    const firstSql = controller.m.exportSql;
+    act(() => {
+      controller.setIncludeDrop(true);
+      controller.selectExport([]);
+    });
+    expect(controller.m.exportSql).toBe(firstSql);
+    expect(controller.m.exportPreview?.includeDrop).toBe(false);
+    await act(async () => controller.loadExport('source/b', 'dict'));
+    expect(controller.m.exportSql).toBe(firstSql);
+    const replacement = deferred<{ sql: string }>();
+    bridge.invoke.mockReturnValueOnce(replacement.promise);
+    let generating!: Promise<void>;
+    act(() => {
+      generating = controller.updateExport();
+    });
+    expect(controller.m.exportSql).toBe(firstSql);
+    await act(async () => {
+      replacement.resolve({ sql: 'DROP TABLE `dict`; CREATE TABLE `dict` (`id` bigint);' });
+      await generating;
+    });
+    expect(controller.m.exportSql).toContain('DROP TABLE');
+    expect(controller.m.exportPreview).toEqual({
+      source: 'source/b',
+      tables: ['dict'],
+      includeDrop: true,
+    });
+    act(() => controller.navigate('history'));
+    expect(controller.m.exportSql).toBe('');
+    expect(controller.m.exportPreview).toBeUndefined();
+  });
+  it('discards an in-flight result after leaving and reentering the export page', async () => {
+    await ready();
+    await act(async () => controller.beginExport(exportNode));
+    const pending = deferred<{ sql: string }>();
+    bridge.invoke.mockReturnValueOnce(pending.promise);
+    let generating!: Promise<void>;
+    act(() => {
+      generating = controller.updateExport();
+    });
+    act(() => controller.navigate('history'));
+    await act(async () => controller.beginExport(exportNode));
+    await act(async () => {
+      pending.resolve({ sql: 'STALE SQL' });
+      await generating;
+    });
+    expect(controller.m.exportSql).toBe('');
+    expect(controller.m.exportGenerating).toBe(false);
   });
 });

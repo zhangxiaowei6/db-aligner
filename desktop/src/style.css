@@ -133,6 +133,35 @@ body,
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+.new-group-button {
+  grid-column: 1 / -1;
+}
+.group-list {
+  margin-bottom: 16px;
+  max-height: 240px;
+  overflow: auto;
+}
+.group-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.version-empty {
+  min-height: 280px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.version-placeholder {
+  padding-top: 24px;
+  text-align: center;
+}
+.compare-range {
+  overflow-wrap: anywhere;
+}
 .tree-scroll {
   flex: 1;
   min-height: 0;

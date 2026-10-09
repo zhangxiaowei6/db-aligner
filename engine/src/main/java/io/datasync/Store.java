@@ -137,6 +137,21 @@ public final class Store implements AutoCloseable {
     }
   }
 
+  public synchronized <T> T transaction(java.util.concurrent.Callable<T> work) throws Exception {
+    if (!db.getAutoCommit()) return work.call();
+    db.setAutoCommit(false);
+    try {
+      T result = work.call();
+      db.commit();
+      return result;
+    } catch (Exception e) {
+      db.rollback();
+      throw e;
+    } finally {
+      db.setAutoCommit(true);
+    }
+  }
+
   public synchronized void event(String id, Object event) throws SQLException {
     try (var s =
         db.prepareStatement("INSERT INTO record_events(record_id,time,json) VALUES(?,?,?)")) {

@@ -14,6 +14,7 @@ import { connectionTestError } from './connection-validation';
 import { executionScript } from './sync-scripts';
 import { commentOnly, fullStructure } from './structure-options';
 import { previewStructureChange } from './preview-structure';
+import { connectionGroupName, orderedConnections } from './connection-organization';
 const listeners = new Set<(event: Record<string, unknown>) => void>();
 let themeMode: ThemeMode = 'system';
 const currentAppearance = (): Appearance => ({
@@ -462,6 +463,10 @@ const state: State = {
     { id: 'default', name: '跨境电商项目', description: '管理字典、菜单和各站点数据库' },
   ],
   connections,
+  connectionGroups: [
+    { id: 'preview-source-group', name: '测试环境', sortOrder: 0 },
+    { id: 'preview-target-group', name: '目标环境', sortOrder: 1 },
+  ],
   templates: [
     {
       id: 'tpl1',
@@ -667,6 +672,29 @@ export const previewBridge: DesktopBridge = {
         break;
       }
       case 'entity.save': {
+        if (p.kind === 'connection') {
+          const value = p.value as ConnectionInfo;
+          const validation = connectionTestError(value);
+          if (validation) throw new Error(validation);
+          const group = connectionGroupName(value);
+          if (!state.connectionGroups.some((g) => g.name === group))
+            state.connectionGroups.push({
+              id: crypto.randomUUID(),
+              name: group,
+              sortOrder: state.connectionGroups.length,
+            });
+          const old = state.connections.find((connection) => connection.id === value.id);
+          value.group = group;
+          value.sortOrder =
+            old && connectionGroupName(old) === group
+              ? old.sortOrder
+              : Math.max(
+                  -1,
+                  ...state.connections
+                    .filter((c) => connectionGroupName(c) === group)
+                    .map((c) => c.sortOrder ?? 0),
+                ) + 1;
+        }
         const key = (
           {
             workspace: 'workspaces',
@@ -684,6 +712,58 @@ export const previewBridge: DesktopBridge = {
           else list.push(structuredClone(v));
         }
         result = p.value;
+        break;
+      }
+      case 'connectionGroups.save': {
+        const name = String(p.name || '').trim();
+        if (!name) throw new Error('分组名称不能为空');
+        if (state.connectionGroups.some((g) => g.name === name && g.id !== p.id))
+          throw new Error('分组名称已存在');
+        const old = state.connectionGroups.find((g) => g.id === p.id);
+        if (p.id && !old) throw new Error('分组不存在');
+        if (old) {
+          state.connections.forEach((connection) => {
+            if (connectionGroupName(connection) === old.name) connection.group = name;
+          });
+          old.name = name;
+          result = old;
+        } else {
+          const group = { id: crypto.randomUUID(), name, sortOrder: state.connectionGroups.length };
+          state.connectionGroups.push(group);
+          result = group;
+        }
+        break;
+      }
+      case 'connections.move': {
+        const connection = state.connections.find((c) => c.id === p.connectionId);
+        const group = state.connectionGroups.find((g) => g.id === p.groupId);
+        if (!connection || !group) throw new Error('连接或分组不存在');
+        if (!['before', 'after', 'last'].includes(String(p.placement)))
+          throw new Error('无效投放位置');
+        const destination = orderedConnections(
+          state.connections.filter(
+            (c) => connectionGroupName(c) === group.name && c.id !== connection.id,
+          ),
+        );
+        let index = destination.length;
+        if (p.placement !== 'last') {
+          index = destination.findIndex((c) => c.id === p.anchorConnectionId);
+          if (index < 0) throw new Error('目标连接不存在于该分组');
+          if (p.placement === 'after') index++;
+        }
+        const oldGroup = connectionGroupName(connection);
+        connection.group = group.name;
+        destination.splice(index, 0, connection);
+        destination.forEach((c, i) => {
+          c.sortOrder = i;
+        });
+        if (oldGroup !== group.name)
+          orderedConnections(
+            state.connections.filter((c) => connectionGroupName(c) === oldGroup),
+          ).forEach((c, i) => {
+            c.sortOrder = i;
+          });
+        result = { ok: true };
         break;
       }
       case 'entity.delete': {

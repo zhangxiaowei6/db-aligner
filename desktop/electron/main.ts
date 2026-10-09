@@ -56,6 +56,8 @@ const methods = new Set([
   'ping',
   'state.load',
   'entity.save',
+  'connectionGroups.save',
+  'connections.move',
   'entity.delete',
   'connections.test',
   'databases.list',

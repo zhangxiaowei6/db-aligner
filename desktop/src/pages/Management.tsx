@@ -4,11 +4,11 @@ import {
 } from '../components/StructureOptionsEditor';
 import {
   Button,
+  AutoComplete,
   Checkbox,
   Empty,
   Form,
   Input,
-  InputNumber,
   Modal,
   Radio,
   Select,
@@ -18,6 +18,7 @@ import {
 import { PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { connectionTestError } from '../connection-validation';
+import { orderedConnections, portFromText } from '../connection-organization';
 import { useController } from '../controller';
 import { preview } from '../api';
 import { dbOptions, type ImportRow } from '../model';
@@ -111,9 +112,9 @@ export function ConnectionsPage() {
   useEffect(() => {
     if (!m.connectionDialog) return;
     connectionFields.resetFields();
-    connectionFields.setFieldsValue(f);
+    connectionFields.setFieldsValue({ ...f, port: String(f.port) });
   }, [m.connectionDialog, f.id, connectionFields]);
-  const filtered = m.state.connections.filter((conn) =>
+  const filtered = orderedConnections(m.state.connections).filter((conn) =>
     `${conn.name} ${conn.host} ${conn.group}`
       .toLowerCase()
       .includes(m.connectionSearch.toLowerCase()),
@@ -130,6 +131,7 @@ export function ConnectionsPage() {
             onChange={(e) => c.set('connectionSearch', e.target.value)}
           />
           <Space>
+            <Button onClick={() => c.editGroup()}>管理分组</Button>
             <Button
               danger
               disabled={!m.connectionSelection.length}
@@ -182,6 +184,13 @@ export function ConnectionsPage() {
                       aria-label={`测试连接 ${row.name}`}
                       onClick={() => void c.testConnection(row)}
                     />
+                    <Button
+                      size="small"
+                      aria-label={`更换分组 ${row.name}`}
+                      onClick={() => c.chooseConnectionGroup(row)}
+                    >
+                      更换分组
+                    </Button>
                     <Button
                       danger
                       size="small"
@@ -237,7 +246,15 @@ export function ConnectionsPage() {
         destroyOnHidden
         styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
       >
-        <Form form={connectionFields} layout="vertical" validateTrigger="onBlur">
+        <Form
+          form={connectionFields}
+          layout="vertical"
+          validateTrigger="onBlur"
+          onValuesChange={(values) => {
+            if (Object.hasOwn(values, 'port'))
+              c.patch('connectionForm', { port: portFromText(String(values.port)) });
+          }}
+        >
           <Form.Item
             label="连接名称"
             name="name"
@@ -267,23 +284,14 @@ export function ConnectionsPage() {
               name="port"
               rules={[
                 {
-                  required: true,
-                  type: 'integer',
-                  min: 1,
-                  max: 65535,
-                  message: '请输入 1–65535 的整数端口',
+                  validator: (_, value) =>
+                    portFromText(String(value ?? ''))
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('请输入 1–65535 的整数端口')),
                 },
               ]}
             >
-              <InputNumber
-                value={f.port}
-                min={1}
-                max={65535}
-                onChange={(value) => {
-                  c.patch('connectionForm', { port: value ?? 0 });
-                }}
-                style={{ width: '100%' }}
-              />
+              <Input inputMode="numeric" autoComplete="off" />
             </Form.Item>
           </div>
           <div className="form-pair">
@@ -313,10 +321,19 @@ export function ConnectionsPage() {
             />
           </Field>
           <Field label="连接分组">
-            <Input
-              value={f.group}
-              onChange={(e) => c.patch('connectionForm', { group: e.target.value })}
-            />
+            <Space.Compact block>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                style={{ flex: 1 }}
+                value={f.group}
+                options={[
+                  ...new Set([...m.state.connectionGroups.map((group) => group.name), f.group]),
+                ].map((name) => ({ value: name, label: name }))}
+                onChange={(group) => c.patch('connectionForm', { group })}
+              />
+              <Button onClick={() => c.editGroup()}>新增分组</Button>
+            </Space.Compact>
           </Field>
           <Form.Item
             label="关联工作区"
@@ -499,7 +516,12 @@ export function ImportPage() {
               />
             </Field>
             <Field label="导入分组">
-              <Input value={m.importGroup} onChange={(e) => c.set('importGroup', e.target.value)} />
+              <AutoComplete
+                style={{ width: '100%' }}
+                value={m.importGroup}
+                options={m.state.connectionGroups.map((group) => ({ value: group.name }))}
+                onChange={(name) => c.set('importGroup', name)}
+              />
             </Field>
             <Field label="重复连接">
               <Select

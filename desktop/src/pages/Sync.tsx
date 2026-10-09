@@ -36,6 +36,7 @@ import {
 } from '../model';
 import { DataTable, Field, Footer, Panel, SelectionToggle } from '../components/shared';
 import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
+import { columnChangeSummary } from '../column-comparison';
 import { DiffInspector } from '../components/DiffInspector';
 import SqlView from '../components/SqlView';
 import {
@@ -234,7 +235,13 @@ export function ScopePage() {
         <Panel title="同步模板">
           <p className="hint">复用常用连接与选表规则</p>
           {templates.map((t) => (
-            <button className="template-card" key={t.id} onClick={() => void c.applyTemplate(t)}>
+            <button
+              className="template-card"
+              key={t.id}
+              disabled={comparing}
+              title={comparing ? '请先停止当前比较' : undefined}
+              onClick={() => void c.applyTemplate(t)}
+            >
               <FileOutlined />
               <strong>{t.name}</strong>
               <span>
@@ -405,6 +412,11 @@ export function DiffPage() {
                       >
                         {kindLabels[row.change.kind] || row.change.kind}
                       </Tag>
+                      {row.change.kind === 'MODIFY_COLUMN' && (
+                        <span className="field-change-summary">
+                          {columnChangeSummary(plan, row.change)}
+                        </span>
+                      )}
                       {row.change.blocked ? (
                         <Tooltip title={row.change.reason}>
                           <span className="danger-text">无法执行</span>

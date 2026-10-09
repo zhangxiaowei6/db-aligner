@@ -2,6 +2,7 @@ import type {
   Change,
   CompareTask,
   ConnectionInfo,
+  ConnectionGroup,
   DbRef,
   RollbackItem,
   RollbackPlan,
@@ -36,6 +37,7 @@ export interface TreeNode {
   ref?: DbRef;
   table?: string;
   connectionId?: string;
+  groupId?: string;
   isLeaf?: boolean;
   children?: TreeNode[];
 }
@@ -96,6 +98,7 @@ export interface Model {
   structureDefaults: StructureOptions;
   templateStructureDefaults: StructureOptions;
   compareConfirmation?: CompareSelection;
+  compareScope?: CompareSelection;
   compareTask?: CompareTask;
   compareStartedAt: number;
   compareFinishedAt: number;
@@ -112,6 +115,12 @@ export interface Model {
   workspaceForm: Workspace;
   connectionForm: ConnectionInfo;
   connectionDialog: boolean;
+  groupDialog: boolean;
+  groupForm?: ConnectionGroup;
+  groupName: string;
+  moveConnectionId: string;
+  moveGroupId: string;
+  organizationSaving: boolean;
   connectionTest?: ConnectionTestResult;
   connectionTests: Record<string, ConnectionTestResult>;
   databasesText: string;
@@ -155,6 +164,7 @@ export interface Model {
   exportTables: { name: string; comment: string; selected: boolean }[];
   includeDrop: boolean;
   exportSql: string;
+  exportPreview?: { source: string; tables: string[]; includeDrop: boolean };
   exportGenerating: boolean;
   exportFilename: string;
   settingsForm: State['settings'];
@@ -190,6 +200,7 @@ export function initialModel(): Model {
     state: {
       workspaces: [],
       connections: [],
+      connectionGroups: [],
       templates: [],
       records: [],
       versions: [],
@@ -224,6 +235,11 @@ export function initialModel(): Model {
     workspaceForm: { id: '', name: '', description: '', connectionIds: [] },
     connectionForm: emptyConnection('default'),
     connectionDialog: false,
+    groupDialog: false,
+    groupName: '',
+    moveConnectionId: '',
+    moveGroupId: '',
+    organizationSaving: false,
     connectionTests: {},
     databasesText: '',
     connectionSearch: '',

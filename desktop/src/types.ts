@@ -15,6 +15,7 @@ export interface ConnectionInfo {
   port: number;
   user: string;
   group: string;
+  sortOrder?: number;
   databases: string[];
   workspaceIds: string[];
   ssl: boolean;
@@ -23,6 +24,11 @@ export interface ConnectionInfo {
   hasPassword: boolean;
   password?: string;
   certificatePassword?: string;
+}
+export interface ConnectionGroup {
+  id: string;
+  name: string;
+  sortOrder: number;
 }
 export interface Column {
   name: string;
@@ -175,6 +181,7 @@ export interface Settings {
 export interface State {
   workspaces: Workspace[];
   connections: ConnectionInfo[];
+  connectionGroups: ConnectionGroup[];
   templates: SyncTemplate[];
   records: SyncRecord[];
   versions: Version[];

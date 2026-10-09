@@ -2,49 +2,14 @@ import { Alert, Empty, Space, Tag } from 'antd';
 import { DataTable } from './shared';
 import SqlView from './SqlView';
 import { displayValue, kindLabels, type ReviewNode } from '../model';
-import type { Change, Column, SyncPlan, Table } from '../types';
+import type { Change, SyncPlan } from '../types';
+import {
+  columnComparison,
+  columnChangeSummary,
+  plannedColumnTables,
+  type ComparisonRow,
+} from '../column-comparison';
 
-type ComparisonRow = { name: string; source: unknown; target: unknown; changed: boolean };
-const properties: [keyof Column, string][] = [
-  ['name', '字段名'],
-  ['type', '数据类型'],
-  ['nullable', '允许空'],
-  ['defaultValue', '默认值'],
-  ['extra', '额外属性'],
-  ['comment', '注释'],
-  ['generation', '生成表达式'],
-  ['collation', '排序规则'],
-];
-function columnRows(sourceTable?: Table, targetTable?: Table, label?: string): ComparisonRow[] {
-  const source = sourceTable?.columns.find((column) => column.name === label);
-  const target = targetTable?.columns.find((column) => column.name === label);
-  const value = (column: Column | undefined, key: keyof Column) =>
-    !column
-      ? '不存在该字段'
-      : key === 'nullable'
-        ? column.nullable
-          ? 'YES'
-          : 'NO'
-        : key === 'defaultValue'
-          ? (column.defaultValue ?? null)
-          : (column[key] ?? '');
-  const rows = properties
-    .filter(([key]) => !['generation', 'collation'].includes(key) || source?.[key] || target?.[key])
-    .map(([key, name]) => {
-      const a = value(source, key),
-        b = value(target, key);
-      return { name, source: a, target: b, changed: a !== b };
-    });
-  const position = (table: Table | undefined, column: Column | undefined) => {
-    if (!column) return '不存在该字段';
-    const index = table!.columns.findIndex((item) => item.name === column.name);
-    return index === 0 ? '首列' : `位于 ${table!.columns[index - 1].name} 之后`;
-  };
-  const a = position(sourceTable, source),
-    b = position(targetTable, target);
-  rows.push({ name: '字段位置', source: a, target: b, changed: a !== b });
-  return rows;
-}
 function Comparison({
   rows,
   sourceTitle = '源库定义',
@@ -154,7 +119,12 @@ export function DiffInspector({
               title: '变更类型',
               dataIndex: 'kind',
               width: 125,
-              render: (kind: string) => kindLabels[kind] || kind,
+              render: (kind: string, item) => (
+                <Space wrap size={4}>
+                  <span>{kindLabels[kind] || kind}</span>
+                  {kind === 'MODIFY_COLUMN' && <span>{columnChangeSummary(plan, item)}</span>}
+                </Space>
+              ),
             },
             {
               title: '执行状态',
@@ -178,22 +148,9 @@ export function DiffInspector({
       </>
     );
   }
-  let sourceTable = plan.sourceSnapshot[change.table];
-  const targetTable = target.before[change.table];
-  if (sourceTable && change.after.column) {
-    const planned = change.after.column as unknown as Column;
-    const base = targetTable?.exists ? targetTable : sourceTable;
-    const columns = base.columns.filter((column) => column.name !== change.label);
-    let position = base.columns.findIndex((column) => column.name === change.label);
-    if (change.after.first) position = 0;
-    else if (change.after.previous)
-      position = columns.findIndex((column) => column.name === change.after.previous) + 1;
-    else if (position < 0) position = columns.length;
-    columns.splice(position, 0, planned);
-    sourceTable = { ...base, columns };
-  }
+  const { sourceTable, targetTable } = plannedColumnTables(plan, change);
   const isColumn = ['ADD_COLUMN', 'MODIFY_COLUMN', 'DROP_COLUMN'].includes(change.kind);
-  const rows = isColumn ? columnRows(sourceTable, targetTable, change.label) : [];
+  const rows = isColumn ? columnComparison(plan, change) : [];
   const changed = rows.filter((row) => row.changed).map((row) => row.name);
   const dataRows = change.kind.endsWith('_ROW')
     ? [...new Set([...Object.keys(change.after), ...Object.keys(change.before)])].map((name) => {

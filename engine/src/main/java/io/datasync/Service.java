@@ -16,10 +16,13 @@ public final class Service implements AutoCloseable {
   private final Jobs jobs;
   private final External external;
   private final Comparisons comparisons;
+  private final ConnectionGroups connectionGroups;
   private final Map<String, SyncPlan> plans = new java.util.concurrent.ConcurrentHashMap<>();
 
   public Service(Path root, Consumer<Object> emit) throws Exception {
     store = new Store(root);
+    connectionGroups = new ConnectionGroups(store);
+    connectionGroups.migrate();
     db = new Database(store);
     planner = new Planner(db);
     archives = new Archives(store);
@@ -39,6 +42,8 @@ public final class Service implements AutoCloseable {
               store.list("workspace"),
               "connections",
               store.list("connection"),
+              "connectionGroups",
+              connectionGroups.groups(),
               "templates",
               store.list("template"),
               "records",
@@ -52,6 +57,8 @@ public final class Service implements AutoCloseable {
               "external",
               store.list("external"));
       case "entity.save" -> saveEntity(p.path("kind").asText(), p.path("value"));
+      case "connectionGroups.save" -> connectionGroups.save(p.path("id").asText(), p.path("name").asText());
+      case "connections.move" -> connectionGroups.move(p);
       case "entity.delete" -> {
         String kind = p.path("kind").asText();
         if (!List.of("workspace", "connection", "template").contains(kind))
@@ -185,6 +192,8 @@ public final class Service implements AutoCloseable {
           Map.of(
               "format",
               "datasync-config-v1",
+              "connectionGroups",
+              connectionGroups.groups(),
               "workspaces",
               store.list("workspace"),
               "connections",
@@ -204,6 +213,7 @@ public final class Service implements AutoCloseable {
         JsonNode config = Json.read(p.path("content").asText(), JsonNode.class);
         if (!config.path("format").asText().equals("datasync-config-v1"))
           throw new IllegalArgumentException("配置格式不正确");
+        connectionGroups.importGroups(config.path("connectionGroups"));
         for (String kind : List.of("workspace", "connection", "template"))
           for (JsonNode item : config.path(kind.equals("workspace") ? "workspaces" : kind + "s"))
             saveEntity(kind, item);
@@ -251,6 +261,7 @@ public final class Service implements AutoCloseable {
           "port",
           "user",
           "group",
+          "sortOrder",
           "databases",
           "workspaceIds",
           "ssl",
@@ -278,10 +289,12 @@ public final class Service implements AutoCloseable {
     if (kind.equals("connection")) {
       if (!v.path("host").asText().matches("[a-zA-Z0-9.\\-:\\[\\]]+")
           || v.path("user").asText().isBlank()
+          || !v.path("port").isIntegralNumber()
+          || !v.path("port").canConvertToInt()
           || v.path("port").asInt() < 1
           || v.path("port").asInt() > 65535) throw new IllegalArgumentException("请填写有效的服务器、端口和用户");
     }
-    return store.put(kind, id, v);
+    return kind.equals("connection") ? connectionGroups.saveConnection(v) : store.put(kind, id, v);
   }
 
   private Object saveVersion(JsonNode p) throws Exception {
