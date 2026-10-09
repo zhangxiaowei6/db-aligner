@@ -6,12 +6,14 @@ const vite = spawn(
   { stdio: 'inherit' },
 );
 let child;
+const desktopEnv = { ...process.env, DATA_SYNC_DEV: '1' };
+delete desktopEnv.ELECTRON_RUN_AS_NODE;
 for (let i = 0; i < 60; i++) {
   try {
     if ((await fetch('http://127.0.0.1:4173')).ok) {
       child = spawn(electron, ['.'], {
         stdio: 'inherit',
-        env: { ...process.env, DATA_SYNC_DEV: '1', ELECTRON_RUN_AS_NODE: '' },
+        env: desktopEnv,
       });
       break;
     }

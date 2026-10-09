@@ -174,6 +174,11 @@ export interface DesktopBridge {
   onEvent(fn: (event: Record<string, unknown>) => void): () => void;
   window(action: string): void;
 }
+export type ThemeMode = 'light' | 'dark' | 'system';
+export interface Appearance {
+  themeMode: ThemeMode;
+  resolvedTheme: 'light' | 'dark';
+}
 declare global {
   interface Window {
     dataSync?: DesktopBridge;

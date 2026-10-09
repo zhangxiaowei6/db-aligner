@@ -1,14 +1,38 @@
-import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeTheme } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { smoke } from './smoke.js';
+import { isThemeMode, readThemeMode, writeThemeMode } from './appearance.js';
+import type { Appearance, ThemeMode } from '../src/types.js';
 
 const repo = path.resolve(__dirname, '../..');
 let win: BrowserWindow, engine: ChildProcessWithoutNullStreams, ready: Promise<void>;
 let stopping = false;
+let themeMode: ThemeMode = 'system';
+let appearanceWrites = Promise.resolve();
+let closeApproved = false;
+let closeRequested = false;
+let rendererReady = false;
+function appearance(): Appearance {
+  return { themeMode, resolvedTheme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light' };
+}
+function overlayStyle() {
+  return {
+    color: nativeTheme.shouldUseDarkColors ? '#000000' : '#f5f5f5',
+    symbolColor: nativeTheme.shouldUseDarkColors ? '#d9d9d9' : '#1f1f1f',
+    height: 40,
+  };
+}
+function updateAppearance() {
+  if (!win || win.isDestroyed()) return;
+  win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#141414' : '#ffffff');
+  if (process.platform === 'win32' || process.platform === 'linux')
+    win.setTitleBarOverlay(overlayStyle());
+  win.webContents.send('datasync:event', { event: 'appearance-changed', appearance: appearance() });
+}
 const pending = new Map<
   string,
   { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
@@ -171,6 +195,20 @@ async function stopEngine() {
   });
 }
 async function invoke(method: string, params: Record<string, unknown> = {}) {
+  if (method === 'appearance.get') return appearance();
+  if (method === 'appearance.set') {
+    const selected = params.themeMode;
+    if (!isThemeMode(selected)) throw new Error('无效主题选项');
+    const saved = appearanceWrites.then(async () => {
+      await writeThemeMode(root, selected);
+      themeMode = selected;
+      nativeTheme.themeSource = selected;
+      updateAppearance();
+    });
+    appearanceWrites = saved.catch(() => {});
+    await saved;
+    return appearance();
+  }
   if (method === 'files.read') {
     const selected = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
@@ -334,6 +372,8 @@ async function invoke(method: string, params: Record<string, unknown> = {}) {
 }
 app.whenReady().then(async () => {
   await fs.mkdir(root, { recursive: true });
+  themeMode = await readThemeMode(root);
+  nativeTheme.themeSource = themeMode;
   await readSecrets();
   startEngine();
   win = new BrowserWindow({
@@ -342,8 +382,9 @@ app.whenReady().then(async () => {
     minWidth: 1180,
     minHeight: 760,
     show: !smokeMode,
-    frame: false,
-    backgroundColor: '#ffffff',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: overlayStyle(),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#141414' : '#ffffff',
     title: 'Data Sync',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -353,6 +394,40 @@ app.whenReady().then(async () => {
     },
   });
   win.setMenuBarVisibility(false);
+  nativeTheme.on('updated', updateAppearance);
+  win.on('close', (event) => {
+    if (closeApproved || stopping || smokeMode) return;
+    event.preventDefault();
+    if (closeRequested) return;
+    closeRequested = true;
+    if (!rendererReady || win.webContents.isLoadingMainFrame()) {
+      closeRequested = false;
+      // The renderer cannot answer while loading; use a native confirmation.
+      if (
+        dialog.showMessageBoxSync(win, {
+          type: 'warning',
+          title: '关闭客户端',
+          message: '客户端正在启动，确认关闭？',
+          buttons: ['取消', '关闭'],
+          defaultId: 0,
+          cancelId: 0,
+        }) === 1
+      ) {
+        closeApproved = true;
+        win.close();
+      }
+      return;
+    }
+    win.webContents.send('datasync:event', { event: 'window-close-request' });
+  });
+  win.on('closed', () => nativeTheme.removeListener('updated', updateAppearance));
+  win.webContents.on('did-start-loading', () => {
+    rendererReady = false;
+  });
+  win.webContents.on('render-process-gone', () => {
+    rendererReady = false;
+    closeRequested = false;
+  });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e, url) => {
     if (url.split('#')[0] !== win.webContents.getURL().split('#')[0]) e.preventDefault();
@@ -373,8 +448,12 @@ app.whenReady().then(async () => {
       event.senderFrame?.parent !== null
     )
       return;
-    if (action === 'minimize') win.minimize();
-    if (action === 'maximize') win.isMaximized() ? win.unmaximize() : win.maximize();
+    if (action === 'renderer-ready') rendererReady = true;
+    if (action === 'close-confirmed' && closeRequested) {
+      closeApproved = true;
+      win.close();
+    }
+    if (action === 'close-cancelled') closeRequested = false;
     if (action === 'close') win.close();
   });
   if (process.env.DATA_SYNC_DEV === '1') await win.loadURL('http://127.0.0.1:4173/');

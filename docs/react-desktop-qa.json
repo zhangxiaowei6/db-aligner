@@ -1,0 +1,39 @@
+{
+  "browser": [],
+  "desktop": [
+    {
+      "check": "native-controls",
+      "visible": true,
+      "area": {
+        "x": 0,
+        "y": 0,
+        "width": 1351,
+        "height": 40
+      },
+      "width": 1488,
+      "customButtons": false
+    },
+    {
+      "check": "maximize-restore",
+      "passed": true
+    },
+    {
+      "check": "minimize-restore",
+      "passed": true
+    },
+    {
+      "check": "theme-restart-persistence",
+      "passed": true
+    },
+    {
+      "check": "native-theme-events",
+      "passed": true
+    },
+    {
+      "check": "running-task-close-cancel-confirm",
+      "passed": true,
+      "fixture": "status-only record in isolated local store; no database server or task execution"
+    }
+  ],
+  "errors": []
+}

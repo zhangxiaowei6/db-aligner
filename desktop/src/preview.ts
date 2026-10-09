@@ -1,4 +1,18 @@
-import type { DesktopBridge, State, Table, SyncPlan } from './types';
+import type { Appearance, DesktopBridge, State, Table, SyncPlan, ThemeMode } from './types';
+const listeners = new Set<(event: Record<string, unknown>) => void>();
+let themeMode: ThemeMode = 'system';
+const currentAppearance = (): Appearance => ({
+  themeMode,
+  resolvedTheme:
+    themeMode === 'system'
+      ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light'
+      : themeMode,
+});
+const notifyAppearance = () =>
+  listeners.forEach((fn) => fn({ event: 'appearance-changed', appearance: currentAppearance() }));
+let stopThemeListener: (() => void) | undefined;
 const time = '2026-10-08T07:20:00Z';
 const connections = [
   {
@@ -306,6 +320,31 @@ export const previewBridge: DesktopBridge = {
   async invoke<T>(method: string, p: Record<string, unknown> = {}): Promise<T> {
     let result: unknown;
     switch (method) {
+      case 'appearance.get':
+        result = currentAppearance();
+        break;
+      case 'appearance.set': {
+        if (!['light', 'dark', 'system'].includes(String(p.themeMode)))
+          throw new Error('无效主题选项');
+        themeMode = p.themeMode as ThemeMode;
+        notifyAppearance();
+        result = currentAppearance();
+        break;
+      }
+      case 'imports.parse':
+        result = Array.from({ length: 32 }, (_, i) => ({
+          ...connections[i % connections.length],
+          id: `preview-import-${i}`,
+          name: `示例连接 ${String(i + 1).padStart(2, '0')}`,
+          host: `192.0.2.${100 + i}`,
+          credentialStatus: '密码需要重新填写',
+          warning: i === 4 ? 'SSH 隧道连接暂不导入' : undefined,
+          password: '',
+        }));
+        break;
+      case 'connections.test':
+        result = { serverVersion: '8.4.8 · 虚构预览数据' };
+        break;
       case 'ping':
         result = { version: '0.1.0', protocol: 1 };
         break;
@@ -326,14 +365,6 @@ export const previewBridge: DesktopBridge = {
         break;
       case 'table.get':
         result = { ...previewTable, name: p.table };
-        break;
-      case 'imports.parse':
-        result = connections.map((connection) => ({
-          ...connection,
-          id: 'import-preview-' + connection.id,
-          credentialStatus: '虚构示例：需补充密码',
-          warning: '浏览器只展示导入结果布局，实际解析请使用桌面客户端',
-        }));
         break;
       case 'sync.compare':
         result = structuredClone(previewPlan);
@@ -401,7 +432,7 @@ export const previewBridge: DesktopBridge = {
         result = {
           record: state.records.find((r) => r.id === p.id),
           events: [],
-          external: {},
+          external: state.external.find((e) => e.id === p.id) || {},
           files: [
             'README.txt',
             'shop_a/01_prepare_backup.sql',
@@ -472,8 +503,23 @@ export const previewBridge: DesktopBridge = {
     }
     return result as T;
   },
-  onEvent() {
-    return () => {};
+  onEvent(fn) {
+    listeners.add(fn);
+    if (!stopThemeListener) {
+      const media = window.matchMedia('(prefers-color-scheme: dark)');
+      const updated = () => {
+        if (themeMode === 'system') notifyAppearance();
+      };
+      media.addEventListener('change', updated);
+      stopThemeListener = () => media.removeEventListener('change', updated);
+    }
+    return () => {
+      listeners.delete(fn);
+      if (!listeners.size) {
+        stopThemeListener?.();
+        stopThemeListener = undefined;
+      }
+    };
   },
   window() {},
 };

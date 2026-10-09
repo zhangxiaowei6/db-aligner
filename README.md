@@ -2,9 +2,9 @@
 
 按项目组织的 MySQL 结构和基础数据同步桌面工具。选择表后比较一个源库与多个目标库，预览差异，保存脚本或直接执行，保留每次操作的记录、恢复资料和版本归档。
 
-首版：**0.1.0，Windows x64**。Electron / Vue 3 / TypeScript / Element Plus，Java 21 / Spring Boot 4 非 Web 引擎，SQLite 本地存储。生产客户端不启动 HTTP 服务，不需要预装 Java 或 Maven。
+首版：**0.1.0，Windows x64**。Electron / React 19 / TypeScript / Ant Design 6，Java 21 / Spring Boot 4 非 Web 引擎，SQLite 本地存储。生产客户端不启动 HTTP 服务，不需要预装 Java 或 Maven。
 
-![结构差异界面](docs/screenshots/structure-diff.png)
+![结构差异界面](docs/screenshots/react-ant-design/diff-light.png)
 
 ## 安装与使用
 
@@ -15,6 +15,7 @@
 3. 选择一个源库、多个目标库与指定表。每张表可以分别启用结构、基础数据，并指定主键或业务匹配键。可以保存模板，模板使用时重新比较。
 4. 在差异页按目标库、表和变更项勾选。删除和高风险结构变更默认不选。使用“仅保存记录”导出脚本供其他工具执行，或“执行并保存”由客户端备份、执行并记录实际结果。
 5. 历史页勾选多条记录标记版本号和说明，也可追加到已有版本。记录详情提供脚本、执行结果、状态核验与回滚预览。
+6. 设置页提供浅色、深色和跟随系统主题，选择后立即生效并自动保存到本机 `ui-preferences.json`，不受同步任务执行状态影响。Windows 标题栏使用系统原生窗口按钮；关闭按钮和 Alt+F4 在有运行或排队任务时会要求确认。
 
 详细说明见 [使用指南](docs/user-guide.md)、[支持范围与限制](docs/limitations.md)、[验证记录](docs/validation.md)。
 
@@ -31,15 +32,20 @@ npm run desktop
 
 `npm run desktop` 启动开发用 Vite 与真实 Electron / Java 引擎，使用项目内 `.local-data`。不要同时启动占用 4173 端口的预览实例。正式安装的资料位于 Electron `userData` 下的 `data` 子目录（通常 `%APPDATA%/data-sync-desktop/data`）；可以通过 `DATA_SYNC_HOME` 指定隔离资料目录。
 
-仅看界面时运行 `npm run dev -- --port 4173 --strictPort`，打开 `http://127.0.0.1:4173/?preview=1`。浏览器预览带有明确提示，只使用内存中的虚构示例数据，不连接数据库、不执行同步，关闭后不保存。真实功能必须使用桌面客户端。
+仅看界面时运行 `npm run dev`，打开 `http://127.0.0.1:4173/?preview=1`。浏览器预览带有明确提示，只使用内存中的虚构示例数据，不连接数据库、不执行同步，关闭后不保存。真实功能必须使用桌面客户端。
 
 ```powershell
 npm run typecheck
 npm test
+npm run build
+npm run qa:ui -w desktop
+npm run qa:desktop -w desktop
 npm run dist
 ```
 
 `npm test` 运行前端与引擎单元测试；默认跳过真库验收。`npm run dist` 编译两端、裁剪运行时、整理第三方许可并生成 NSIS 安装包。Maven Wrapper 入口为 `mvnw.cmd`，也可使用 `scripts/mvn.ps1`。版本锁定信息见 `package-lock.json` 与 `engine/pom.xml`。
+
+界面验收脚本使用生产构建、本机 Chrome / Edge 和内存示例数据，检查长表格与操作栏边界、抽屉层级、主题及业务交互；可通过 `DATA_SYNC_QA_BROWSER` 指定浏览器程序。桌面验收启动独立资料目录，检查原生按钮、主题持久化和任务关闭确认。结果写入 `docs/react-ui-qa.json`、`docs/react-desktop-qa.json`，截图保存在 `docs/screenshots/react-ant-design/`。
 
 ## 真库回归
 

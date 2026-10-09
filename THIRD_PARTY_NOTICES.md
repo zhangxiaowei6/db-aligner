@@ -5,8 +5,8 @@ Data Sync source code is licensed under Apache-2.0. Third-party components retai
 | Component                         | License                                              | Upstream                                                   |
 | --------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------- |
 | Electron                          | MIT; Chromium third-party notices apply              | https://github.com/electron/electron                       |
-| Vue 3                             | MIT                                                  | https://github.com/vuejs/core                              |
-| Element Plus and icons            | MIT                                                  | https://github.com/element-plus/element-plus               |
+| React / React DOM                 | MIT                                                  | https://github.com/facebook/react                          |
+| Ant Design and icons              | MIT                                                  | https://github.com/ant-design/ant-design                   |
 | Spring Boot / Spring Framework    | Apache-2.0                                           | https://github.com/spring-projects/spring-boot             |
 | Jackson                           | Apache-2.0                                           | https://github.com/FasterXML/jackson                       |
 | SLF4J                             | MIT                                                  | https://github.com/qos-ch/slf4j                            |

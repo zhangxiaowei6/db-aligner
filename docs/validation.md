@@ -1,13 +1,27 @@
 # 0.1.0 验证记录
 
+## 2026-10-09：React 与 Ant Design 迁移
+
+生产前端已替换为 React / React DOM 19.3.0、Ant Design 6.6.5、图标 6.3.4，React Vite 插件 5.2.0。类型检查、生产构建、12 项前端测试、11 项引擎单元测试及 NSIS 构建通过。默认引擎测试跳过未启用的集成验收；本轮额外启动已有隔离 MySQL 8.4.8 并通过真实集成测试（1 项动态测试、0 失败／错误／跳过，约 10.8 秒）。新打包客户端 16 项真实 IPC、JDBC、执行、导出、回滚和归档检查也全部通过，最新证据见 [打包结果](native-smoke-result.json)，时间为 2026-10-09 15:46:56 +08:00。
+
+迁移验收采用真实 Ant Design 控件，覆盖嵌套草稿、保存失败保留、乱序请求、切换工作区、导入凭据引用、半选与禁用、事件清理、主题及关闭确认；浏览器流程覆盖树懒加载、表结构、模板、差异、SQL 复制、记录和版本、连接与工作区、跨页选择、回滚禁用与确认取消。生产浏览器 33 项验收结果见 [界面结果](react-ui-qa.json)，新打包程序 6 项原生验收见 [桌面结果](react-desktop-qa.json)。两份报告的 `errors` 均为空。
+
+长表格的滚动区域与底部操作栏是两个独立布局区域，验收断言内容底边不超过操作栏顶边，操作按钮能被点击命中。浅色、深色、1180 × 760 最小视口及较大视口均检查；100% / 125% / 150% 使用浏览器设备像素比例与对应 CSS 视口模拟，不把模拟结果等同于手动切换 Windows 缩放。抽屉检查中心命中和背景主题，关闭确认检查单一弹框、防重入、取消与确认路径。
+
+原生按钮通过 Windows 控制区域可见性确认，最大化、还原、最小化采用实际 BrowserWindow 操作；主题写入独立偏好文件并在重启恢复。有任务关闭测试只在独立 SQLite 目录写入状态样本，不启动同步或连接数据库。拖动、双击标题栏、Alt+F4 实际按键与 Windows Snap 悬停菜单仍需人工验收，未把主进程关闭事件检查描述为键盘交互实测。
+
+最新浅色／深色截图见 [设置](screenshots/react-ant-design/settings-light.png)、[设置深色](screenshots/react-ant-design/settings-dark.png)、[导入连接](screenshots/react-ant-design/import-light.png)、[导入深色](screenshots/react-ant-design/import-dark.png)、[差异预览](screenshots/react-ant-design/diff-light.png)、[差异深色](screenshots/react-ant-design/diff-dark.png)。
+
+## 2026-10-08：迁移前引擎与桌面验证记录
+
 验证日期：2026-10-08。环境：Windows 11 x64（OS build 10.0.26200）、Node 24.9、Java 21.0.12.1、Maven 3.9.11。最终打包依赖 Electron 44.7.0、Spring Boot 4.1.1、MariaDB Connector/J 3.5.10。安装包为未签名 NSIS x64。
 
 ## 最终执行结果
 
 | 验证                                 | 结果      | 证据                                       |
 | ------------------------------------ | --------- | ------------------------------------------ |
-| Vue / Electron TypeScript 类型检查   | 通过      | `npm run typecheck`，exit 0                |
-| Vue 代理参数与嵌套草稿克隆           | 1 项通过  | `npm run test -w desktop`                  |
+| 迁移前前端 / Electron 类型检查       | 通过      | `npm run typecheck`，exit 0                |
+| 迁移前嵌套草稿克隆                   | 1 项通过  | `npm run test -w desktop`                  |
 | 引擎单元测试                         | 11 项通过 | `EngineTest`，0 failure / error / skip     |
 | MySQL 5.7.44 隔离真库                | 通过      | `MySqlIntegrationTest` 动态版本测试        |
 | MySQL 8.0.45 隔离真库                | 通过      | 同上                                       |

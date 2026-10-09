@@ -2,7 +2,7 @@
 
 ## 进程与安全边界
 
-Vue 渲染进程通过上下文隔离的 preload 访问限定接口。Electron 主进程管理系统加密密码、导入文件内容、原生文件对话框与 Java 子进程。生产只加载本机打包资源，禁止新窗口，渲染进程禁用 Node、启用 sandbox。产品不启动本地 HTTP 服务。
+React 渲染进程通过上下文隔离的 preload 访问限定接口。Electron 主进程管理系统加密密码、导入文件内容、原生文件对话框与 Java 子进程。生产只加载本机打包资源，禁止新窗口，渲染进程禁用 Node、启用 sandbox。产品不启动本地 HTTP 服务。
 
 Java 使用 Spring Boot 非 Web 模式，stdin/stdout 每行一条 UTF-8 JSON。日志只写 stderr，由主进程追加到 `engine.log`。Windows 下协议输出明确写 UTF-8 字节，避免控制台编码破坏中文。主进程每次请求在内部传递凭据，查询返回不包含明文密码。
 

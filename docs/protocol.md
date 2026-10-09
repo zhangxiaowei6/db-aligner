@@ -29,4 +29,6 @@
 
 `SyncPlan` 保存源快照、目标原状态、目标连接绑定 `connectionIdentity`（不含密码）、变更 SQL / 逆向 SQL、匹配列、风险和阻止原因。`SyncRecord.mode` 为 `SAVE_ONLY`、`EXECUTE_AND_SAVE` 或关联 `ROLLBACK`；执行状态单独保存，不由版本号推断。`RollbackPlan` 每项保存 eligible 和 reason；执行仍重新校验，不能只依赖预览。
 
-Electron 另外提供原生选文件、选目录、导出路径、打开资料目录、复制和窗口操作。文件导入使用短期 token 保持内容在主进程；桥接只允许已定义的方法。所有界面参数在发送前转换为普通 JSON 对象，避免 Vue 代理导致结构化克隆失败。
+Electron 另外提供原生选文件、选目录、导出路径、打开资料目录、复制和窗口操作。文件导入使用短期 token 保持内容在主进程；桥接只允许已定义的方法。所有界面参数在发送前转换为普通 JSON 对象，编辑草稿与已保存模型分别持有独立副本。
+
+外观接口由 Electron 主进程处理，不进入 Java 引擎：`appearance.get` 返回 `{themeMode,resolvedTheme}`；`appearance.set` 接受 `themeMode: light | dark | system`，原子保存本机偏好并返回生效外观。系统外观变化发送 `{event: appearance-changed, appearance}`。窗口关闭发送 `window-close-request`；渲染进程检查任务并响应 `close-confirmed` 或 `close-cancelled`，重复请求只显示一次确认。`renderer-ready` 在关闭监听订阅后发送；渲染进程未就绪时使用原生关闭确认。
