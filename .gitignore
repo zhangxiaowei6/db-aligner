@@ -12,3 +12,4 @@ data-sources.json
 dataSources.xml
 .env*
 !*.example
+/.idea/
