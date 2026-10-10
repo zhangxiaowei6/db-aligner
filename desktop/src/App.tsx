@@ -32,6 +32,7 @@ import { connectionGroupName, orderedConnections } from './connection-organizati
 function Shell() {
   const [sidebarWidth, setSidebarWidth] = useState(() => (window.innerWidth <= 1300 ? 256 : 280));
   const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
+  const draggedConnection = useRef<string | undefined>(undefined);
   const resizeSidebar = (width: number) =>
     setSidebarWidth(Math.max(240, Math.min(640, window.innerWidth * 0.45, width)));
   const c = useController();
@@ -273,7 +274,49 @@ function Shell() {
               </Button>
             </div>
           </div>
-          <div className="tree-scroll">
+          <div
+            className="tree-scroll"
+            onDragStartCapture={(event) => {
+              const label = (event.target as Element)
+                .closest('.ant-tree-treenode')
+                ?.querySelector<HTMLElement>('.tree-label');
+              if (!label?.dataset.connectionId) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
+            onDragOverCapture={(event) => {
+              const label = (event.target as Element)
+                .closest('.ant-tree-treenode')
+                ?.querySelector<HTMLElement>('.tree-label');
+              if (
+                draggedConnection.current &&
+                label?.dataset.groupId &&
+                !label.dataset.connectionId &&
+                !m.organizationSaving
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
+            onDropCapture={(event) => {
+              const label = (event.target as Element)
+                .closest('.ant-tree-treenode')
+                ?.querySelector<HTMLElement>('.tree-label');
+              const connectionId = draggedConnection.current;
+              if (
+                connectionId &&
+                label?.dataset.groupId &&
+                !label.dataset.connectionId &&
+                !m.organizationSaving
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                draggedConnection.current = undefined;
+                void c.moveConnection(connectionId, label.dataset.groupId, 'last', undefined, true);
+              }
+            }}
+          >
             {tree.length ? (
               <Tree<TreeNode>
                 style={{ background: 'transparent' }}
@@ -286,15 +329,21 @@ function Shell() {
                     : {
                         icon: false,
                         nodeDraggable: (node) =>
-                          (node as unknown as TreeNode).type === 'connection',
+                          ['connection', 'group'].includes((node as unknown as TreeNode).type),
                       }
                 }
+                onDragStart={({ node }) => {
+                  draggedConnection.current = node.connectionId;
+                }}
+                onDragEnd={() => {
+                  draggedConnection.current = undefined;
+                }}
                 allowDrop={({ dragNode, dropNode, dropPosition }) =>
                   !m.organizationSaving &&
                   dragNode.type === 'connection' &&
                   dragNode.key !== dropNode.key &&
                   (dropNode.type === 'group'
-                    ? true
+                    ? dropPosition === 0
                     : dropNode.type === 'connection' && dropPosition !== 0)
                 }
                 onDrop={(info) => {
@@ -375,6 +424,33 @@ function Shell() {
                         node.type === 'connection' ? node.connectionId : undefined
                       }
                       data-group-id={node.groupId}
+                      onDragOver={
+                        node.type === 'group'
+                          ? (event) => {
+                              if (!draggedConnection.current || m.organizationSaving) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }
+                          : undefined
+                      }
+                      onDrop={
+                        node.type === 'group'
+                          ? (event) => {
+                              const connectionId = draggedConnection.current;
+                              if (!connectionId || !node.groupId || m.organizationSaving) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              draggedConnection.current = undefined;
+                              void c.moveConnection(
+                                connectionId,
+                                node.groupId,
+                                'last',
+                                undefined,
+                                true,
+                              );
+                            }
+                          : undefined
+                      }
                     >
                       {node.title}
                     </span>
