@@ -24,6 +24,40 @@ export function normalizeOrganization(state: State): State {
   return { ...state, connectionGroups: groups.sort((a, b) => a.sortOrder - b.sortOrder) };
 }
 
+/** Same group and member order as the sidebar, including legacy groups. */
+export function organizedConnections(state: State) {
+  return normalizeOrganization(state).connectionGroups.flatMap((group) =>
+    orderedConnections(state.connections.filter((c) => connectionGroupName(c) === group.name)),
+  );
+}
+
+export function groupDropPlacement(input: {
+  organizationSaving: boolean;
+  dragNode: { type?: string; groupId?: string };
+  dropNode: { type?: string; groupId?: string; pos?: string };
+  dropToGap: boolean;
+  dropPosition: number;
+}) {
+  const { dragNode, dropNode } = input;
+  if (
+    input.organizationSaving ||
+    !input.dropToGap ||
+    dragNode.type !== 'group' ||
+    dropNode.type !== 'group' ||
+    !dragNode.groupId ||
+    !dropNode.groupId ||
+    dragNode.groupId === dropNode.groupId
+  )
+    return null;
+  const position = input.dropPosition - Number((dropNode.pos || '').split('-').at(-1));
+  if (!position) return null;
+  return {
+    groupId: dragNode.groupId,
+    anchorGroupId: dropNode.groupId,
+    placement: position < 0 ? ('before' as const) : ('after' as const),
+  };
+}
+
 export function portFromText(text: string): number {
   if (!/^\d+$/.test(text)) return 0;
   const value = Number(text);

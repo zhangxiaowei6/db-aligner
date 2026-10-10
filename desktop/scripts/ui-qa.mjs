@@ -85,17 +85,26 @@ async function organizationQA(browser, theme) {
       .locator('.sidebar-label')
       .getByRole('button', { name: '数据库连接', exact: true })
       .click();
-    await page.getByRole('button', { name: '编辑分组', exact: true }).click();
-    const manager = page.getByRole('dialog', { name: '编辑分组', exact: true });
-    assert.equal(await manager.locator('.anticon-edit').count(), 2);
-    await modalSettled(page);
-    await shot(page, `group-edit-${theme}`);
-    await manager.getByRole('button', { name: '新增分组', exact: true }).click();
-    await manager.getByRole('textbox', { name: '分组名称', exact: true }).fill('QA 空分组');
-    await manager.getByRole('button', { name: '保存分组', exact: true }).click();
-    await manager.waitFor({ state: 'hidden' });
+    assert.equal(await page.getByRole('button', { name: '编辑分组', exact: true }).count(), 0);
     const groupLabel = (id) =>
       page.locator(`.tree-label[data-group-id="${id}"]:not([data-connection-id])`);
+    await groupLabel('preview-source-group').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '编辑分组', exact: true }).click();
+    const manager = page.getByRole('dialog', { name: '编辑分组', exact: true });
+    assert.equal(await manager.getByRole('textbox').count(), 1);
+    await modalSettled(page);
+    assert.equal(await manager.getByRole('textbox').inputValue(), '测试环境');
+    await shot(page, `group-edit-${theme}`);
+    await manager.getByRole('button', { name: /取\s*消/ }).click();
+    await manager.waitFor({ state: 'hidden' });
+    await groupLabel('preview-source-group').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '新增分组', exact: true }).click();
+    const creator = page.getByRole('dialog', { name: '新增分组', exact: true });
+    await modalSettled(page);
+    await creator.getByRole('textbox', { name: '分组名称', exact: true }).fill('QA 空分组');
+    await shot(page, `group-create-${theme}`);
+    await creator.getByRole('button', { name: /^保\s*存$/ }).click();
+    await creator.waitFor({ state: 'hidden' });
     const connectionLabel = (id) => page.locator(`.tree-label[data-connection-id="${id}"]`);
     const treeRow = (label) => page.getByRole('treeitem').filter({ has: label });
     for (const id of ['preview-source-group', 'preview-target-group']) {
@@ -112,6 +121,9 @@ async function organizationQA(browser, theme) {
     await page.mouse.click(treeBounds.x + 6, treeBounds.y + treeBounds.height - 6);
     assert.equal(await page.locator('.ant-tree-treenode-selected').count(), 0);
     async function startDrag(label, target, fraction = 0.5) {
+      // Persisting the preceding move temporarily disables native dragging.
+      await label.locator('xpath=ancestor::*[@draggable="true"][1]').waitFor();
+      await page.locator('.ant-tree-treenode-motion').waitFor({ state: 'detached' });
       const sourceBounds = await label.boundingBox();
       const destinationBounds = await treeRow(target).boundingBox();
       await page.mouse.move(
@@ -136,6 +148,33 @@ async function organizationQA(browser, theme) {
       assert.equal(await page.locator('.ant-tree-treenode.dragging').count(), 1);
       assert.equal(await page.locator('.ant-tree-treenode-selected').count(), 0);
       assert((await page.locator('.ant-tree-drop-indicator').count()) <= 1);
+      const indicator = page.locator('.ant-tree-drop-indicator');
+      if (await indicator.count()) {
+        const visibleLine = await indicator.evaluate((el) => {
+          const rect = el.getBoundingClientRect();
+          let top = rect.top,
+            bottom = rect.bottom,
+            left = rect.left,
+            right = rect.right;
+          for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            const bounds = parent.getBoundingClientRect();
+            if (style.overflowY !== 'visible') {
+              top = Math.max(top, bounds.top);
+              bottom = Math.min(bottom, bounds.bottom);
+            }
+            if (style.overflowX !== 'visible') {
+              left = Math.max(left, bounds.left);
+              right = Math.min(right, bounds.right);
+            }
+          }
+          return { width: right - left, height: bottom - top, totalWidth: rect.width };
+        });
+        assert(
+          visibleLine.width > 80 && visibleLine.height >= 1.5,
+          `drop line clipped: ${JSON.stringify(visibleLine)}`,
+        );
+      }
     }
     async function cleared() {
       await page.waitForFunction(
@@ -145,16 +184,50 @@ async function organizationQA(browser, theme) {
           ),
       );
     }
+    const cursorLabel = connectionLabel('test');
+    const cursorBounds = await cursorLabel.boundingBox();
+    await page.mouse.move(
+      cursorBounds.x + cursorBounds.width / 2,
+      cursorBounds.y + cursorBounds.height / 2,
+    );
+    assert.equal(await cursorLabel.evaluate((el) => getComputedStyle(el).cursor), 'pointer');
+    await page.mouse.down();
+    await page.waitForTimeout(150);
+    assert.equal(await cursorLabel.getAttribute('data-drag-ready'), null);
+    assert.equal(await cursorLabel.evaluate((el) => getComputedStyle(el).cursor), 'pointer');
+    await page.mouse.up();
+    await page.mouse.down();
+    await page.waitForTimeout(450);
+    assert.equal(await cursorLabel.getAttribute('data-drag-ready'), 'true');
+    assert.equal(await cursorLabel.evaluate((el) => getComputedStyle(el).cursor), 'grab');
+    await shot(page, `tree-long-press-${theme}`);
+    await page.mouse.up();
+    assert.equal(await cursorLabel.getAttribute('data-drag-ready'), null);
+    report.browser.push({
+      check: 'tree-pointer-short-click-400ms-long-press-and-release',
+      theme,
+      passed: true,
+    });
     await startDrag(connectionLabel('test'), groupLabel('preview-target-group'));
     await shot(page, `tree-drag-${theme}`);
     await page.mouse.up();
     await cleared();
+    await page
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '编辑连接 测试服务器', exact: true }) })
+      .getByText('目标环境', { exact: true })
+      .waitFor();
+    if (
+      (await treeRow(groupLabel('preview-target-group')).getAttribute('aria-expanded')) !== 'true'
+    )
+      await treeRow(groupLabel('preview-target-group')).locator('.ant-tree-switcher').click();
     await page.waitForFunction(
       () =>
         document.querySelector('.tree-label[data-connection-id="test"]')?.dataset.groupId ===
         'preview-target-group',
     );
     await startDrag(connectionLabel('test'), connectionLabel('target0'), 0.08);
+    await shot(page, `tree-drop-before-${theme}`);
     await page.mouse.up();
     await cleared();
     await page.waitForFunction(
@@ -179,9 +252,28 @@ async function organizationQA(browser, theme) {
       await connectionLabel('test').getAttribute('data-group-id'),
       'preview-target-group',
     );
-    await startDrag(groupLabel('preview-source-group'), groupLabel('preview-target-group'));
+    // Collapse group children so both sibling group gaps are unambiguous.
+    for (const id of ['preview-source-group', 'preview-target-group']) {
+      if ((await treeRow(groupLabel(id)).getAttribute('aria-expanded')) === 'true')
+        await treeRow(groupLabel(id)).locator('.ant-tree-switcher').click();
+    }
+    assert.equal(
+      await treeRow(groupLabel('preview-target-group')).evaluate(
+        (el) => getComputedStyle(el).cursor,
+      ),
+      'pointer',
+    );
+    await startDrag(groupLabel('preview-target-group'), groupLabel('preview-source-group'), 0.08);
+    await shot(page, `group-sort-${theme}`);
     await page.mouse.up();
     await cleared();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.tree-label[data-node-type="group"]')?.dataset.groupId ===
+        'preview-target-group',
+    );
+    await treeRow(groupLabel('preview-target-group')).locator('.ant-tree-switcher').click();
+    await connectionLabel('test').waitFor();
     const empty = page.locator('.tree-label').filter({ hasText: /^QA 空分组$/ });
     const emptyId = await empty.getAttribute('data-group-id');
     await startDrag(connectionLabel('test'), empty);
@@ -224,6 +316,24 @@ async function organizationQA(browser, theme) {
     await page.keyboard.press('Escape');
     await editor.getByRole('button', { name: /取\s*消/ }).click();
     report.browser.push({ check: 'group-edit-icon-and-dropdown-create', theme, passed: true });
+    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByRole('combobox', { name: '来源数据库', exact: true }).click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().waitFor();
+    assert.deepEqual(
+      await page.locator('.ant-select-dropdown:visible .ant-select-item-option').allTextContents(),
+      [
+        '目标服务器 1 / shop_a',
+        '目标服务器 2 / shop_b',
+        '目标服务器 3 / shop_c',
+        '测试服务器 / shop_test',
+      ],
+    );
+    await page.keyboard.press('Escape');
+    report.browser.push({
+      check: 'database-options-follow-persisted-group-and-member-order',
+      theme,
+      passed: true,
+    });
   } catch (error) {
     await page.screenshot({
       path: path.join(repo, '.local-data', 'organization-qa-failure.png'),
@@ -231,6 +341,382 @@ async function organizationQA(browser, theme) {
     });
     await fs.writeFile(
       path.join(repo, '.local-data', 'organization-qa-failure.txt'),
+      await page.locator('body').innerText(),
+    );
+    throw error;
+  } finally {
+    await context.close();
+  }
+}
+async function connectionActionsQA(browser, theme) {
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    const group = page.locator('.tree-label[data-node-type="group"]').first();
+    async function menuCheck(label, type) {
+      await label.click({ button: 'right' });
+      const anchor = {
+        group: '编辑分组',
+        connection: '编辑连接',
+        database: '导出表结构…',
+        table: '查看表结构',
+      }[type];
+      const menu = page
+        .locator('.ant-dropdown:visible')
+        .filter({ has: page.getByRole('menuitem', { name: anchor, exact: true }) })
+        .last();
+      await menu.waitFor();
+      const items = menu.locator('.ant-dropdown-menu-item:not(.ant-dropdown-menu-item-divider)');
+      const icons = await items.evaluateAll((operations) =>
+        operations.map((item) => ({
+          name: item.textContent,
+          hasIcon: !!item.querySelector('.ant-dropdown-menu-item-icon'),
+        })),
+      );
+      assert.equal(icons.length, { group: 4, connection: 5, database: 3, table: 4 }[type]);
+      for (const item of icons) assert(item.hasIcon, `${type}: missing menu icon on ${item.name}`);
+      await shot(page, `context-${type}-${theme}`);
+      await page.keyboard.press('Escape');
+      await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).click();
+      report.browser.push({ check: `context-menu-icons-${type}`, theme, passed: true });
+    }
+    await menuCheck(group, 'group');
+    const rowFor = (label) => label.locator('xpath=ancestor::*[@role="treeitem"][1]');
+    await rowFor(group).locator('.ant-tree-switcher').click();
+    const connection = page.locator('.tree-label[data-connection-id="test"]');
+    await connection.waitFor();
+    await menuCheck(connection, 'connection');
+    await rowFor(connection).locator('.ant-tree-switcher').click();
+    const database = page.locator('.tree-label[data-node-type="database"]').first();
+    await database.waitFor();
+    await menuCheck(database, 'database');
+    await rowFor(database).locator('.ant-tree-switcher').click();
+    const table = page.locator('.tree-label[data-node-type="table"]').first();
+    await table.waitFor();
+    await menuCheck(table, 'table');
+    await page
+      .locator('.sidebar-label')
+      .getByRole('button', { name: '数据库连接', exact: true })
+      .click();
+    assert.equal(await page.getByRole('button', { name: '编辑分组', exact: true }).count(), 0);
+    const row = page
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '编辑连接 测试服务器', exact: true }) });
+    const test = row.getByRole('button', { name: '测试连接 测试服务器', exact: true });
+    assert.deepEqual(
+      (await row.getByRole('button').allTextContents()).map((text) => text.replace(/\s/g, '')),
+      ['测试连接', '编辑', '删除'],
+    );
+    assert.equal(await row.getByRole('button', { name: /更换分组/ }).count(), 0);
+    async function layoutCheck(state) {
+      const layout = await row.locator('.connection-actions-scroll').evaluate((el) => {
+        const buttons = [...el.querySelectorAll('button')].map((button) =>
+          button.getBoundingClientRect(),
+        );
+        const cell = el.closest('td').getBoundingClientRect();
+        const scroll = el.getBoundingClientRect();
+        return {
+          tops: buttons.map((b) => b.top),
+          bottom: Math.max(...buttons.map((b) => b.bottom)),
+          scrollBottom: scroll.bottom,
+          clippedInsideCell: scroll.left >= cell.left && scroll.right <= cell.right,
+          overflow: el.scrollWidth > el.clientWidth,
+        };
+      });
+      assert(Math.max(...layout.tops) - Math.min(...layout.tops) <= 1, `${state}: buttons wrapped`);
+      assert(
+        layout.bottom <= layout.scrollBottom + 1 && layout.clippedInsideCell,
+        `${state}: buttons overlap`,
+      );
+      report.browser.push({ check: `connection-actions-${state}`, theme, ...layout });
+    }
+    await test.click();
+    await layoutCheck('testing');
+    await row.locator('.connection-test-button.test-success').waitFor();
+    assert.equal(await row.locator('.connection-test-feedback').count(), 0);
+    assert.match(
+      await row.locator('.visually-hidden[role="status"]').innerText(),
+      /连接成功.*8.4.8/,
+    );
+    await page.mouse.move(20, 20);
+    await test.focus();
+    await page.getByRole('tooltip').filter({ hasText: '连接成功' }).waitFor();
+    assert.match(await page.getByRole('tooltip').innerText(), /8.4.8.*虚构预览数据.*点击再次测试/);
+    await test.blur();
+    await test.hover();
+    await page.getByRole('tooltip').waitFor();
+    await shot(page, `connection-test-tooltip-${theme}`);
+    await page.mouse.move(20, 20);
+    for (const width of [1488, 1180, 900]) {
+      await page.setViewportSize({ width, height: 760 });
+      await layoutCheck(`success-${width}`);
+      assert(
+        await row
+          .locator('.connection-actions-scroll')
+          .evaluate((el) => el.scrollWidth <= el.clientWidth),
+        `unexpected action scrollbar at ${width}`,
+      );
+    }
+    const resize = page.getByRole('separator', { name: '调整操作宽度', exact: true });
+    await resize.focus();
+    for (let i = 0; i < 25; i++) await resize.press('ArrowLeft');
+    await layoutCheck('narrow-column');
+    assert(
+      await row
+        .locator('.connection-actions-scroll')
+        .evaluate((el) => el.scrollWidth > el.clientWidth),
+    );
+    await row.locator('.connection-actions-scroll').evaluate((el) => {
+      el.scrollLeft = el.scrollWidth;
+    });
+    await row.getByRole('button', { name: '编辑连接 测试服务器', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: '编辑连接', exact: true });
+    await modalSettled(page);
+    await editor.getByLabel('密码', { exact: true }).fill('preview-fail');
+    await editor.getByRole('button', { name: '保存连接', exact: true }).click();
+    await editor.waitFor({ state: 'hidden' });
+    // Restore a readable column before checking the complete failure message.
+    await resize.focus();
+    for (let i = 0; i < 27; i++) await resize.press('ArrowRight');
+    await test.click();
+    assert.equal(await row.locator('.test-success').count(), 0);
+    await row.locator('.connection-test-feedback.test-error').waitFor();
+    assert.match(
+      await row.locator('.connection-test-feedback').innerText(),
+      /连接失败.*密码验证失败/,
+    );
+    await layoutCheck('failure');
+    await shot(page, `connection-test-failure-${theme}`);
+    await page.setViewportSize({ width: 1488, height: 1056 });
+    await page.getByRole('button', { name: '管理工作区', exact: true }).click();
+    await page.getByRole('heading', { level: 1, name: '工作区管理', exact: true }).waitFor();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    const workspaceRow = page
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '编辑工作区 跨境电商项目', exact: true }) });
+    await workspaceRow
+      .getByRole('button', { name: '编辑工作区 跨境电商项目', exact: true })
+      .click();
+    const workspaceEditor = page.getByRole('dialog', { name: '编辑工作区', exact: true });
+    await modalSettled(page);
+    assert.equal(await workspaceEditor.getByRole('checkbox').count(), 0);
+    await workspaceEditor.getByRole('combobox', { name: '关联连接', exact: true }).click();
+    await page
+      .locator('.ant-select-dropdown:visible .ant-select-item-option')
+      .filter({ hasText: '目标服务器 1' })
+      .click();
+    await page.keyboard.press('Escape');
+    assert.equal(await workspaceEditor.getByRole('button', { name: /删\s*除/ }).count(), 0);
+    await workspaceEditor.getByLabel('工作区名称', { exact: true }).fill('未保存草稿');
+    await shot(page, `workspace-edit-${theme}`);
+    await workspaceEditor.getByRole('button', { name: /取\s*消/ }).click();
+    await workspaceEditor.waitFor({ state: 'hidden' });
+    await workspaceRow.getByText('跨境电商项目', { exact: true }).dblclick();
+    assert.equal(
+      await workspaceEditor.getByLabel('工作区名称', { exact: true }).inputValue(),
+      '跨境电商项目',
+    );
+    await workspaceEditor.getByLabel('工作区名称', { exact: true }).fill('QA 工作区');
+    await workspaceEditor.getByRole('button', { name: '保存工作区', exact: true }).click();
+    await workspaceEditor.waitFor({ state: 'hidden' });
+    await page.getByRole('cell', { name: 'QA 工作区', exact: true }).waitFor();
+    await shot(page, `workspace-list-${theme}`);
+    await page.getByRole('button', { name: /新建工作区/ }).click();
+    const newWorkspace = page.getByRole('dialog', { name: '新建工作区', exact: true });
+    await modalSettled(page);
+    assert.equal(await newWorkspace.getByLabel('工作区名称', { exact: true }).inputValue(), '');
+    await newWorkspace.getByRole('button', { name: /取\s*消/ }).click();
+    report.browser.push({
+      check: 'workspace-full-width-list-edit-double-click-save-cancel-and-create',
+      theme,
+      passed: true,
+    });
+    await page.getByRole('menuitem', { name: /同步模板/ }).click();
+    await page.getByRole('heading', { level: 1, name: '同步模板', exact: true }).waitFor();
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    const templateRow = page
+      .getByRole('row')
+      .filter({ has: page.getByRole('button', { name: '编辑模板 基础字典与菜单', exact: true }) });
+    await templateRow.getByRole('button', { name: '编辑模板 基础字典与菜单', exact: true }).click();
+    const templateEditor = page.getByRole('dialog', { name: '编辑同步模板', exact: true });
+    await modalSettled(page);
+    assert.equal(await templateEditor.getByRole('button', { name: /删\s*除/ }).count(), 0);
+    await templateEditor.getByLabel('模板名称', { exact: true }).fill('未保存模板');
+    await shot(page, `template-edit-${theme}`);
+    const bounds = await templateEditor
+      .getByRole('button', { name: '保存模板', exact: true })
+      .boundingBox();
+    assert(bounds.y + bounds.height < 1056);
+    await templateEditor.getByRole('button', { name: /取\s*消/ }).click();
+    await templateEditor.waitFor({ state: 'hidden' });
+    await templateRow.getByText('基础字典与菜单', { exact: true }).dblclick();
+    assert.equal(
+      await templateEditor.getByLabel('模板名称', { exact: true }).inputValue(),
+      '基础字典与菜单',
+    );
+    await templateEditor.getByLabel('模板名称', { exact: true }).fill('QA 保存模板');
+    await templateEditor.getByRole('button', { name: '保存模板', exact: true }).click();
+    await templateEditor.waitFor({ state: 'hidden' });
+    await page.getByRole('cell', { name: 'QA 保存模板', exact: true }).waitFor();
+    await shot(page, `template-list-${theme}`);
+    await page.getByRole('button', { name: /新建模板/ }).click();
+    const templateCreator = page.getByRole('dialog', { name: '新建同步模板', exact: true });
+    assert.equal(await templateCreator.getByLabel('模板名称', { exact: true }).inputValue(), '');
+    await templateCreator.getByRole('button', { name: /取\s*消/ }).click();
+    report.browser.push({
+      check: 'template-list-edit-double-click-save-cancel-create-and-external-delete',
+      theme,
+      passed: true,
+    });
+  } finally {
+    await context.close();
+  }
+}
+async function refreshAndTemplateQA(browser, theme) {
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    const refresh = page.getByRole('button', { name: '刷新数据库', exact: true });
+    for (let i = 0; i < 2; i++) {
+      await refresh.click();
+      await page.waitForFunction(() =>
+        document
+          .querySelector('.bottom-gap .connection-test-button')
+          ?.classList.contains('ant-btn-loading'),
+      );
+      assert.equal(await refresh.locator('.anticon-check').count(), 0);
+      await refresh.locator('.anticon-check').waitFor();
+      assert.equal(await refresh.isEnabled(), true);
+    }
+    await refresh.hover();
+    await page.getByRole('tooltip').filter({ hasText: '刷新数据库成功' }).waitFor();
+    await shot(page, `refresh-success-${theme}`);
+    await page.mouse.move(20, 20);
+    await refresh.focus();
+    await page.getByRole('tooltip').filter({ hasText: '刷新数据库成功' }).waitFor();
+    await refresh.blur();
+    await page.mouse.move(20, 20);
+    const targets = page.getByRole('button', { name: '刷新目标表清单', exact: true });
+    await targets.click();
+    await targets.locator('.anticon-check').waitFor();
+    await targets.click();
+    await targets.locator('.anticon-check').waitFor();
+    assert.equal(
+      await page
+        .locator('.scope-template-toolbar')
+        .getByRole('button', { name: '将当前范围保存为模板', exact: true })
+        .count(),
+      0,
+    );
+    await page.getByRole('button', { name: '将当前范围保存为模板', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: '新建同步模板', exact: true });
+    await modalSettled(page);
+    await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
+    await shot(page, `template-save-in-scope-${theme}`);
+    await editor.getByRole('button', { name: /取\s*消/ }).click();
+    await editor.waitFor({ state: 'hidden' });
+    await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
+    await page.getByRole('button', { name: '将当前范围保存为模板', exact: true }).click();
+    await modalSettled(page);
+    await editor.getByLabel('模板名称', { exact: true }).fill('QA 第二模板');
+    await editor.getByRole('button', { name: '保存模板', exact: true }).click();
+    await editor.waitFor({ state: 'hidden' });
+    await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
+    report.browser.push({
+      check: 'save-current-scope-template-without-navigation',
+      theme,
+      passed: true,
+    });
+    const choose = page.getByRole('combobox', { name: '选择同步模板', exact: true });
+    await choose.click();
+    await page
+      .locator('.ant-select-dropdown:visible .ant-select-item-option')
+      .filter({ hasText: 'QA 第二模板' })
+      .click();
+    assert.equal(await page.getByText('已应用：QA 第二模板', { exact: true }).count(), 0);
+    const apply = page.getByRole('button', { name: '应用模板', exact: true });
+    await apply.click();
+    await page.getByText('已应用：QA 第二模板', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '再次应用模板', exact: true }).waitFor();
+    for (const width of [1904, 1488, 1180, 900]) {
+      await page.setViewportSize({ width, height: 1056 });
+      const geometry = await page.locator('.scope-template-toolbar').evaluate((toolbar) => {
+        const select = toolbar.querySelector('.ant-select').getBoundingClientRect();
+        const actions = [...toolbar.querySelectorAll('.scope-template-actions button')].map(
+          (button) => button.getBoundingClientRect(),
+        );
+        return {
+          selectWidth: select.width,
+          centers: actions.map((button) =>
+            button.top < select.bottom && button.bottom > select.top
+              ? Math.abs(button.top + button.height / 2 - select.top - select.height / 2)
+              : 0,
+          ),
+          overlap: actions.some(
+            (button) => button.left < select.right && button.top < select.bottom,
+          ),
+        };
+      });
+      assert(geometry.selectWidth >= 220);
+      assert(
+        geometry.centers.every((delta) => delta <= 1),
+        JSON.stringify(geometry),
+      );
+      assert.equal(geometry.overlap, false);
+      report.browser.push({
+        check: 'template-toolbar-vertical-alignment',
+        theme,
+        width,
+        passed: true,
+      });
+    }
+    await page.setViewportSize({ width: 1488, height: 1056 });
+    await shot(page, `template-apply-${theme}`);
+    await page
+      .locator('.sidebar-label')
+      .getByRole('button', { name: '数据库连接', exact: true })
+      .click();
+    await page.getByRole('button', { name: '编辑连接 测试服务器', exact: true }).click();
+    const connection = page.getByRole('dialog', { name: '编辑连接', exact: true });
+    await modalSettled(page);
+    await connection.getByLabel('密码', { exact: true }).fill('preview-fail');
+    await connection.getByRole('button', { name: '保存连接', exact: true }).click();
+    await connection.waitFor({ state: 'hidden' });
+    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.waitForFunction(() => !document.querySelector('.bottom-gap .ant-btn-loading'));
+    for (let i = 0; i < 2; i++) {
+      await refresh.click();
+      await refresh.locator('.anticon-close').waitFor();
+      assert.equal(await refresh.isEnabled(), true);
+    }
+    await refresh.hover();
+    await page.getByRole('tooltip').filter({ hasText: '密码验证失败' }).waitFor();
+    await shot(page, `refresh-failure-${theme}`);
+    report.browser.push({
+      check: 'refresh-success-and-failure-repeat-loading-hover-focus-and-searchable-template-apply',
+      theme,
+      passed: true,
+    });
+  } catch (error) {
+    await page.screenshot({
+      path: path.join(repo, '.local-data', 'refresh-qa-failure.png'),
+      animations: 'disabled',
+    });
+    await fs.writeFile(
+      path.join(repo, '.local-data', 'refresh-qa-failure.txt'),
       await page.locator('body').innerText(),
     );
     throw error;
@@ -453,11 +939,20 @@ async function browserQA() {
       report.browser.push({ check: 'schema-export-default-and-drop-preview', passed: true });
       await page.getByRole('menuitem', { name: /同步模板/ }).click();
       await page.getByRole('heading', { level: 1, name: '同步模板', exact: true }).waitFor();
+      await page.getByRole('button', { name: '编辑模板 基础字典与菜单', exact: true }).click();
       const templateName = page.getByRole('textbox', { name: '模板名称' });
       await templateName.fill('QA 模板草稿');
-      await page.locator('.template-card').first().click();
+      await page
+        .getByRole('dialog', { name: '编辑同步模板' })
+        .getByRole('button', { name: /取\s*消/ })
+        .click();
+      await page.getByRole('cell', { name: '基础字典与菜单', exact: true }).dblclick();
       assert.equal(await templateName.inputValue(), '基础字典与菜单');
-      await page.getByRole('button', { name: '应用模板', exact: true }).click();
+      await page
+        .getByRole('dialog', { name: '编辑同步模板' })
+        .getByRole('button', { name: /取\s*消/ })
+        .click();
+      await page.getByRole('button', { name: '应用模板 基础字典与菜单', exact: true }).click();
       await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
       await page.getByText('目标缺失', { exact: true }).first().waitFor();
       report.browser.push({ check: 'missing-target-scope-indication', passed: true });
@@ -570,6 +1065,8 @@ async function browserQA() {
         .click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('button', { name: '管理工作区', exact: true }).click();
+      assert.equal(await page.getByRole('dialog').count(), 0);
+      await page.getByRole('button', { name: '编辑工作区 跨境电商项目', exact: true }).click();
       await page.getByRole('textbox', { name: '工作区名称' }).fill('QA 项目');
       await page.getByRole('button', { name: '保存工作区', exact: true }).click();
       await page.getByRole('cell', { name: 'QA 项目', exact: true }).waitFor();
@@ -603,6 +1100,8 @@ async function browserQA() {
       await context.close();
     }
     for (const theme of ['light', 'dark']) await organizationQA(browser, theme);
+    for (const theme of ['light', 'dark']) await connectionActionsQA(browser, theme);
+    for (const theme of ['light', 'dark']) await refreshAndTemplateQA(browser, theme);
   } catch (error) {
     report.errors.push(String(error));
     if (lastPage && !lastPage.isClosed()) {

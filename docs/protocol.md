@@ -15,6 +15,7 @@
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
 | `ping`, `state.load`                                                           | 协议版本、实体及记录摘要                                                             |
 | `entity.save`, `entity.delete`                                                 | 工作区、连接、模板、设置                                                             |
+| `connectionGroups.save`, `connectionGroups.move`, `connections.move`           | 分组命名、同级分组排序和连接移动；本地配置事务保存                                   |
 | `connections.test`, `databases.list`, `tables.list`, `table.get`               | 真实 JDBC 与元数据                                                                   |
 | `imports.parse`                                                                | 三种会话格式；主进程截留密码后返回解析结果                                           |
 | `sync.compare`                                                                 | `workspaceId`, `source`, `targets`, `tables` → `SyncPlan`                            |
@@ -47,3 +48,5 @@
 Electron 另外提供原生选文件、选目录、导出路径、打开资料目录、复制和窗口操作。文件导入使用短期 token 保持内容在主进程；桥接只允许已定义的方法。所有界面参数在发送前转换为普通 JSON 对象，编辑草稿与已保存模型分别持有独立副本。
 
 外观接口由 Electron 主进程处理，不进入 Java 引擎：`appearance.get` 返回 `{themeMode,resolvedTheme}`；`appearance.set` 接受 `themeMode: light | dark | system`，原子保存本机偏好并返回生效外观。系统外观变化发送 `{event: appearance-changed, appearance}`。窗口关闭发送 `window-close-request`；渲染进程检查任务并响应 `close-confirmed` 或 `close-cancelled`，重复请求只显示一次确认。`renderer-ready` 在关闭监听订阅后发送；渲染进程未就绪时使用原生关闭确认。
+
+`connectionGroups.save` 接受可选 `id` 和必填 `name`，去除首尾空格并校验非空及重名；编辑时按原名称关联更新连接，新建追加到末尾，返回 `{id,name,sortOrder}`。`connectionGroups.move` 接受 `groupId`、`anchorGroupId`、`placement: before | after`，校验两个已存在且不同的同级分组，在一个 SQLite 事务中重排并保存连续 `sortOrder`，返回 `{ok:true}`；不改动连接、凭据或工作区关联。`connections.move` 接受 `connectionId`、目标 `groupId`、`placement: before | after | last`；前后插入还需 `anchorConnectionId`，锚点必须位于目标分组且不能是自身。分组内连接顺序及跨组移动均在事务中保存。`state.load` 的 `connectionGroups` 按 `sortOrder` 返回；客户端数据库选项复用分组和组内连接顺序。配置导出／导入继续兼容缺少排序字段的旧配置。

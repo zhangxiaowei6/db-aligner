@@ -1,5 +1,6 @@
+import { AsyncButton as Button, RefreshButton } from './components/AsyncButton';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
-import { Alert, Breadcrumb, Button, Dropdown, Empty, Menu, Select, Space, Spin, Tree } from 'antd';
+import { Alert, Breadcrumb, Dropdown, Empty, Menu, Select, Space, Spin, Tooltip, Tree } from 'antd';
 import {
   BookOutlined,
   ApiOutlined,
@@ -7,6 +8,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   DatabaseOutlined,
+  DeleteOutlined,
   EditOutlined,
   FileOutlined,
   FolderOutlined,
@@ -28,7 +30,13 @@ import appLogo from '../build/icon.png';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
 import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
-import { connectionGroupName, dropPlacement, orderedConnections } from './connection-organization';
+import { useTreeDragGesture } from './components/useTreeDragGesture';
+import {
+  connectionGroupName,
+  dropPlacement,
+  groupDropPlacement,
+  orderedConnections,
+} from './connection-organization';
 
 function Shell() {
   const [sidebarWidth, setSidebarWidth] = useState(() => (window.innerWidth <= 1300 ? 256 : 280));
@@ -38,6 +46,7 @@ function Shell() {
     setSidebarWidth(Math.max(240, Math.min(640, window.innerWidth * 0.45, width)));
   const c = useController();
   const { m } = c;
+  const treeGesture = useTreeDragGesture(m.organizationSaving, m.workspaceId);
   // 拖拽状态完全由 antd/rc-tree 内部管理：不在 capture 层拦截或 preventDefault，
   // 否则 dragend 永远不会触发，rc-tree 的拖拽高亮会永久残留（看起来像无法取消的选中）。
   useEffect(() => setSelectedTreeKeys([]), [m.workspaceId]);
@@ -81,13 +90,15 @@ function Shell() {
     if (node.type === 'group')
       return {
         items: [
-          { key: 'new', label: '新建连接', icon: <PlusOutlined /> },
-          { key: 'import', label: '导入连接', icon: <FileOutlined /> },
-          { key: 'group-edit', label: '编辑分组', icon: <EditOutlined /> },
+          { key: 'new', label: '新建连接', icon: <PlusOutlined aria-hidden /> },
+          { key: 'import', label: '导入连接', icon: <FileOutlined aria-hidden /> },
+          { key: 'group-edit', label: '编辑分组', icon: <EditOutlined aria-hidden /> },
+          { key: 'group-new', label: '新增分组', icon: <PlusOutlined aria-hidden /> },
         ],
         onClick: ({ key }: { key: string }) => {
           if (key === 'group-edit')
             c.editGroup(m.state.connectionGroups.find((group) => group.id === node.groupId));
+          else if (key === 'group-new') c.editGroup();
           else if (key === 'new') c.editConnection(undefined, node.title);
           else {
             c.set('importGroup', node.title);
@@ -97,12 +108,14 @@ function Shell() {
       };
     if (node.type === 'connection') {
       const test = m.connectionTests[node.connectionId || ''];
+      const refresh = m.refreshResults['connection:' + node.connectionId];
       return {
         items: [
-          { key: 'edit', label: '编辑连接' },
-          { key: 'group', label: '更换分组' },
+          { key: 'edit', label: '编辑连接', icon: <EditOutlined aria-hidden /> },
+          { key: 'group', label: '更换分组', icon: <FolderOutlined aria-hidden /> },
           {
             key: 'test',
+            icon: <ApiOutlined aria-hidden />,
             disabled: test?.status === 'testing',
             label: (
               <Space>
@@ -117,8 +130,37 @@ function Shell() {
               </Space>
             ),
           },
-          { key: 'refresh', label: '刷新数据库', icon: <ReloadOutlined /> },
-          { key: 'delete', label: '删除连接', danger: true },
+          {
+            key: 'refresh',
+            label: (
+              <Tooltip
+                title={
+                  refresh
+                    ? `${refresh.message}${refresh.status === 'testing' ? '' : ' · 点击再次刷新'}`
+                    : '点击刷新'
+                }
+                trigger={['hover', 'focus']}
+              >
+                <Space
+                  className={refresh ? `refresh-menu-result test-${refresh.status}` : undefined}
+                >
+                  刷新数据库
+                  {refresh?.status === 'success' ? (
+                    <CheckOutlined aria-hidden />
+                  ) : refresh?.status === 'error' ? (
+                    <CloseOutlined aria-hidden />
+                  ) : null}
+                </Space>
+              </Tooltip>
+            ),
+            disabled: !!m.refreshing['connection:' + node.connectionId],
+            icon: m.refreshing['connection:' + node.connectionId] ? (
+              <LoadingOutlined aria-hidden />
+            ) : (
+              <ReloadOutlined aria-hidden />
+            ),
+          },
+          { key: 'delete', label: '删除连接', icon: <DeleteOutlined aria-hidden />, danger: true },
         ],
         onClick: ({ key }: { key: string }) => {
           const connection = connections.find((item) => item.id === node.connectionId);
@@ -134,14 +176,24 @@ function Shell() {
     const items = [
       ...(node.type === 'table'
         ? [
-            { key: 'view', label: '查看表结构', icon: <TableOutlined /> },
+            { key: 'view', label: '查看表结构', icon: <TableOutlined aria-hidden /> },
             { type: 'divider' as const },
           ]
         : []),
-      { key: 'structure', label: '同步表结构…', icon: <DatabaseOutlined />, disabled: comparing },
-      { key: 'data', label: '同步表数据…', icon: <TableOutlined />, disabled: comparing },
+      {
+        key: 'structure',
+        label: '同步表结构…',
+        icon: <DatabaseOutlined aria-hidden />,
+        disabled: comparing,
+      },
+      {
+        key: 'data',
+        label: '同步表数据…',
+        icon: <TableOutlined aria-hidden />,
+        disabled: comparing,
+      },
       { type: 'divider' as const },
-      { key: 'export', label: '导出表结构…', icon: <FileOutlined /> },
+      { key: 'export', label: '导出表结构…', icon: <FileOutlined aria-hidden /> },
     ];
     return {
       items,
@@ -223,8 +275,7 @@ function Shell() {
             { key: 'history', icon: <ClockCircleOutlined />, label: '同步历史' },
           ]}
           onClick={({ key }) => {
-            if (key === 'templates')
-              c.editTemplate(m.state.templates.find((t) => t.workspaceId === m.workspaceId));
+            if (key === 'templates') c.navigate('templates');
             else if (key === 'scope') c.navigate('scope');
             else c.navigate('history');
           }}
@@ -245,7 +296,7 @@ function Shell() {
               size="small"
               icon={<SettingOutlined />}
               aria-label="管理工作区"
-              onClick={() => c.editWorkspace(workspace)}
+              onClick={() => c.navigate('workspaces')}
             />
           </div>
           <Select
@@ -276,6 +327,10 @@ function Shell() {
           </div>
           <div
             className="tree-scroll"
+            onPointerDownCapture={treeGesture.onPointerDown}
+            onPointerMoveCapture={treeGesture.onPointerMove}
+            onPointerCancel={treeGesture.onPointerCancel}
+            onDragStartCapture={treeGesture.onDragStartCapture}
             onClick={(event) => {
               if (!(event.target as Element).closest('.ant-tree-treenode')) setSelectedTreeKeys([]);
             }}
@@ -298,17 +353,34 @@ function Shell() {
                       }
                 }
                 onDragStart={() => setSelectedTreeKeys([])}
-                onDragEnd={() => setSelectedTreeKeys([])}
+                onDragEnd={() => {
+                  treeGesture.release();
+                  setSelectedTreeKeys([]);
+                }}
                 allowDrop={({ dragNode, dropNode, dropPosition }) =>
                   !m.organizationSaving &&
-                  dragNode.type === 'connection' &&
                   dragNode.key !== dropNode.key &&
-                  (dropNode.type === 'group'
-                    ? dropPosition === 0
-                    : dropNode.type === 'connection' && dropPosition !== 0)
+                  (dragNode.type === 'group'
+                    ? dropNode.type === 'group' && dropPosition !== 0
+                    : dragNode.type === 'connection' &&
+                      (dropNode.type === 'group'
+                        ? dropPosition === 0
+                        : dropNode.type === 'connection' && dropPosition !== 0))
                 }
                 onDrop={(info) => {
+                  treeGesture.release();
                   setSelectedTreeKeys([]);
+                  if (info.dragNode.type === 'group') {
+                    const move = groupDropPlacement({
+                      organizationSaving: m.organizationSaving,
+                      dragNode: info.dragNode,
+                      dropNode: info.node,
+                      dropToGap: info.dropToGap,
+                      dropPosition: info.dropPosition,
+                    });
+                    if (move) void c.moveGroup(move.groupId, move.anchorGroupId, move.placement);
+                    return;
+                  }
                   // The tree maps the upper half of a group's first child to its parent.
                   // Use the actual hovered row so that this gap inserts before the first connection.
                   const hoveredRow = (info.event.target as Element).closest('.ant-tree-treenode');
@@ -359,7 +431,11 @@ function Shell() {
                   ) : node.type === 'table' ? (
                     <TableOutlined />
                   ) : node.type === 'connection' ? (
-                    <ApiOutlined />
+                    m.refreshing['connection:' + node.connectionId] ? (
+                      <LoadingOutlined aria-label="正在刷新数据库" />
+                    ) : (
+                      <ApiOutlined />
+                    )
                   ) : (
                     <DatabaseOutlined />
                   );
@@ -368,6 +444,9 @@ function Shell() {
                   const label = (
                     <span
                       className="tree-label"
+                      data-node-key={node.key}
+                      data-drag-ready={treeGesture.readyKey === node.key ? 'true' : undefined}
+                      data-node-type={node.type}
                       title={node.title}
                       data-connection-id={
                         node.type === 'connection' ? node.connectionId : undefined
@@ -441,9 +520,14 @@ function Shell() {
             showIcon
             title={m.engineError}
             action={
-              <Button size="small" onClick={() => void c.loadState()}>
+              <RefreshButton
+                size="small"
+                loading={!!m.refreshing.engine}
+                result={m.refreshResults.engine}
+                onClick={() => c.refreshEngine()}
+              >
                 重试连接引擎
-              </Button>
+              </RefreshButton>
             }
           />
         )}
@@ -490,12 +574,17 @@ function Shell() {
             <Space wrap>
               {m.page === 'table' && tab && (
                 <>
-                  <Button icon={<ReloadOutlined />} onClick={() => void c.refreshTable()}>
+                  <RefreshButton
+                    icon={<ReloadOutlined />}
+                    result={m.refreshResults['table:' + tab.id]}
+                    loading={!!m.refreshing['table:' + tab.id]}
+                    onClick={() => c.refreshTable()}
+                  >
                     刷新
-                  </Button>
+                  </RefreshButton>
                   <Button
                     onClick={() =>
-                      void c.beginExport({
+                      c.beginExport({
                         key: tab.id,
                         title: tab.table,
                         type: 'table',
@@ -517,25 +606,24 @@ function Shell() {
                   <Button
                     disabled={['RUNNING', 'QUEUED'].includes(m.detail.record.status)}
                     loading={!!m.busy}
-                    onClick={() => void c.auditRecord()}
+                    onClick={() => c.auditRecord()}
                   >
                     核验当前状态
                   </Button>
-                  <Button
-                    type="primary"
-                    onClick={() => void c.exportRecords([m.detail!.record.id])}
-                  >
+                  <Button type="primary" onClick={() => c.exportRecords([m.detail!.record.id])}>
                     导出完整脚本包
                   </Button>
                 </>
               )}
               {m.page === 'rollback' && m.rollback && (
-                <Button
+                <RefreshButton
                   icon={<ReloadOutlined />}
-                  onClick={() => void c.beginRollback(m.rollback!.recordId)}
+                  result={m.refreshResults.rollback}
+                  loading={!!m.refreshing.rollback}
+                  onClick={() => c.beginRollback(m.rollback!.recordId, true)}
                 >
                   重新校验
-                </Button>
+                </RefreshButton>
               )}
             </Space>
           </div>

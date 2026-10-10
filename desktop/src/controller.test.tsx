@@ -7,13 +7,14 @@ import { BusinessProvider, useController, type Controller } from './controller';
 import { dbOptions, initialModel, selection, type TreeNode } from './model';
 import { previewPlan, previewTable } from './preview';
 import { DiffPage, ScopePage } from './pages/Sync';
-import { ConnectionsPage, ImportPage } from './pages/Management';
+import { ConnectionsPage, ImportPage, WorkspacesPage, TemplatesPage } from './pages/Management';
 import { HistoryPage, RecordPage } from './pages/Records';
 import type { Appearance, State, SyncTemplate } from './types';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
 import { allStructureOptions } from './structure-options';
 import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
+import { DatabaseOptionsStatus } from './components/DatabaseOptionsStatus';
 import { recordScriptFiles } from './sync-scripts';
 
 // 真实 Ant Design 渲染的交互测试在本机可能超过默认 5 秒，统一放宽避免按环境速度抖动。
@@ -149,6 +150,145 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it('shows refresh progress, prevents duplicate requests, reports completion and allows failed retries', async () => {
+  await ready(<DatabaseOptionsStatus />);
+  const normal = bridge.invoke.getMockImplementation()!;
+  const pending = deferred<string[]>();
+  bridge.invoke.mockImplementation((method, params) =>
+    method === 'databases.list' ? pending.promise : normal(method, params),
+  );
+  bridge.invoke.mockClear();
+  let refresh!: Promise<void>;
+  act(() => {
+    refresh = controller.refreshDatabaseOptions();
+  });
+  expect(controller.m.refreshing.databases).toBe(true);
+  expect(screen.getByRole('button', { name: /刷新数据库/ }).className).toContain('ant-btn-loading');
+  await act(async () => controller.refreshDatabaseOptions());
+  expect(bridge.invoke.mock.calls.filter(([method]) => method === 'databases.list')).toHaveLength(
+    1,
+  );
+  await act(async () => {
+    pending.resolve(['fresh']);
+    await refresh;
+  });
+  expect(controller.m.refreshing.databases).toBe(false);
+  expect(controller.m.refreshResults.databases).toEqual({
+    status: 'success',
+    message: '刷新数据库成功',
+  });
+  expect(
+    screen.getByRole('button', { name: /刷新数据库/ }).querySelector('.anticon-check'),
+  ).toBeTruthy();
+  expect(document.querySelector('.ant-message-notice')).toBeNull();
+  await userEvent.hover(screen.getByRole('button', { name: /刷新数据库/ }));
+  expect(await screen.findByRole('tooltip')).toHaveProperty(
+    'textContent',
+    '刷新数据库成功 · 点击再次刷新',
+  );
+  bridge.invoke.mockImplementation((method, params) =>
+    method === 'databases.list' ? Promise.reject(new Error('denied')) : normal(method, params),
+  );
+  await act(async () => controller.refreshDatabaseOptions());
+  expect(controller.m.refreshing.databases).toBe(false);
+  expect(controller.m.dbErrors.source).toBe('denied');
+  expect(controller.m.refreshResults.databases.status).toBe('error');
+  expect(
+    screen.getByRole('button', { name: /刷新数据库/ }).querySelector('.anticon-close'),
+  ).toBeTruthy();
+  bridge.invoke.mockImplementation(normal);
+  await act(async () => controller.refreshDatabaseOptions());
+  expect(controller.m.dbErrors.source).toBe('');
+  expect(controller.m.refreshResults.databases.status).toBe('success');
+});
+
+it('clears refresh progress on workspace change and discards late completion', async () => {
+  await ready(<DatabaseOptionsStatus />);
+  const pending = deferred<string[]>();
+  bridge.invoke.mockImplementationOnce(() => pending.promise);
+  let refresh!: Promise<void>;
+  act(() => {
+    refresh = controller.refreshDatabaseOptions();
+  });
+  act(() => controller.switchWorkspace('second'));
+  await act(async () => {
+    pending.resolve(['old']);
+    await refresh;
+  });
+  expect(controller.m.refreshing).toEqual({});
+  expect(controller.m.dbCache).toEqual({});
+  expect(screen.queryByText('刷新数据库成功')).toBeNull();
+});
+
+it('submits a group move once and reloads the saved order without changing member discovery', async () => {
+  state.connectionGroups = [
+    { id: 'a', name: 'A', sortOrder: 0 },
+    { id: 'b', name: 'B', sortOrder: 1 },
+  ];
+  await ready();
+  const normal = bridge.invoke.getMockImplementation()!;
+  const pending = deferred<{ ok: boolean }>();
+  bridge.invoke.mockImplementation((method, params) =>
+    method === 'connectionGroups.move' ? pending.promise : normal(method, params),
+  );
+  let moving!: Promise<void>;
+  act(() => {
+    moving = controller.moveGroup('b', 'a', 'before');
+  });
+  await act(async () => controller.moveGroup('b', 'a', 'before'));
+  expect(controller.m.organizationSaving).toBe(true);
+  expect(
+    bridge.invoke.mock.calls.filter(([method]) => method === 'connectionGroups.move'),
+  ).toHaveLength(1);
+  state.connectionGroups[0].sortOrder = 1;
+  state.connectionGroups[1].sortOrder = 0;
+  await act(async () => {
+    pending.resolve({ ok: true });
+    await moving;
+  });
+  expect(controller.m.state.connectionGroups.slice(0, 2).map((g) => g.id)).toEqual(['b', 'a']);
+  expect(controller.m.dbCache.source).toEqual(['a', 'b']);
+  expect(controller.m.organizationSaving).toBe(false);
+});
+
+it('selects among several templates without changing scope and applies only the chosen template with feedback', async () => {
+  state.templates.push({
+    ...structuredClone(state.templates[0]),
+    id: 'second-template',
+    name: '第二模板',
+    source: { connectionId: 'source', database: 'b' },
+    targets: [{ connectionId: 'source', database: 'a' }],
+  });
+  await ready(<ScopePage />);
+  const selector = screen.getByRole('combobox', { name: '选择同步模板' });
+  await userEvent.click(selector);
+  await userEvent.click(screen.getByText('第二模板', { exact: true }));
+  expect(controller.m.scopeTemplateId).toBe('second-template');
+  expect(controller.m.sourceKey).toBe('');
+  const normal = bridge.invoke.getMockImplementation()!;
+  const pending = deferred<{ name: string; comment: string }[]>();
+  bridge.invoke.mockImplementation((method, params) =>
+    method === 'tables.list' ? pending.promise : normal(method, params),
+  );
+  const apply = screen.getByRole('button', { name: '应用模板' });
+  await userEvent.click(apply);
+  expect(apply.className).toContain('ant-btn-loading');
+  expect(controller.m.applyingTemplateId).toBe('second-template');
+  await act(async () => {
+    pending.resolve([{ name: 'dict', comment: '字典' }]);
+  });
+  await waitFor(() => expect(controller.m.appliedTemplate?.name).toBe('第二模板'));
+  expect(controller.m.sourceKey).toBe('source/b');
+  expect(controller.m.targetKeys).toEqual(['source/a']);
+  expect(screen.getByText('已应用：第二模板')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '再次应用模板' })).toBeTruthy();
+  expect(bridge.invoke.mock.calls.some(([method]) => method.startsWith('sync.compare'))).toBe(
+    false,
+  );
+  act(() => controller.set('scopeTables', []));
+  expect(controller.m.appliedTemplate).toBeUndefined();
 });
 
 describe('comparison confirmation and cancellation', () => {
@@ -1813,19 +1953,86 @@ describe('missing target tables in the sync scope', () => {
 });
 
 describe('group editing and creation', () => {
-  it('opens editing first and offers creation inside the group dialog', async () => {
+  it('edits the chosen group directly and opens a blank single-field creation dialog', async () => {
     await ready(
       <>
         <ConnectionsPage />
         <ConnectionOrganizationDialogs />
       </>,
     );
-    await userEvent.click(screen.getByRole('button', { name: '编辑分组' }));
-    expect(controller.m.groupForm?.name).toBe('测试');
-    expect(document.querySelector('.anticon-edit')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: '新增分组' }));
+    expect(screen.queryByRole('button', { name: '编辑分组' })).toBeNull();
+    act(() => controller.editGroup(controller.m.state.connectionGroups[0]));
+    const dialog = screen.getByRole('dialog', { name: '编辑分组' });
+    expect(within(dialog).getAllByRole('textbox')).toHaveLength(1);
+    expect((screen.getByLabelText('分组名称') as HTMLInputElement).value).toBe('测试');
+    expect(within(dialog).queryByRole('button', { name: '新增分组' })).toBeNull();
+    act(() => controller.closeGroup());
+    act(() => controller.editGroup());
     expect(controller.m.groupForm).toBeUndefined();
     expect((screen.getByLabelText('分组名称') as HTMLInputElement).value).toBe('');
+    expect(screen.getByRole('button', { name: /^保\s*存$/ }).hasAttribute('disabled')).toBe(true);
+    act(() => controller.closeGroup());
+    expect(bridge.invoke.mock.calls.some(([method]) => method === 'connectionGroups.save')).toBe(
+      false,
+    );
+  });
+
+  it('preserves a failed name for retry and sends trimmed names with the edited id', async () => {
+    const original = bridge.invoke.getMockImplementation()!;
+    let attempts = 0;
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'connectionGroups.save') {
+        if (++attempts === 1) throw new Error('分组保存失败');
+        return { ...(params as object), sortOrder: 0 };
+      }
+      return original(method, params);
+    });
+    await ready(<ConnectionOrganizationDialogs />);
+    const group = controller.m.state.connectionGroups[0];
+    act(() => controller.editGroup(group));
+    await userEvent.clear(screen.getByLabelText('分组名称'));
+    await userEvent.type(screen.getByLabelText('分组名称'), ' 新名称 ');
+    await userEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }));
+    await screen.findByText('分组保存失败');
+    expect(controller.m.groupDialog).toBe(true);
+    expect(controller.m.groupName).toBe(' 新名称 ');
+    await userEvent.type(screen.getByLabelText('分组名称'), '{Enter}');
+    await waitFor(() => expect(controller.m.groupDialog).toBe(false));
+    expect(bridge.invoke).toHaveBeenCalledWith('connectionGroups.save', {
+      id: group.id,
+      name: '新名称',
+    });
+  });
+
+  it('prevents duplicate saves and does not close or overwrite a reopened group dialog', async () => {
+    await ready();
+    const group = controller.m.state.connectionGroups[0];
+    act(() => controller.editGroup(group));
+    act(() => controller.set('groupName', '旧请求'));
+    const pending = deferred<{ id: string; name: string; sortOrder: number }>();
+    bridge.invoke.mockReturnValueOnce(pending.promise);
+    let saving!: Promise<void>;
+    act(() => {
+      saving = controller.saveGroup();
+    });
+    await act(async () => {
+      await controller.saveGroup();
+    });
+    act(() => {
+      controller.closeGroup();
+      controller.editGroup();
+      controller.set('groupName', '新草稿');
+    });
+    await act(async () => {
+      pending.resolve({ ...group, name: '旧请求' });
+      await saving;
+    });
+    expect(controller.m.groupDialog).toBe(true);
+    expect(controller.m.groupForm).toBeUndefined();
+    expect(controller.m.groupName).toBe('新草稿');
+    expect(
+      bridge.invoke.mock.calls.filter(([method]) => method === 'connectionGroups.save'),
+    ).toHaveLength(1);
   });
 
   it('creates from the group dropdown, preserves connection fields and keeps failed input for retry', async () => {
@@ -1881,6 +2088,215 @@ describe('group editing and creation', () => {
     expect(controller.m.connectionForm.group).toBe('测试');
     expect(
       bridge.invoke.mock.calls.filter(([method]) => method === 'connectionGroups.save'),
+    ).toHaveLength(1);
+  });
+});
+
+describe('compact connection row actions', () => {
+  it('opens the selected connection with edit and keeps test details accessible without visible success feedback', async () => {
+    await ready(<ConnectionsPage />);
+    expect(screen.queryByRole('button', { name: '编辑分组' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '更换分组 来源' })).toBeNull();
+    const edit = screen.getByRole('button', { name: '编辑连接 来源' });
+    const actions = edit.closest('.connection-row-actions')!;
+    expect(
+      within(actions as HTMLElement)
+        .getAllByRole('button')
+        .map((b) => b.textContent?.replace(/\s/g, '')),
+    ).toEqual(['测试连接', '编辑', '删除']);
+    await userEvent.click(edit);
+    expect(controller.m.connectionForm.id).toBe('source');
+    act(() => controller.closeConnection());
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        connectionTests: { source: { status: 'success', message: '连接成功 · 8.4.8' } },
+      })),
+    );
+    expect(actions.querySelector('[role="status"]')?.className).toBe('visually-hidden');
+    await userEvent.hover(screen.getByRole('button', { name: '测试连接 来源' }));
+    expect((await screen.findByRole('tooltip')).textContent).toContain(
+      '连接成功 · 8.4.8 · 点击再次测试',
+    );
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        connectionTests: { source: { status: 'error', message: '连接失败 · 连接被拒绝' } },
+      })),
+    );
+    expect(actions.querySelector('[role="status"]')?.className).toContain('test-error');
+    expect(actions.textContent).toContain('连接被拒绝');
+  });
+});
+
+describe('workspace table editing', () => {
+  it('opens editing by button or double click, discards canceled drafts and creates through the same dialog', async () => {
+    await ready(<WorkspacesPage />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '编辑工作区 测试项目' }));
+    const editor = screen.getByRole('dialog', { name: '编辑工作区' });
+    expect(within(editor).queryByRole('button', { name: /删\s*除/ })).toBeNull();
+    expect(within(editor).queryByRole('checkbox')).toBeNull();
+    expect(within(editor).getByRole('combobox', { name: '关联连接' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '删除工作区 测试项目' })).toBeTruthy();
+    await userEvent.clear(screen.getByLabelText('工作区名称'));
+    await userEvent.type(screen.getByLabelText('工作区名称'), '未保存');
+    expect(state.workspaces[0].name).toBe('测试项目');
+    act(() => controller.closeWorkspace());
+    await userEvent.dblClick(screen.getByText('第二项目', { exact: true }));
+    expect(controller.m.workspaceForm.id).toBe('second');
+    expect((screen.getByLabelText('工作区名称') as HTMLInputElement).value).toBe('第二项目');
+    act(() => controller.closeWorkspace());
+    await userEvent.click(screen.getByRole('button', { name: /新建工作区/ }));
+    expect(screen.getByRole('dialog', { name: '新建工作区' })).toBeTruthy();
+    expect(controller.m.workspaceForm.name).toBe('');
+    expect(controller.m.workspaceForm.connectionIds).toEqual([]);
+  });
+
+  it('keeps failed workspace edits open and prevents late saves from closing a new draft', async () => {
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'entity.save') throw new Error('工作区保存失败');
+      return original(method, params);
+    });
+    await ready(<WorkspacesPage />);
+    act(() => controller.editWorkspace(state.workspaces[0]));
+    await act(async () => {
+      await controller.saveWorkspace();
+    });
+    expect(controller.m.workspaceDialog).toBe(true);
+    expect(controller.m.workspaceForm.name).toBe('测试项目');
+    const pending = deferred<{ ok: boolean }>();
+    bridge.invoke.mockImplementation(original).mockReturnValueOnce(pending.promise);
+    let saving!: Promise<void>;
+    act(() => {
+      saving = controller.saveWorkspace();
+    });
+    await act(async () => {
+      await controller.saveWorkspace();
+    });
+    act(() => {
+      controller.closeWorkspace();
+      controller.editWorkspace();
+    });
+    const newId = controller.m.workspaceForm.id;
+    await act(async () => {
+      pending.resolve({ ok: true });
+      await saving;
+    });
+    expect(controller.m.workspaceDialog).toBe(true);
+    expect(controller.m.workspaceForm.id).toBe(newId);
+    expect(controller.m.workspaceForm.name).toBe('');
+  });
+});
+
+describe('template table editing', () => {
+  it('saves a copy of the current scope in a modal without navigating or changing the scope', async () => {
+    await ready(
+      <>
+        <div id="page-footer" />
+        <ScopePage />
+      </>,
+    );
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        page: 'scope',
+        sourceKey: 'source/a',
+        targetKeys: ['source/b'],
+        scopeTables: [
+          {
+            name: 'dict',
+            comment: '字典',
+            structure: true,
+            data: true,
+            keyColumns: ['code'],
+            keyText: 'code',
+          },
+        ],
+      })),
+    );
+    const scope = structuredClone(controller.m.scopeTables);
+    await userEvent.click(screen.getByRole('button', { name: '将当前范围保存为模板' }));
+    expect(controller.m.page).toBe('scope');
+    act(() => controller.updateTemplateTable('dict', { keyText: '草稿键' }));
+    act(() => controller.closeTemplate());
+    expect(controller.m.page).toBe('scope');
+    expect(controller.m.scopeTables).toEqual(scope);
+    await userEvent.click(screen.getByRole('button', { name: '将当前范围保存为模板' }));
+    const editor = screen.getByRole('dialog', { name: '新建同步模板' });
+    await userEvent.type(within(editor).getByLabelText('模板名称'), '当前范围副本');
+    await userEvent.click(within(editor).getByRole('button', { name: '保存模板' }));
+    await waitFor(() => expect(controller.m.templateDialog).toBe(false));
+    expect(controller.m.page).toBe('scope');
+    expect(controller.m.sourceKey).toBe('source/a');
+    expect(controller.m.targetKeys).toEqual(['source/b']);
+    expect(controller.m.scopeTables).toEqual(scope);
+    const saved = bridge.invoke.mock.calls.find(
+      ([method, params]) => method === 'entity.save' && params.kind === 'template',
+    );
+    expect(saved?.[1].value.tables[0].keyColumns).toEqual(['code']);
+  });
+
+  it('shows only a list until editing, discards canceled nested drafts and opens new templates in a modal', async () => {
+    await ready(<TemplatesPage />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '编辑模板 模板' }));
+    const editor = screen.getByRole('dialog', { name: '编辑同步模板' });
+    expect(within(editor).queryByRole('button', { name: /删\s*除/ })).toBeNull();
+    expect(screen.getByRole('button', { name: '删除模板 模板' })).toBeTruthy();
+    act(() => controller.updateTemplateTable('dict', { keyText: '草稿键' }));
+    act(() => controller.closeTemplate());
+    await userEvent.dblClick(screen.getByText('模板', { exact: true }));
+    expect(controller.m.templateForm.tables[0].keyText).toBe('code');
+    act(() => controller.closeTemplate());
+    await userEvent.click(screen.getByRole('button', { name: /新建模板/ }));
+    expect(screen.getByRole('dialog', { name: '新建同步模板' })).toBeTruthy();
+    expect(controller.m.templateForm.name).toBe('');
+  });
+
+  it('ignores late table loads and save completion after reopening an editor, and prevents duplicate saves', async () => {
+    await ready();
+    act(() => controller.editTemplate(state.templates[0]));
+    const pendingTables = deferred<{ name: string }[]>();
+    bridge.invoke.mockReturnValueOnce(pendingTables.promise);
+    let loading!: Promise<void>;
+    act(() => {
+      loading = controller.templateSourceChanged('source/b');
+    });
+    act(() => {
+      controller.closeTemplate();
+      controller.editTemplate(state.templates[0]);
+    });
+    await act(async () => {
+      pendingTables.resolve([{ name: '过期表' }]);
+      await loading;
+    });
+    expect(controller.m.templateForm.tables[0].name).toBe('dict');
+    const pendingSave = deferred<{ ok: boolean }>();
+    bridge.invoke.mockReturnValueOnce(pendingSave.promise);
+    let saving!: Promise<void>;
+    act(() => {
+      saving = controller.saveTemplate();
+    });
+    await act(async () => {
+      await controller.saveTemplate();
+    });
+    act(() => {
+      controller.closeTemplate();
+      controller.editTemplate();
+      controller.patch('templateForm', { name: '新草稿' });
+    });
+    await act(async () => {
+      pendingSave.resolve({ ok: true });
+      await saving;
+    });
+    expect(controller.m.templateDialog).toBe(true);
+    expect(controller.m.templateForm.name).toBe('新草稿');
+    expect(
+      bridge.invoke.mock.calls.filter(
+        ([method, params]) => method === 'entity.save' && params.kind === 'template',
+      ),
     ).toHaveLength(1);
   });
 });

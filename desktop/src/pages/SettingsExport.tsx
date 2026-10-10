@@ -1,15 +1,5 @@
-import {
-  Alert,
-  Button,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Segmented,
-  Select,
-  Space,
-  Spin,
-} from 'antd';
+import { AsyncButton as Button } from '../components/AsyncButton';
+import { Alert, Drawer, Form, Input, InputNumber, Segmented, Select, Space, Spin } from 'antd';
 import { DownloadOutlined, FolderOpenOutlined } from '@ant-design/icons';
 import { useAppearance } from '../appearance';
 import { useController } from '../controller';
@@ -81,12 +71,10 @@ export function SettingsPage() {
                   value={f.archivePath}
                   onChange={(e) => c.patch('settingsForm', { archivePath: e.target.value })}
                 />
-                <Button icon={<FolderOpenOutlined />} onClick={() => void c.selectDirectory()}>
+                <Button icon={<FolderOpenOutlined />} onClick={() => c.selectDirectory()}>
                   选择目录
                 </Button>
-                <Button onClick={() => void c.action(() => api('files.openArchives'))}>
-                  打开目录
-                </Button>
+                <Button onClick={() => c.action(() => api('files.openArchives'))}>打开目录</Button>
               </Space.Compact>
             </Field>
             <Field label="保留策略">
@@ -99,8 +87,8 @@ export function SettingsPage() {
             </Field>
             <Field label="本地配置与记录">
               <Space wrap>
-                <Button onClick={() => void c.backupLocal()}>导出备份</Button>
-                <Button onClick={() => void c.restoreLocal()}>导入备份</Button>
+                <Button onClick={() => c.backupLocal()}>导出备份</Button>
+                <Button onClick={() => c.restoreLocal()}>导入备份</Button>
               </Space>
             </Field>
             <Field label="管理归档资料">
@@ -144,7 +132,7 @@ export function SettingsPage() {
         </section>
       </div>
       <Footer>
-        <Button type="primary" loading={!!m.busy} onClick={() => void c.saveSettings()}>
+        <Button type="primary" loading={!!m.busy} onClick={() => c.saveSettings()}>
           保存设置
         </Button>
       </Footer>
@@ -247,7 +235,7 @@ export function ExportPage() {
                     !m.exportSource || !selectedCount || m.loading || !!m.busy || m.exportGenerating
                   }
                   loading={m.exportGenerating}
-                  onClick={() => void c.updateExport()}
+                  onClick={() => c.updateExport()}
                 >
                   {m.exportGenerating ? '正在生成…' : '生成预览 SQL'}
                 </Button>
@@ -279,7 +267,7 @@ export function ExportPage() {
           icon={<DownloadOutlined />}
           disabled={!m.exportSql || !!m.busy}
           loading={!!m.busy}
-          onClick={() => void c.saveSql()}
+          onClick={() => c.saveSql()}
         >
           导出 .sql
         </Button>

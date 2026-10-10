@@ -1,5 +1,6 @@
+import { AsyncButton as Button } from './AsyncButton';
 import { useMemo } from 'react';
-import { App, Button } from 'antd';
+import { App } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
 export default function SqlView({ sql }: { sql: string }) {
   const { message } = App.useApp();
@@ -35,12 +36,7 @@ export default function SqlView({ sql }: { sql: string }) {
   return (
     <div className="sql-view">
       <div className="sql-toolbar">
-        <Button
-          size="small"
-          icon={<CopyOutlined />}
-          onClick={() => void copy()}
-          aria-label="复制 SQL"
-        >
+        <Button size="small" icon={<CopyOutlined />} onClick={() => copy()} aria-label="复制 SQL">
           复制
         </Button>
       </div>

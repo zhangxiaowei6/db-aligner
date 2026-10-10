@@ -584,10 +584,16 @@ export const previewBridge: DesktopBridge = {
       case 'state.load':
         result = structuredClone(state);
         break;
-      case 'databases.list':
-        result = connections.find((c) => c.id === p.connectionId)?.databases || [];
+      case 'databases.list': {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        const connection = state.connections.find((c) => c.id === p.connectionId);
+        if ((connection as ConnectionInfo & { password?: string })?.password === 'preview-fail')
+          throw new Error('密码验证失败（虚构预览数据）');
+        result = connection?.databases || [];
         break;
+      }
       case 'tables.list': {
+        await new Promise((resolve) => setTimeout(resolve, 150));
         const database = (p.ref as DbRef | undefined)?.database || '';
         const all = [
           { name: 'sys_dict', comment: '系统字典' },
@@ -737,6 +743,23 @@ export const previewBridge: DesktopBridge = {
           state.connectionGroups.push(group);
           result = group;
         }
+        break;
+      }
+      case 'connectionGroups.move': {
+        if (!['before', 'after'].includes(String(p.placement))) throw new Error('无效投放位置');
+        const group = state.connectionGroups.find((g) => g.id === p.groupId);
+        const groups = [...state.connectionGroups]
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .filter((g) => g.id !== p.groupId);
+        let index = groups.findIndex((g) => g.id === p.anchorGroupId);
+        if (!group || index < 0) throw new Error('分组或目标分组不存在');
+        if (p.placement === 'after') index++;
+        groups.splice(index, 0, group);
+        groups.forEach((g, i) => {
+          g.sortOrder = i;
+        });
+        state.connectionGroups = groups;
+        result = { ok: true };
         break;
       }
       case 'connections.move': {

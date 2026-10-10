@@ -136,19 +136,6 @@ body,
 .new-group-button {
   grid-column: 1 / -1;
 }
-.group-list {
-  margin-bottom: 16px;
-  max-height: 240px;
-  overflow: auto;
-}
-.group-list-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-}
 .version-empty {
   min-height: 280px;
   display: flex;
@@ -192,6 +179,21 @@ body,
 .tree-scroll .ant-tree-treenode {
   padding-bottom: 4px;
 }
+
+.tree-scroll .ant-tree-treenode-draggable {
+  cursor: pointer;
+}
+.tree-scroll .ant-tree-treenode:has(.tree-label[data-drag-ready='true']),
+.tree-scroll
+  .ant-tree-treenode:has(.tree-label[data-drag-ready='true'])
+  .ant-tree-node-content-wrapper {
+  cursor: grab;
+}
+.tree-scroll .ant-tree-treenode.dragging,
+.tree-scroll .ant-tree-treenode.dragging .ant-tree-node-content-wrapper,
+.tree-scroll .ant-tree-treenode.dragging .tree-label {
+  cursor: grabbing;
+}
 .tree-scroll .ant-tree-treenode {
   width: 100%;
   min-width: 0;
@@ -202,7 +204,8 @@ body,
   display: flex;
   align-items: center;
   min-width: 0;
-  overflow: hidden;
+  /* The drop line extends outside this wrapper; only the title clips long names. */
+  overflow: visible;
 }
 .tree-scroll :is(.ant-tree-indent, .ant-tree-switcher, .ant-tree-iconEle) {
   flex-shrink: 0;
@@ -406,10 +409,32 @@ p {
   min-width: 0;
 }
 .scope-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 250px;
-  gap: 20px;
-  align-items: start;
+  display: block;
+}
+.scope-template-block {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+}
+.scope-template-toolbar,
+.scope-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.scope-template-selector {
+  flex: 1 1 320px;
+  min-width: 220px;
+}
+.scope-template-actions {
+  align-items: center;
+}
+.scope-panel .scope-template-selector .ant-form-item {
+  margin-bottom: 0;
+}
+.template-summary {
+  overflow-wrap: anywhere;
 }
 .source-target-form {
   display: grid;
@@ -890,9 +915,6 @@ p {
     grid-template-columns: minmax(0, 1fr) 380px;
     gap: 20px;
   }
-  .scope-layout {
-    grid-template-columns: minmax(0, 1fr) 220px;
-  }
   .source-summary {
     gap: 12px;
     padding: 16px;
@@ -995,6 +1017,37 @@ p {
   line-height: 1.6;
   overflow-wrap: anywhere;
   color: var(--muted);
+}
+.connection-row-actions {
+  position: relative;
+  min-width: 0;
+}
+.connection-actions-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.connection-actions-scroll > .ant-space {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.refresh-menu-result.test-success {
+  color: var(--success-text);
+}
+.refresh-menu-result.test-error {
+  color: var(--danger-text);
 }
 .connection-test-feedback.test-success {
   color: var(--success-text);

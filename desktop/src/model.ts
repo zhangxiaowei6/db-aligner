@@ -16,6 +16,7 @@ import type {
   Workspace,
 } from './types';
 import { allStructureOptions } from './structure-options';
+import { organizedConnections } from './connection-organization';
 
 export type Page =
   | 'scope'
@@ -94,6 +95,8 @@ export interface Model {
   page: Page;
   busy: number;
   loading: boolean;
+  refreshing: Record<string, boolean>;
+  refreshResults: Record<string, ConnectionTestResult>;
   engineError: string;
   dbCache: Record<string, string[]>;
   dbLoading: Record<string, boolean>;
@@ -106,6 +109,10 @@ export interface Model {
   targetTablesLoading: Record<string, boolean>;
   targetTablesErrors: Record<string, string>;
   scopeTables: ScopeTable[];
+  scopeTemplateId: string;
+  applyingTemplateId: string;
+  appliedTemplate?: { id: string; name: string };
+  templateApplyError: string;
   structureDefaults: StructureOptions;
   templateStructureDefaults: StructureOptions;
   compareConfirmation?: CompareSelection;
@@ -124,9 +131,12 @@ export interface Model {
   currentTable?: { id: string; ref: DbRef; table: string; model: Table };
   structureTab: string;
   workspaceForm: Workspace;
+  workspaceDialog: boolean;
+  workspaceSubmitting: boolean;
   connectionForm: ConnectionInfo;
   connectionDialog: boolean;
   groupDialog: boolean;
+  groupSubmitting: boolean;
   groupForm?: ConnectionGroup;
   groupName: string;
   moveConnectionId: string;
@@ -146,6 +156,8 @@ export interface Model {
   duplicateMode: string;
   importGroup: string;
   templateForm: SyncTemplate;
+  templateDialog: boolean;
+  templateSubmitting: boolean;
   templateSource: string;
   templateTargets: string[];
   historyTab: string;
@@ -222,6 +234,8 @@ export function initialModel(): Model {
     page: 'scope',
     busy: 0,
     loading: true,
+    refreshing: {},
+    refreshResults: {},
     engineError: '',
     dbCache: {},
     dbLoading: {},
@@ -233,6 +247,9 @@ export function initialModel(): Model {
     targetTablesLoading: {},
     targetTablesErrors: {},
     scopeTables: [],
+    scopeTemplateId: '',
+    applyingTemplateId: '',
+    templateApplyError: '',
     structureDefaults: { ...allStructureOptions },
     templateStructureDefaults: { ...allStructureOptions },
     compareStartedAt: 0,
@@ -246,9 +263,12 @@ export function initialModel(): Model {
     diffSearch: '',
     structureTab: 'columns',
     workspaceForm: { id: '', name: '', description: '', connectionIds: [] },
+    workspaceDialog: false,
+    workspaceSubmitting: false,
     connectionForm: emptyConnection('default'),
     connectionDialog: false,
     groupDialog: false,
+    groupSubmitting: false,
     groupName: '',
     moveConnectionId: '',
     moveGroupId: '',
@@ -275,6 +295,8 @@ export function initialModel(): Model {
       tables: [],
     },
     templateSource: '',
+    templateDialog: false,
+    templateSubmitting: false,
     templateTargets: [],
     historyTab: 'records',
     historySearch: '',
@@ -450,7 +472,7 @@ export function recoveryNodes(m: Model): ReviewNode[] {
   }));
 }
 export function dbOptions(m: Model) {
-  return m.state.connections
+  return organizedConnections(m.state)
     .filter((c) => c.workspaceIds.includes(m.workspaceId))
     .flatMap((c) =>
       [...new Set([...c.databases, ...(m.dbCache[c.id] || [])])].map((database) => ({

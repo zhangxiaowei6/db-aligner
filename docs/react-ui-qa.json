@@ -13,9 +13,9 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.4803466796875,
+        "x": 848.4902954101562,
         "y": 0,
-        "width": 640,
+        "width": 639.9999389648438,
         "height": 1056
       }
     },
@@ -76,9 +76,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.4747314453125,
+        "x": 848.4849243164062,
         "y": 0,
-        "width": 640,
+        "width": 639.9999389648438,
         "height": 1056
       }
     },
@@ -239,6 +239,11 @@
       "theme": "dark"
     },
     {
+      "check": "tree-pointer-short-click-400ms-long-press-and-release",
+      "theme": "light",
+      "passed": true
+    },
+    {
       "check": "native-html5-tree-drag-selection-cancel-invalid-empty-and-reorder",
       "theme": "light",
       "passed": true
@@ -249,6 +254,16 @@
       "passed": true
     },
     {
+      "check": "database-options-follow-persisted-group-and-member-order",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "tree-pointer-short-click-400ms-long-press-and-release",
+      "theme": "dark",
+      "passed": true
+    },
+    {
       "check": "native-html5-tree-drag-selection-cancel-invalid-empty-and-reorder",
       "theme": "dark",
       "passed": true
@@ -256,9 +271,26 @@
     {
       "check": "group-edit-icon-and-dropdown-create",
       "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "database-options-follow-persisted-group-and-member-order",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "context-menu-icons-group",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "context-menu-icons-connection",
+      "theme": "light",
       "passed": true
     }
   ],
   "desktop": [],
-  "errors": []
+  "errors": [
+    "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n0 !== 3\n"
+  ]
 }

@@ -59,6 +59,7 @@ public final class Service implements AutoCloseable {
       case "entity.save" -> saveEntity(p.path("kind").asText(), p.path("value"));
       case "connectionGroups.save" -> connectionGroups.save(p.path("id").asText(), p.path("name").asText());
       case "connections.move" -> connectionGroups.move(p);
+      case "connectionGroups.move" -> connectionGroups.moveGroup(p);
       case "entity.delete" -> {
         String kind = p.path("kind").asText();
         if (!List.of("workspace", "connection", "template").contains(kind))

@@ -67,6 +67,12 @@ function useBusinessController() {
   const structureOverrides = useRef(new Set<string>());
   const connectionEditorGeneration = useRef(0);
   const groupSaving = useRef(false);
+  const groupEditorGeneration = useRef(0);
+  const workspaceEditorGeneration = useRef(0);
+  const workspaceSaving = useRef(false);
+  const templateEditorGeneration = useRef(0);
+  const templateSaving = useRef(false);
+  const refreshPending = useRef(new Set<string>());
   const comparisonActive = () =>
     !!latest.current.compareTask &&
     ['RUNNING', 'CANCELLING'].includes(latest.current.compareTask.status);
@@ -91,6 +97,31 @@ function useBusinessController() {
     if (!mounted.current) return;
     const current = latest.current;
     const next = update(current);
+    if (
+      current.workspaceId !== next.workspaceId ||
+      (current.page === 'workspaces' && next.page !== 'workspaces')
+    ) {
+      workspaceEditorGeneration.current += 1;
+      next.workspaceDialog = false;
+      next.workspaceForm = { id: '', name: '', description: '', connectionIds: [] };
+    }
+    if (current.workspaceId !== next.workspaceId) {
+      groupEditorGeneration.current += 1;
+      next.groupDialog = false;
+      next.groupForm = undefined;
+      next.groupName = '';
+    }
+    if (
+      current.workspaceId !== next.workspaceId ||
+      (current.templateDialog && current.page !== next.page)
+    ) {
+      templateEditorGeneration.current += 1;
+      requests.current.delete('templateScope');
+      next.templateDialog = false;
+      next.templateForm = { ...initialModel().templateForm, workspaceId: next.workspaceId };
+      next.templateSource = '';
+      next.templateTargets = [];
+    }
     if (current.page === 'export' && next.page !== 'export') {
       next.exportSql = '';
       next.exportPreview = undefined;
@@ -114,6 +145,15 @@ function useBusinessController() {
       selectionSignature(compareSelection(next)) !== selectionSignature(next.compareConfirmation)
     )
       next.compareConfirmation = undefined;
+    if (
+      next.appliedTemplate === current.appliedTemplate &&
+      (next.workspaceId !== current.workspaceId ||
+        next.sourceKey !== current.sourceKey ||
+        JSON.stringify(next.targetKeys) !== JSON.stringify(current.targetKeys) ||
+        JSON.stringify(next.scopeTables) !== JSON.stringify(current.scopeTables) ||
+        JSON.stringify(next.structureDefaults) !== JSON.stringify(current.structureDefaults))
+    )
+      next.appliedTemplate = undefined;
     latest.current = next;
     dispatch({ type: 'replace', value: next });
   }, []);
@@ -313,6 +353,12 @@ function useBusinessController() {
       dbCache: {},
       dbLoading: {},
       dbErrors: {},
+      refreshing: {},
+      refreshResults: {},
+      scopeTemplateId: '',
+      applyingTemplateId: '',
+      appliedTemplate: undefined,
+      templateApplyError: '',
       connectionSelection: [],
       connectionTest: undefined,
       connectionTests: {},
@@ -435,17 +481,99 @@ function useBusinessController() {
         }));
     });
   }
+  async function runRefresh(key: string, label: string, work: () => Promise<boolean | void>) {
+    const workspace = latest.current.workspaceId;
+    const pendingKey = workspace + '/' + key;
+    if (refreshPending.current.has(pendingKey)) return;
+    refreshPending.current.add(pendingKey);
+    const valid = request('refresh:' + key);
+    const startedAt = Date.now();
+    // Keep even a cached/instant preview response visibly distinct from the previous result.
+    const showLoading = () =>
+      new Promise<void>((resolve) =>
+        setTimeout(resolve, Math.max(0, 300 - (Date.now() - startedAt))),
+      );
+    commit((s) => ({
+      ...s,
+      refreshing: { ...s.refreshing, [key]: true },
+      refreshResults: { ...s.refreshResults, [key]: { status: 'testing', message: `${label}中` } },
+    }));
+    try {
+      const completed = await work();
+      await showLoading();
+      if (valid())
+        commit((s) => ({
+          ...s,
+          refreshResults:
+            completed === false
+              ? Object.fromEntries(Object.entries(s.refreshResults).filter(([id]) => id !== key))
+              : { ...s.refreshResults, [key]: { status: 'success', message: `${label}成功` } },
+        }));
+    } catch (error) {
+      await showLoading();
+      if (valid())
+        commit((s) => ({
+          ...s,
+          refreshResults: {
+            ...s.refreshResults,
+            [key]: {
+              status: 'error',
+              message: `${label}失败：${error instanceof Error ? error.message : String(error)}`,
+            },
+          },
+        }));
+    } finally {
+      refreshPending.current.delete(pendingKey);
+      if (valid()) commit((s) => ({ ...s, refreshing: { ...s.refreshing, [key]: false } }));
+    }
+  }
+  async function refreshDatabaseOptions() {
+    const s = latest.current;
+    const ids = s.state.connections
+      .filter((c) => c.workspaceIds.includes(s.workspaceId))
+      .map((c) => c.id);
+    if (!ids.length) return;
+    await runRefresh('databases', '刷新数据库', async () => {
+      await loadDatabaseOptions(true);
+      if (latest.current.workspaceId !== s.workspaceId) return false;
+      const errors = ids.map((id) => latest.current.dbErrors[id]).filter(Boolean);
+      if (errors.length) throw new Error(errors.join('；'));
+    });
+  }
+  async function refreshTargetTables() {
+    const s = latest.current;
+    if (!s.targetKeys.length || comparisonActive()) return;
+    await runRefresh('targetTables', '刷新目标表清单', async () => {
+      await loadTargetTables(true);
+      if (
+        latest.current.workspaceId !== s.workspaceId ||
+        JSON.stringify(latest.current.targetKeys) !== JSON.stringify(s.targetKeys)
+      )
+        return false;
+      const errors = s.targetKeys
+        .map((key) => latest.current.targetTablesErrors[key])
+        .filter(Boolean);
+      if (errors.length) throw new Error(errors.join('；'));
+    });
+  }
+  async function refreshEngine() {
+    await runRefresh('engine', '连接引擎', async () => {
+      await loadState();
+      if (latest.current.engineError) throw new Error(latest.current.engineError);
+    });
+  }
   async function refreshTable() {
     const tab = latest.current.currentTable;
     if (!tab) return;
     const valid = request('table:' + tab.id);
-    await action(async () => {
+    await runRefresh('table:' + tab.id, '刷新表结构', async () => {
       const model = await api<Table>('table.get', { ref: tab.ref, table: tab.table });
       if (valid() && latest.current.currentTable?.id === tab.id)
         commit((s) => ({
           ...s,
           currentTable: { ...tab, model },
         }));
+      else return false;
     });
   }
   async function loadScope(
@@ -908,6 +1036,7 @@ function useBusinessController() {
     }
   }
   function editWorkspace(w?: Workspace) {
+    workspaceEditorGeneration.current += 1;
     const s = latest.current;
     set(
       'workspaceForm',
@@ -920,23 +1049,47 @@ function useBusinessController() {
           }
         : { id: crypto.randomUUID(), name: '', description: '', connectionIds: [] },
     );
+    set('workspaceDialog', true);
     navigate('workspaces');
   }
+  function closeWorkspace() {
+    workspaceEditorGeneration.current += 1;
+    commit((s) => ({
+      ...s,
+      workspaceDialog: false,
+      workspaceForm: { id: '', name: '', description: '', connectionIds: [] },
+    }));
+  }
   async function saveWorkspace() {
+    if (workspaceSaving.current) return;
+    workspaceSaving.current = true;
     const s = latest.current;
+    const generation = workspaceEditorGeneration.current;
     const form = { ...copyModel(s.workspaceForm), id: s.workspaceForm.id || crypto.randomUUID() };
-    await action(async () => {
-      if (!form.name.trim()) throw new Error('请输入工作区名称');
-      await api('entity.save', { kind: 'workspace', value: form });
-      if (latest.current.workspaceForm === s.workspaceForm) patch('workspaceForm', { id: form.id });
-      for (const c of s.state.connections) {
-        const workspaceIds = c.workspaceIds.filter((id) => id !== form.id);
-        if (form.connectionIds?.includes(c.id)) workspaceIds.push(form.id);
-        await api('entity.save', { kind: 'connection', value: { ...c, workspaceIds } });
-      }
-      await loadState();
-      void message.success('工作区已保存');
-    });
+    set('workspaceSubmitting', true);
+    try {
+      await action(async () => {
+        if (!form.name.trim()) throw new Error('请输入工作区名称');
+        await api('entity.save', { kind: 'workspace', value: form });
+        if (latest.current.workspaceForm === s.workspaceForm)
+          patch('workspaceForm', { id: form.id });
+        for (const c of s.state.connections) {
+          const workspaceIds = c.workspaceIds.filter((id) => id !== form.id);
+          if (form.connectionIds?.includes(c.id)) workspaceIds.push(form.id);
+          await api('entity.save', { kind: 'connection', value: { ...c, workspaceIds } });
+        }
+        await loadState();
+        if (
+          generation === workspaceEditorGeneration.current &&
+          latest.current.workspaceId === s.workspaceId
+        )
+          closeWorkspace();
+        void message.success('工作区已保存');
+      });
+    } finally {
+      workspaceSaving.current = false;
+      set('workspaceSubmitting', false);
+    }
   }
   function editConnection(c?: ConnectionInfo, group?: string) {
     connectionEditorGeneration.current += 1;
@@ -966,15 +1119,27 @@ function useBusinessController() {
       databasesText: '',
     }));
   }
-  function editGroup(group?: ConnectionGroup, create = false) {
-    group = group || (create ? undefined : latest.current.state.connectionGroups[0]);
-    commit((s) => ({ ...s, groupDialog: true, groupForm: group, groupName: group?.name || '' }));
+  function editGroup(group?: ConnectionGroup) {
+    groupEditorGeneration.current += 1;
+    commit((s) => ({
+      ...s,
+      groupDialog: true,
+      groupForm: group && { ...group },
+      groupName: group?.name || '',
+    }));
+  }
+  function closeGroup() {
+    groupEditorGeneration.current += 1;
+    commit((s) => ({ ...s, groupDialog: false, groupForm: undefined, groupName: '' }));
   }
   async function saveGroup() {
     if (groupSaving.current) return;
     groupSaving.current = true;
     const s = latest.current;
+    const generation = groupEditorGeneration.current;
+    const connectionGeneration = connectionEditorGeneration.current;
     const name = s.groupName.trim();
+    set('groupSubmitting', true);
     try {
       await action(async () => {
         if (!name) throw new Error('请输入分组名称');
@@ -984,19 +1149,27 @@ function useBusinessController() {
         });
         commit((v) => ({
           ...v,
-          groupDialog: false,
+          ...(generation === groupEditorGeneration.current && v.workspaceId === s.workspaceId
+            ? { groupDialog: false, groupForm: undefined, groupName: '' }
+            : {}),
           connectionForm:
-            v.connectionDialog && s.groupForm && v.connectionForm.group === s.groupForm.name
+            connectionGeneration === connectionEditorGeneration.current &&
+            v.connectionDialog &&
+            s.groupForm &&
+            v.connectionForm.group === s.groupForm.name
               ? { ...v.connectionForm, group: group.name }
               : v.connectionForm,
           importGroup:
-            s.groupForm && v.importGroup === s.groupForm.name ? group.name : v.importGroup,
+            v.workspaceId === s.workspaceId && s.groupForm && v.importGroup === s.groupForm.name
+              ? group.name
+              : v.importGroup,
         }));
         await loadState();
         void message.success('分组已保存');
       });
     } finally {
       groupSaving.current = false;
+      set('groupSubmitting', false);
     }
   }
   async function addConnectionGroup(name: string) {
@@ -1041,6 +1214,18 @@ function useBusinessController() {
         await loadState();
         if (!silent) void message.success('连接分组与顺序已保存');
       }, silent);
+    } finally {
+      set('organizationSaving', false);
+    }
+  }
+  async function moveGroup(groupId: string, anchorGroupId: string, placement: 'before' | 'after') {
+    if (latest.current.organizationSaving) return;
+    set('organizationSaving', true);
+    try {
+      await action(async () => {
+        await api('connectionGroups.move', { groupId, anchorGroupId, placement });
+        await loadState();
+      });
     } finally {
       set('organizationSaving', false);
     }
@@ -1151,10 +1336,24 @@ function useBusinessController() {
   }
   async function removeEntity(kind: string, id: string) {
     if (kind === 'connection') return removeConnections([id]);
+    const workspaceGeneration = workspaceEditorGeneration.current;
+    const templateGeneration = templateEditorGeneration.current;
     if (!(await confirm('删除配置', '确认删除这项配置？已有同步记录会保留。', '删除'))) return;
     await action(async () => {
       await api('entity.delete', { kind, id });
       await loadState();
+      if (
+        kind === 'workspace' &&
+        workspaceGeneration === workspaceEditorGeneration.current &&
+        latest.current.workspaceForm.id === id
+      )
+        closeWorkspace();
+      if (
+        kind === 'template' &&
+        templateGeneration === templateEditorGeneration.current &&
+        latest.current.templateForm.id === id
+      )
+        closeTemplate();
     });
   }
   async function removeConnections(ids = latest.current.connectionSelection) {
@@ -1191,19 +1390,29 @@ function useBusinessController() {
     });
   }
   async function refreshConnection(id: string) {
+    const workspace = latest.current.workspaceId;
     const connection = latest.current.state.connections.find((c) => c.id === id);
     if (!connection) return;
-    for (const key of requests.current.keys())
-      if (key === 'tree:' + id || key.startsWith('tree:' + id + '/')) requests.current.delete(key);
-    commit((s) => ({
-      ...s,
-      treeChildren: Object.fromEntries(
-        Object.entries(s.treeChildren).filter(([key]) => key !== id && !key.startsWith(id + '/')),
-      ),
-    }));
-    await loadDatabaseOptions(true, id);
-    if (!latest.current.dbErrors[id])
+    const signature = connectionSignature(connection);
+    await runRefresh('connection:' + id, `刷新 ${connection.name} 数据库`, async () => {
+      for (const key of requests.current.keys())
+        if (key === 'tree:' + id || key.startsWith('tree:' + id + '/'))
+          requests.current.delete(key);
+      commit((s) => ({
+        ...s,
+        treeChildren: Object.fromEntries(
+          Object.entries(s.treeChildren).filter(([key]) => key !== id && !key.startsWith(id + '/')),
+        ),
+      }));
+      await loadDatabaseOptions(true, id);
+      if (latest.current.workspaceId !== workspace) return false;
+      if (
+        connectionSignature(latest.current.state.connections.find((c) => c.id === id)) !== signature
+      )
+        return false;
+      if (latest.current.dbErrors[id]) throw new Error(latest.current.dbErrors[id]);
       await loadTree({ key: id, title: connection.name, type: 'connection', connectionId: id });
+    });
   }
   async function parseImport(input = latest.current) {
     const valid = request('import');
@@ -1339,6 +1548,8 @@ function useBusinessController() {
     });
   }
   function editTemplate(t?: SyncTemplate) {
+    templateEditorGeneration.current += 1;
+    requests.current.delete('templateScope');
     const s = latest.current;
     const form = t
       ? copyModel(t)
@@ -1359,17 +1570,30 @@ function useBusinessController() {
       },
       templateSource: form.source.connectionId ? refKey(form.source) : '',
       templateTargets: form.targets.map(refKey),
-      page: 'templates',
+      templateDialog: true,
+    }));
+  }
+  function closeTemplate() {
+    templateEditorGeneration.current += 1;
+    requests.current.delete('templateScope');
+    commit((s) => ({
+      ...s,
+      templateDialog: false,
+      templateForm: { ...initialModel().templateForm, workspaceId: s.workspaceId },
+      templateSource: '',
+      templateTargets: [],
     }));
   }
   async function templateSourceChanged(source: string) {
     set('templateSource', source);
     const valid = request('templateScope');
     const id = latest.current.templateForm.id;
+    const generation = templateEditorGeneration.current;
     await action(async () => {
       const rows = await api<{ name: string }[]>('tables.list', { ref: fromKey(source) });
       if (
         valid() &&
+        generation === templateEditorGeneration.current &&
         latest.current.templateSource === source &&
         latest.current.templateForm.id === id
       )
@@ -1395,47 +1619,86 @@ function useBusinessController() {
     }));
   }
   async function saveTemplate() {
+    if (templateSaving.current) return;
+    templateSaving.current = true;
     const s = latest.current;
-    await action(async () => {
-      if (!s.templateForm.name.trim() || !s.templateSource || !s.templateTargets.length)
-        throw new Error('请填写模板名称并选择来源与目标库');
-      await api('entity.save', {
-        kind: 'template',
-        value: {
-          ...s.templateForm,
-          source: fromKey(s.templateSource),
-          targets: s.templateTargets.map(fromKey),
-          tables: choices(s.templateForm.tables),
-        },
+    const generation = templateEditorGeneration.current;
+    set('templateSubmitting', true);
+    try {
+      await action(async () => {
+        if (!s.templateForm.name.trim() || !s.templateSource || !s.templateTargets.length)
+          throw new Error('请填写模板名称并选择来源与目标库');
+        await api('entity.save', {
+          kind: 'template',
+          value: {
+            ...s.templateForm,
+            source: fromKey(s.templateSource),
+            targets: s.templateTargets.map(fromKey),
+            tables: choices(s.templateForm.tables),
+          },
+        });
+        await loadState();
+        if (
+          generation === templateEditorGeneration.current &&
+          latest.current.workspaceId === s.workspaceId
+        )
+          closeTemplate();
+        void message.success('模板已保存');
       });
-      await loadState();
-      void message.success('模板已保存');
-    });
+    } finally {
+      templateSaving.current = false;
+      set('templateSubmitting', false);
+    }
   }
   async function applyTemplate(t: SyncTemplate) {
-    if (comparisonActive()) return;
-    resetSync();
-    const source = refKey(t.source);
-    set('sourceKey', source);
-    set('targetKeys', t.targets.map(refKey));
-    if (!(await loadScope(source))) return;
-    if (latest.current.sourceKey !== source || latest.current.workspaceId !== t.workspaceId) return;
+    if (comparisonActive() || latest.current.applyingTemplateId) return;
+    const template = copyModel(t);
+    const valid = request('applyTemplate');
     commit((s) => ({
       ...s,
-      scopeTables: s.scopeTables.map((item) => {
-        const saved = t.tables.find((c) => c.name === item.name);
-        return saved
-          ? {
-              ...item,
-              ...copyModel(saved),
-              structureOptions: { ...effectiveOptions(saved.structureOptions) },
-              keyText: saved.keyColumns.join(', '),
-            }
-          : item;
-      }),
-      page: 'scope',
+      applyingTemplateId: template.id,
+      templateApplyError: '',
+      appliedTemplate: undefined,
     }));
-    ensureStructureForMissingTables();
+    try {
+      resetSync();
+      const source = refKey(template.source);
+      set('sourceKey', source);
+      set('targetKeys', template.targets.map(refKey));
+      if (!(await loadScope(source))) {
+        if (valid()) set('templateApplyError', '模板应用失败，请检查来源数据库后重试');
+        return;
+      }
+      if (
+        !valid() ||
+        latest.current.sourceKey !== source ||
+        latest.current.workspaceId !== template.workspaceId
+      )
+        return;
+      commit((s) => ({
+        ...s,
+        scopeTables: s.scopeTables.map((item) => {
+          const saved = template.tables.find((c) => c.name === item.name);
+          return saved
+            ? {
+                ...item,
+                ...copyModel(saved),
+                structureOptions: { ...effectiveOptions(saved.structureOptions) },
+                keyText: saved.keyColumns.join(', '),
+              }
+            : item;
+        }),
+        page: 'scope',
+      }));
+      ensureStructureForMissingTables();
+      commit((s) => ({
+        ...s,
+        scopeTemplateId: template.id,
+        appliedTemplate: { id: template.id, name: template.name },
+      }));
+    } finally {
+      if (valid()) set('applyingTemplateId', '');
+    }
   }
   function openVersionDrawer() {
     commit((s) => ({
@@ -1526,6 +1789,20 @@ function useBusinessController() {
   async function changeRecordTab(tab: string) {
     set('recordTab', tab);
     await loadRecordScripts(tab);
+  }
+  async function refreshRecordScripts() {
+    const s = latest.current;
+    if (!s.detail) return;
+    await runRefresh('recordScripts', '重新加载脚本', async () => {
+      await loadRecordScripts(s.recordTab);
+      if (
+        latest.current.detail?.record.id !== s.detail?.record.id ||
+        latest.current.recordTab !== s.recordTab
+      )
+        return false;
+      const errors = Object.values(latest.current.recordScriptErrors).filter(Boolean);
+      if (errors.length) throw new Error(errors.join('；'));
+    });
   }
   async function loadRecordScripts(tab: string) {
     const s = latest.current;
@@ -1642,9 +1919,10 @@ function useBusinessController() {
         : message.warning('未通过完整核验，请查看校验结果'));
     });
   }
-  async function beginRollback(id: string) {
+  async function beginRollback(id: string, refresh = false) {
+    if (refresh && latest.current.refreshing.rollback) return;
     const valid = request('rollback');
-    await action(async () => {
+    const work = async () => {
       const rollback = await api<RollbackPlan>('rollback.preview', { id });
       if (valid())
         commit((s) => ({
@@ -1655,7 +1933,10 @@ function useBusinessController() {
           rollbackRemark: '',
           page: 'rollback',
         }));
-    });
+      else return false;
+    };
+    if (refresh) await runRefresh('rollback', '重新校验', work);
+    else await action(work);
   }
   function toggleRecovery(ids: string[], checked: boolean) {
     commit((s) => ({ ...s, rollbackIds: toggleIds(s.rollbackIds, ids, checked) }));
@@ -2038,6 +2319,10 @@ function useBusinessController() {
     loadTree,
     openTable,
     refreshTable,
+    refreshDatabaseOptions,
+    refreshTargetTables,
+    refreshEngine,
+    refreshRecordScripts,
     beginSync,
     loadScope,
     setTargets,
@@ -2053,13 +2338,16 @@ function useBusinessController() {
     toggleChanges,
     saveSync,
     editWorkspace,
+    closeWorkspace,
     saveWorkspace,
     editConnection,
     editGroup,
+    closeGroup,
     saveGroup,
     addConnectionGroup,
     chooseConnectionGroup,
     moveConnection,
+    moveGroup,
     closeConnection,
     saveConnection,
     testConnection,
@@ -2075,6 +2363,7 @@ function useBusinessController() {
     updateImport,
     submitImport,
     editTemplate,
+    closeTemplate,
     templateSourceChanged,
     updateTemplateTable,
     saveTemplate,

@@ -1,24 +1,28 @@
-import { Alert, Button } from 'antd';
+import { Alert } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { useController } from '../controller';
+import { RefreshButton } from './AsyncButton';
 
 export function DatabaseOptionsStatus() {
   const c = useController();
   const connections = c.m.state.connections.filter((connection) =>
     connection.workspaceIds.includes(c.m.workspaceId),
   );
-  const loading = connections.some((connection) => c.m.dbLoading[connection.id]);
+  const loading =
+    !!c.m.refreshing.databases || connections.some((connection) => c.m.dbLoading[connection.id]);
   const errors = connections.filter((connection) => c.m.dbErrors[connection.id]);
   return (
     <div className="bottom-gap">
-      <Button
+      <RefreshButton
         size="small"
         icon={<ReloadOutlined />}
         loading={loading}
-        onClick={() => void c.loadDatabaseOptions(true)}
+        result={c.m.refreshResults.databases}
+        disabled={!connections.length}
+        onClick={() => c.refreshDatabaseOptions()}
       >
-        {loading ? '正在加载数据库' : '刷新数据库'}
-      </Button>
+        刷新数据库
+      </RefreshButton>
       {!!errors.length && (
         <Alert
           className="top-gap"

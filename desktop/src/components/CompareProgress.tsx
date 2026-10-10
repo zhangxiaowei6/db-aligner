@@ -1,5 +1,6 @@
+import { AsyncButton as Button } from './AsyncButton';
 import { useEffect, useState } from 'react';
-import { Alert, Button, Collapse, Progress, Space, Tooltip } from 'antd';
+import { Alert, Collapse, Progress, Space, Tooltip } from 'antd';
 import { useController } from '../controller';
 import { fromKey, refKey } from '../model';
 import type { DbRef } from '../types';
@@ -64,7 +65,7 @@ export function CompareProgressPanel() {
             danger
             size="small"
             disabled={task.status === 'CANCELLING'}
-            onClick={() => void c.stopCompare()}
+            onClick={() => c.stopCompare()}
           >
             停止比较
           </Button>

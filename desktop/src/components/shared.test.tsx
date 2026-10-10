@@ -4,6 +4,49 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DataTable, SelectionToggle } from './shared';
+import { AsyncButton, RefreshButton } from './AsyncButton';
+import { App } from 'antd';
+
+it('keeps an asynchronous action loading until completion and blocks duplicate clicks', async () => {
+  let finish!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const handler = vi.fn(() => promise);
+  render(
+    <App>
+      <AsyncButton onClick={handler}>导出配置</AsyncButton>
+    </App>,
+  );
+  const button = screen.getByRole('button', { name: '导出配置' });
+  await userEvent.click(button);
+  expect(button.className).toContain('ant-btn-loading');
+  fireEvent.click(button);
+  expect(handler).toHaveBeenCalledTimes(1);
+  finish();
+  await waitFor(() => expect(button.className).not.toContain('ant-btn-loading'));
+});
+
+it('shows refresh failure and complete details on keyboard focus, keeping retry available', async () => {
+  const retry = vi.fn();
+  render(
+    <App>
+      <RefreshButton result={{ status: 'error', message: '连接超时，请检查地址' }} onClick={retry}>
+        刷新数据库
+      </RefreshButton>
+    </App>,
+  );
+  const button = screen.getByRole('button', { name: '刷新数据库' });
+  expect(button.className).toContain('test-error');
+  expect(button.querySelector('.anticon-close')).toBeTruthy();
+  await userEvent.tab();
+  expect(await screen.findByRole('tooltip')).toHaveProperty(
+    'textContent',
+    '连接超时，请检查地址 · 点击再次刷新',
+  );
+  await userEvent.click(button);
+  expect(retry).toHaveBeenCalledTimes(1);
+});
 
 const rows = Array.from({ length: 32 }, (_, index) => ({
   id: String(index),

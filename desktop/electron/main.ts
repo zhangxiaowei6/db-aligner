@@ -57,6 +57,7 @@ const methods = new Set([
   'state.load',
   'entity.save',
   'connectionGroups.save',
+  'connectionGroups.move',
   'connections.move',
   'entity.delete',
   'connections.test',

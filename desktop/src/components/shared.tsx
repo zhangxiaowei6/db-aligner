@@ -1,3 +1,4 @@
+import { AsyncButton as Button } from './AsyncButton';
 import {
   cloneElement,
   isValidElement,
@@ -11,7 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, Form, Table, Tag, type ButtonProps, type TableProps } from 'antd';
+import { Form, Table, Tag, Tooltip, type ButtonProps, type TableProps } from 'antd';
 import { CheckOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons';
 import { statusColor, statusLabel, type ConnectionTestResult } from '../model';
 
@@ -46,15 +47,19 @@ export function SelectionToggle({
 
 export function ConnectionTestButton({
   result,
+  successDetails = false,
   ...props
-}: ButtonProps & { result?: ConnectionTestResult }) {
-  return (
+}: ButtonProps & { result?: ConnectionTestResult; successDetails?: boolean }) {
+  const showDetails = successDetails && result?.status === 'success';
+  const button = (
     <Button
       {...props}
       className={`connection-test-button ${result ? `test-${result.status}` : ''} ${props.className || ''}`}
       loading={result?.status === 'testing'}
       title={
-        result?.status === 'success' || result?.status === 'error' ? '再次测试连接' : undefined
+        !showDetails && (result?.status === 'success' || result?.status === 'error')
+          ? '再次测试连接'
+          : undefined
       }
       icon={
         result?.status === 'success' ? (
@@ -68,13 +73,30 @@ export function ConnectionTestButton({
       测试连接
     </Button>
   );
+  return showDetails ? (
+    <Tooltip title={`${result.message} · 点击再次测试`} trigger={['hover', 'focus']}>
+      {button}
+    </Tooltip>
+  ) : (
+    button
+  );
 }
-export function ConnectionTestFeedback({ result }: { result?: ConnectionTestResult }) {
+export function ConnectionTestFeedback({
+  result,
+  hideSuccess = false,
+}: {
+  result?: ConnectionTestResult;
+  hideSuccess?: boolean;
+}) {
   return result ? (
     <div
       role="status"
       aria-live="polite"
-      className={`connection-test-feedback test-${result.status}`}
+      className={
+        hideSuccess && result.status !== 'error'
+          ? 'visually-hidden'
+          : `connection-test-feedback test-${result.status}`
+      }
     >
       {result.message}
     </div>

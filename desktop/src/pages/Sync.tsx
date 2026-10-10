@@ -1,16 +1,5 @@
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Empty,
-  Form,
-  Input,
-  Select,
-  Space,
-  Tabs,
-  Tag,
-  Tooltip,
-} from 'antd';
+import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
+import { Alert, Checkbox, Empty, Form, Input, Select, Space, Tabs, Tag, Tooltip } from 'antd';
 import {
   ArrowRightOutlined,
   DatabaseOutlined,
@@ -40,6 +29,7 @@ import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import { columnChangeSummary } from '../column-comparison';
 import { DiffInspector } from '../components/DiffInspector';
 import SqlView from '../components/SqlView';
+import { TemplateEditor } from './Management';
 import {
   StructureOptionsEditor,
   TableStructureOptions,
@@ -70,10 +60,70 @@ export function ScopePage() {
     t.name.toLowerCase().includes(m.tableSearch.toLowerCase()),
   );
   const templates = m.state.templates.filter((t) => t.workspaceId === m.workspaceId);
+  const selectedTemplate = templates.find((t) => t.id === m.scopeTemplateId);
   return (
     <>
       <div className="scope-layout">
-        <Panel title="来源与目标" className="scope-panel">
+        <Panel title="同步范围" className="scope-panel">
+          <div className="scope-template-block">
+            <div className="scope-template-toolbar">
+              <Form layout="vertical" className="scope-template-selector">
+                <Field label="选择同步模板">
+                  <Select
+                    style={{ width: '100%' }}
+                    showSearch
+                    optionFilterProp="label"
+                    allowClear
+                    placeholder={
+                      templates.length ? '搜索模板名称，填入已保存的范围' : '当前工作区暂无模板'
+                    }
+                    value={selectedTemplate?.id}
+                    disabled={comparing || !!m.applyingTemplateId || !templates.length}
+                    options={templates.map((t) => ({ value: t.id, label: t.name }))}
+                    onChange={(id) => c.set('scopeTemplateId', id || '')}
+                  />
+                </Field>
+              </Form>
+              <div className="scope-template-actions">
+                <Button
+                  icon={<FileOutlined aria-hidden />}
+                  disabled={!selectedTemplate || comparing}
+                  loading={!!m.applyingTemplateId}
+                  onClick={() => selectedTemplate && c.applyTemplate(selectedTemplate)}
+                >
+                  {m.appliedTemplate?.id === selectedTemplate?.id && selectedTemplate
+                    ? '再次应用模板'
+                    : '应用模板'}
+                </Button>
+                <Button onClick={() => c.navigate('templates')}>管理模板</Button>
+              </div>
+            </div>
+            {selectedTemplate && (
+              <p className="hint template-summary">
+                {selectedTemplate.name} · 来源：
+                {options.find(
+                  (o) =>
+                    o.value ===
+                    `${selectedTemplate.source.connectionId}/${selectedTemplate.source.database}`,
+                )?.label || selectedTemplate.source.database}
+                {' · '}
+                {selectedTemplate.targets.length} 个目标库 · {selectedTemplate.tables.length} 张表
+                {selectedTemplate.description ? ` · ${selectedTemplate.description}` : ''}
+              </p>
+            )}
+            <p className="hint">应用模板会替换下方的来源、目标和选表范围；核对后再开始比较。</p>
+            {m.appliedTemplate && (
+              <Alert
+                type="success"
+                showIcon
+                title={`已应用：${m.appliedTemplate.name}`}
+                description="来源、目标和选表范围已更新，核对后点击开始比较。"
+                role="status"
+              />
+            )}
+            {m.templateApplyError && <Alert type="error" showIcon title={m.templateApplyError} />}
+          </div>
+
           <DatabaseOptionsStatus />
           <Form layout="vertical">
             <div className="source-target-form">
@@ -132,16 +182,20 @@ export function ScopePage() {
               })}
             </Space>
             <span className="hint">只读取已选表的结构与数据</span>
-            <Button
+            <RefreshButton
               size="small"
               aria-label="刷新目标表清单"
+              result={m.refreshResults.targetTables}
               icon={<ReloadOutlined aria-hidden />}
               disabled={comparing || !m.targetKeys.length}
-              loading={m.targetKeys.some((key) => m.targetTablesLoading[key])}
-              onClick={() => void c.loadTargetTables(true)}
+              loading={
+                !!m.refreshing.targetTables ||
+                m.targetKeys.some((key) => m.targetTablesLoading[key])
+              }
+              onClick={() => c.refreshTargetTables()}
             >
               刷新目标表清单
-            </Button>
+            </RefreshButton>
           </div>
           {m.targetKeys.some((key) => m.targetTablesLoading[key]) && (
             <p className="hint" role="status">
@@ -162,14 +216,20 @@ export function ScopePage() {
                 )
                 .join('；')}
               action={
-                <Button
+                <RefreshButton
                   size="small"
                   aria-label="重试"
+                  result={m.refreshResults.targetTables}
                   icon={<ReloadOutlined aria-hidden />}
-                  onClick={() => void c.loadTargetTables(true)}
+                  loading={
+                    !!m.refreshing.targetTables ||
+                    m.targetKeys.some((key) => m.targetTablesLoading[key])
+                  }
+                  disabled={comparing}
+                  onClick={() => c.refreshTargetTables()}
                 >
                   重试
-                </Button>
+                </RefreshButton>
               }
             />
           )}
@@ -286,51 +346,38 @@ export function ScopePage() {
             ID。已有表的字段定义或顺序变化时，请先同步结构，再重新比较数据。
           </p>
         </Panel>
-        <Panel title="同步模板">
-          <p className="hint">复用常用连接与选表规则</p>
-          {templates.map((t) => (
-            <button
-              className="template-card"
-              key={t.id}
-              disabled={comparing}
-              title={comparing ? '请先停止当前比较' : undefined}
-              onClick={() => void c.applyTemplate(t)}
-            >
-              <FileOutlined />
-              <strong>{t.name}</strong>
-              <span>
-                {t.tables.length} 张表 · {t.targets.length} 个目标库
-              </span>
-            </button>
-          ))}
-          <Space orientation="vertical">
-            <Button onClick={() => c.editTemplate()}>将当前范围保存为模板</Button>
-            <Button size="small" onClick={() => c.editTemplate(templates[0])}>
-              管理模板
-            </Button>
-          </Space>
-        </Panel>
       </div>
       <Footer>
         <span className="footer-summary">
           已选 {m.scopeTables.filter((t) => t.structure || t.data).length} 张表 ·{' '}
           {m.targetKeys.length} 个目标库
         </span>
-        <Button
-          type="primary"
-          loading={comparing}
-          disabled={
-            !m.sourceKey ||
-            comparing ||
-            !!m.compareConfirmation ||
-            !m.targetKeys.length ||
-            !m.scopeTables.some((t) => t.structure || t.data)
-          }
-          onClick={() => void c.compare()}
-        >
-          开始比较
-        </Button>
+        <Space>
+          <Button
+            icon={<FileOutlined aria-hidden />}
+            disabled={comparing || !!m.applyingTemplateId || !m.sourceKey || !m.targetKeys.length}
+            onClick={() => c.editTemplate()}
+          >
+            将当前范围保存为模板
+          </Button>
+          <Button
+            type="primary"
+            loading={comparing}
+            disabled={
+              !!m.applyingTemplateId ||
+              !m.sourceKey ||
+              comparing ||
+              !!m.compareConfirmation ||
+              !m.targetKeys.length ||
+              !m.scopeTables.some((t) => t.structure || t.data)
+            }
+            onClick={() => c.compare()}
+          >
+            开始比较
+          </Button>
+        </Space>
       </Footer>
+      <TemplateEditor />
     </>
   );
 }
@@ -547,7 +594,7 @@ export function DiffPage() {
         <span>已选 {changesOf(m).filter((v) => m.selectedIds.includes(v.id)).length} 项变更</span>
         <Button
           disabled={!m.selectedIds.length || !!m.busy}
-          onClick={() => void c.saveSync('SAVE_ONLY')}
+          onClick={() => c.saveSync('SAVE_ONLY')}
         >
           仅保存记录
         </Button>
@@ -555,7 +602,7 @@ export function DiffPage() {
           type="primary"
           loading={!!m.busy}
           disabled={!m.selectedIds.length}
-          onClick={() => void c.saveSync('EXECUTE_AND_SAVE')}
+          onClick={() => c.saveSync('EXECUTE_AND_SAVE')}
         >
           执行并保存
         </Button>
@@ -649,14 +696,12 @@ export function RollbackPage() {
           onChange={(e) => c.set('rollbackRemark', e.target.value)}
         />
         <span>已选 {m.rollbackIds.length} 项恢复</span>
-        <Button onClick={() => void c.action(() => c.openRecord(rollback.recordId))}>
-          返回记录
-        </Button>
+        <Button onClick={() => c.action(() => c.openRecord(rollback.recordId))}>返回记录</Button>
         <Button
           type="primary"
           loading={!!m.busy}
           disabled={!m.rollbackIds.length}
-          onClick={() => void c.executeRollback()}
+          onClick={() => c.executeRollback()}
         >
           执行所选回滚
         </Button>

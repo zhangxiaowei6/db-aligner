@@ -1,20 +1,9 @@
+import { AsyncButton as Button } from '../components/AsyncButton';
 import {
   StructureOptionsEditor,
   TableStructureOptions,
 } from '../components/StructureOptionsEditor';
-import {
-  Button,
-  AutoComplete,
-  Checkbox,
-  Empty,
-  Form,
-  Input,
-  Modal,
-  Radio,
-  Select,
-  Space,
-  Tag,
-} from 'antd';
+import { AutoComplete, Checkbox, Form, Input, Modal, Radio, Select, Space, Tag } from 'antd';
 import { EditOutlined, PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { connectionTestError } from '../connection-validation';
@@ -32,14 +21,14 @@ import {
 } from '../components/shared';
 import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import { ConnectionGroupSelect } from '../components/ConnectionOrganization';
-import type { ConnectionInfo, TableChoice, Workspace } from '../types';
+import type { ConnectionInfo, SyncTemplate, TableChoice, Workspace } from '../types';
 
 export function WorkspacesPage() {
   const c = useController();
   const { m } = c;
   const form = m.workspaceForm;
   return (
-    <div className="management-layout">
+    <>
       <section>
         <div className="section-heading">
           <h2>项目工作区</h2>
@@ -50,7 +39,7 @@ export function WorkspacesPage() {
         <DataTable<Workspace>
           rowKey="id"
           dataSource={m.state.workspaces}
-          onRow={(row) => ({ onClick: () => c.editWorkspace(row) })}
+          onRow={(row) => ({ onDoubleClick: () => c.editWorkspace(row) })}
           columns={[
             { title: '工作区', dataIndex: 'name' },
             { title: '说明', dataIndex: 'description' },
@@ -60,16 +49,56 @@ export function WorkspacesPage() {
               render: (_, row) =>
                 m.state.connections.filter((conn) => conn.workspaceIds.includes(row.id)).length,
             },
+            {
+              title: '操作',
+              key: 'actions',
+              width: 160,
+              render: (_, row) => (
+                <Space onDoubleClick={(event) => event.stopPropagation()}>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined aria-hidden />}
+                    aria-label={`编辑工作区 ${row.name}`}
+                    onClick={() => c.editWorkspace(row)}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                  >
+                    编辑
+                  </Button>
+                  <Button
+                    danger
+                    size="small"
+                    aria-label={`删除工作区 ${row.name}`}
+                    disabled={m.workspaceSubmitting}
+                    onClick={() => c.removeEntity('workspace', row.id)}
+                  >
+                    删除
+                  </Button>
+                </Space>
+              ),
+            },
           ]}
         />
         <Space className="top-gap">
-          <Button onClick={() => void c.exportConfig()}>导出项目配置</Button>
-          <Button onClick={() => void c.importConfig()}>导入项目配置</Button>
+          <Button onClick={() => c.exportConfig()}>导出项目配置</Button>
+          <Button onClick={() => c.importConfig()}>导入项目配置</Button>
         </Space>
         <p className="hint">配置导出不包含连接密码和证书文件。</p>
       </section>
-      <Panel title={form.id ? '编辑工作区' : '新建工作区'}>
-        <Form layout="vertical">
+      <Modal
+        title={m.state.workspaces.some((w) => w.id === form.id) ? '编辑工作区' : '新建工作区'}
+        open={m.workspaceDialog}
+        centered
+        width={560}
+        onCancel={c.closeWorkspace}
+        onOk={() => void c.saveWorkspace()}
+        okText="保存工作区"
+        cancelText="取消"
+        confirmLoading={m.workspaceSubmitting}
+        okButtonProps={{ disabled: !form.name.trim() }}
+        destroyOnHidden
+        styles={{ body: { maxHeight: '65vh', overflowY: 'auto' } }}
+      >
+        <Form layout="vertical" disabled={m.workspaceSubmitting}>
           <Field label="工作区名称" required>
             <Input
               value={form.name}
@@ -84,25 +113,19 @@ export function WorkspacesPage() {
             />
           </Field>
           <Field label="关联连接">
-            <Checkbox.Group
+            <Select
+              mode="multiple"
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择关联连接"
               value={form.connectionIds || []}
               options={m.state.connections.map((conn) => ({ label: conn.name, value: conn.id }))}
-              onChange={(ids) => c.patch('workspaceForm', { connectionIds: ids as string[] })}
+              onChange={(ids) => c.patch('workspaceForm', { connectionIds: ids })}
             />
           </Field>
         </Form>
-        <Space wrap>
-          <Button type="primary" loading={!!m.busy} onClick={() => void c.saveWorkspace()}>
-            保存工作区
-          </Button>
-          {m.state.workspaces.some((w) => w.id === form.id) && (
-            <Button danger onClick={() => void c.removeEntity('workspace', form.id)}>
-              删除
-            </Button>
-          )}
-        </Space>
-      </Panel>
-    </div>
+      </Modal>
+    </>
   );
 }
 export function ConnectionsPage() {
@@ -132,14 +155,11 @@ export function ConnectionsPage() {
             onChange={(e) => c.set('connectionSearch', e.target.value)}
           />
           <Space>
-            <Button icon={<EditOutlined aria-hidden />} onClick={() => c.editGroup()}>
-              编辑分组
-            </Button>
             <Button
               danger
               disabled={!m.connectionSelection.length}
               loading={!!m.busy}
-              onClick={() => void c.removeConnections()}
+              onClick={() => c.removeConnections()}
             >
               批量删除{m.connectionSelection.length ? `（${m.connectionSelection.length}）` : ''}
             </Button>
@@ -176,34 +196,41 @@ export function ConnectionsPage() {
             {
               title: '操作',
               key: 'actions',
-              width: 240,
+              width: 280,
               render: (_, row) => (
-                <div onClick={(event) => event.stopPropagation()}>
-                  <Space size={8} wrap>
-                    <ConnectionTestButton
-                      size="small"
-                      result={m.connectionTests[row.id]}
-                      disabled={!!connectionTestError(row)}
-                      aria-label={`测试连接 ${row.name}`}
-                      onClick={() => void c.testConnection(row)}
-                    />
-                    <Button
-                      size="small"
-                      aria-label={`更换分组 ${row.name}`}
-                      onClick={() => c.chooseConnectionGroup(row)}
-                    >
-                      更换分组
-                    </Button>
-                    <Button
-                      danger
-                      size="small"
-                      aria-label={`删除连接 ${row.name}`}
-                      onClick={() => void c.removeConnections([row.id])}
-                    >
-                      删除
-                    </Button>
-                  </Space>
-                  <ConnectionTestFeedback result={m.connectionTests[row.id]} />
+                <div
+                  className="connection-row-actions"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="connection-actions-scroll">
+                    <Space size={8}>
+                      <ConnectionTestButton
+                        size="small"
+                        result={m.connectionTests[row.id]}
+                        successDetails
+                        disabled={!!connectionTestError(row)}
+                        aria-label={`测试连接 ${row.name}`}
+                        onClick={() => c.testConnection(row)}
+                      />
+                      <Button
+                        size="small"
+                        icon={<EditOutlined aria-hidden />}
+                        aria-label={`编辑连接 ${row.name}`}
+                        onClick={() => c.editConnection(row)}
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        danger
+                        size="small"
+                        aria-label={`删除连接 ${row.name}`}
+                        onClick={() => c.removeConnections([row.id])}
+                      >
+                        删除
+                      </Button>
+                    </Space>
+                  </div>
+                  <ConnectionTestFeedback result={m.connectionTests[row.id]} hideSuccess />
                 </div>
               ),
             },
@@ -225,7 +252,7 @@ export function ConnectionsPage() {
                 aria-label="测试连接"
                 result={m.connectionTest}
                 disabled={!!connectionTestError(f) || !f.workspaceIds.length}
-                onClick={() => void c.testConnection()}
+                onClick={() => c.testConnection()}
               />
               <ConnectionTestFeedback result={m.connectionTest} />
             </div>
@@ -234,7 +261,7 @@ export function ConnectionsPage() {
                 type="primary"
                 loading={!!m.busy}
                 onClick={() =>
-                  void connectionFields
+                  connectionFields
                     .validateFields()
                     .then(() => c.saveConnection())
                     .catch(() => {})
@@ -354,7 +381,7 @@ export function ConnectionsPage() {
                     value={f.ca}
                     onChange={(e) => c.patch('connectionForm', { ca: e.target.value })}
                   />
-                  <Button onClick={() => void c.chooseCertificate('ca')}>选择</Button>
+                  <Button onClick={() => c.chooseCertificate('ca')}>选择</Button>
                 </Space.Compact>
               </Field>
               <Field label="客户端证书（PKCS#12，可选）">
@@ -363,7 +390,7 @@ export function ConnectionsPage() {
                     value={f.clientCert}
                     onChange={(e) => c.patch('connectionForm', { clientCert: e.target.value })}
                   />
-                  <Button onClick={() => void c.chooseCertificate('clientCert')}>选择</Button>
+                  <Button onClick={() => c.chooseCertificate('clientCert')}>选择</Button>
                 </Space.Compact>
               </Field>
               {f.clientCert && (
@@ -403,11 +430,11 @@ export function ImportPage() {
           }
         />
         <div className="button-row">
-          <Button icon={<UploadOutlined />} onClick={() => void c.readImport()}>
+          <Button icon={<UploadOutlined />} onClick={() => c.readImport()}>
             选择会话文件
           </Button>
           <span>{m.importName || '也可粘贴 XML / JSON 内容'}</span>
-          {preview && <Button onClick={() => void c.loadImportExample()}>重新加载示例</Button>}
+          {preview && <Button onClick={() => c.loadImportExample()}>重新加载示例</Button>}
         </div>
         {preview && (
           <p className="hint">
@@ -427,7 +454,7 @@ export function ImportPage() {
           className="top-gap"
           loading={!!m.busy}
           disabled={!m.importText && !m.importFileToken}
-          onClick={() => void c.action(() => c.parseImport())}
+          onClick={() => c.action(() => c.parseImport())}
         >
           解析会话
         </Button>
@@ -486,7 +513,7 @@ export function ImportPage() {
                         disabled={!!row.warning || !!connectionTestError(row)}
                         result={row.connectionTest}
                         aria-label={`测试 ${row.name} 连接`}
-                        onClick={() => void c.testImportConnection(row.id)}
+                        onClick={() => c.testImportConnection(row.id)}
                       />
                       <ConnectionTestFeedback result={row.connectionTest} />
                     </div>
@@ -538,7 +565,7 @@ export function ImportPage() {
           type="primary"
           disabled={!m.importRows.some((r) => r.selected) || !m.importWorkspaceIds.length}
           loading={!!m.busy}
-          onClick={() => void c.submitImport()}
+          onClick={() => c.submitImport()}
         >
           确认导入
         </Button>
@@ -549,11 +576,9 @@ export function ImportPage() {
 export function TemplatesPage() {
   const c = useController();
   const { m } = c;
-  const f = m.templateForm;
-  const options = dbOptions(m);
   const templates = m.state.templates.filter((t) => t.workspaceId === m.workspaceId);
   return (
-    <div className="management-layout">
+    <>
       <section>
         <div className="section-heading">
           <h2>已保存模板</h2>
@@ -561,136 +586,196 @@ export function TemplatesPage() {
             新建模板
           </Button>
         </div>
-        {templates.map((t) => (
-          <button
-            key={t.id}
-            className={`template-card ${f.id === t.id ? 'selected' : ''}`}
-            onClick={() => c.editTemplate(t)}
-          >
-            <strong>{t.name}</strong>
-            <span>{t.description}</span>
-            <span>
-              {t.source.database} → {t.targets.length} 个目标库 / {t.tables.length} 张表
-            </span>
-          </button>
-        ))}
-        {!templates.length && <Empty description="尚未保存模板" />}
-      </section>
-      <Panel title={f.name || '新建同步模板'}>
-        <DatabaseOptionsStatus />
-        <Form layout="vertical">
-          <Field label="模板名称" required>
-            <Input
-              value={f.name}
-              onChange={(e) => c.patch('templateForm', { name: e.target.value })}
-            />
-          </Field>
-          <Field label="说明">
-            <Input.TextArea
-              value={f.description}
-              rows={3}
-              onChange={(e) => c.patch('templateForm', { description: e.target.value })}
-            />
-          </Field>
-          <Field label="来源数据库" required>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              value={m.templateSource || undefined}
-              options={options}
-              onChange={(value) => void c.templateSourceChanged(value)}
-            />
-          </Field>
-          <Field label="目标数据库" required>
-            <Select
-              mode="multiple"
-              optionFilterProp="label"
-              value={m.templateTargets}
-              options={options.filter((o) => o.value !== m.templateSource)}
-              onChange={(value) => c.set('templateTargets', value)}
-            />
-          </Field>
-        </Form>
-        <div className="structure-defaults">
-          <strong>统一结构默认</strong>
-          <StructureOptionsEditor
-            value={m.templateStructureDefaults}
-            onChange={(options) => c.set('templateStructureDefaults', options)}
-          />
-          <Button size="small" onClick={() => c.applyStructureDefaults(true)}>
-            应用到当前已选结构表
-          </Button>
-        </div>
-        <DataTable<TableChoice>
-          rowKey="name"
-          dataSource={f.tables}
+        <DataTable<SyncTemplate>
+          rowKey="id"
+          dataSource={templates}
+          onRow={(row) => ({ onDoubleClick: () => c.editTemplate(row) })}
+          locale={{ emptyText: '尚未保存模板' }}
           columns={[
-            { title: '表名', dataIndex: 'name' },
+            { title: '模板名称', dataIndex: 'name' },
+            { title: '说明', dataIndex: 'description' },
+            { title: '来源数据库', render: (_, row) => row.source.database },
+            { title: '目标库数', width: 90, render: (_, row) => row.targets.length },
+            { title: '表数', width: 65, render: (_, row) => row.tables.length },
             {
-              title: '结构',
-              width: 65,
-              align: 'center',
+              title: '操作',
+              key: 'actions',
+              width: 280,
               render: (_, row) => (
-                <Checkbox
-                  aria-label={`${row.name} 模板结构`}
-                  checked={row.structure}
-                  onChange={(e) => c.updateTemplateTable(row.name, { structure: e.target.checked })}
-                />
-              ),
-            },
-            {
-              title: '数据',
-              width: 65,
-              align: 'center',
-              render: (_, row) => (
-                <Checkbox
-                  aria-label={`${row.name} 模板数据`}
-                  checked={row.data}
-                  onChange={(e) => c.updateTemplateTable(row.name, { data: e.target.checked })}
-                />
-              ),
-            },
-            {
-              title: '结构细项',
-              width: 130,
-              render: (_, row) => (
-                <TableStructureOptions
-                  label={`${row.name} 模板结构细项`}
-                  value={row.structureOptions}
-                  disabled={!row.structure}
-                  onChange={(options) =>
-                    c.updateTemplateTable(row.name, { structureOptions: options })
-                  }
-                />
-              ),
-            },
-            {
-              title: '匹配键',
-              render: (_, row) => (
-                <Input
-                  value={row.keyText}
-                  disabled={!row.data}
-                  placeholder="默认主键"
-                  onChange={(e) => c.updateTemplateTable(row.name, { keyText: e.target.value })}
-                />
+                <Space onDoubleClick={(event) => event.stopPropagation()}>
+                  <Button
+                    size="small"
+                    icon={<EditOutlined aria-hidden />}
+                    aria-label={`编辑模板 ${row.name}`}
+                    onClick={() => c.editTemplate(row)}
+                  >
+                    编辑
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={
+                      !!m.applyingTemplateId ||
+                      (!!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status))
+                    }
+                    aria-label={`应用模板 ${row.name}`}
+                    onClick={() => c.applyTemplate(row)}
+                  >
+                    应用模板
+                  </Button>
+                  <Button
+                    danger
+                    size="small"
+                    aria-label={`删除模板 ${row.name}`}
+                    disabled={m.templateSubmitting}
+                    onClick={() => c.removeEntity('template', row.id)}
+                  >
+                    删除
+                  </Button>
+                </Space>
               ),
             },
           ]}
         />
-        <Space className="top-gap" wrap>
-          <Button type="primary" loading={!!m.busy} onClick={() => void c.saveTemplate()}>
+      </section>
+      <TemplateEditor />
+    </>
+  );
+}
+export function TemplateEditor() {
+  const c = useController();
+  const { m } = c;
+  const f = m.templateForm;
+  const options = dbOptions(m);
+  return (
+    <Modal
+      title={m.state.templates.some((t) => t.id === f.id) ? '编辑同步模板' : '新建同步模板'}
+      open={m.templateDialog}
+      centered
+      width={960}
+      onCancel={c.closeTemplate}
+      destroyOnHidden
+      styles={{ body: { maxHeight: '65vh', overflowY: 'auto' } }}
+      footer={
+        <Space>
+          <Button onClick={c.closeTemplate}>取消</Button>
+          <Button
+            type="primary"
+            loading={m.templateSubmitting}
+            disabled={!f.name.trim() || !m.templateSource || !m.templateTargets.length}
+            onClick={() => c.saveTemplate()}
+          >
             保存模板
           </Button>
-          {m.state.templates.some((t) => t.id === f.id) && (
-            <>
-              <Button onClick={() => void c.applyTemplate(f)}>应用模板</Button>
-              <Button danger onClick={() => void c.removeEntity('template', f.id)}>
-                删除
-              </Button>
-            </>
-          )}
         </Space>
-      </Panel>
-    </div>
+      }
+    >
+      <DatabaseOptionsStatus />
+      <Form layout="vertical" disabled={m.templateSubmitting}>
+        <Field label="模板名称" required>
+          <Input
+            value={f.name}
+            onChange={(e) => c.patch('templateForm', { name: e.target.value })}
+          />
+        </Field>
+        <Field label="说明">
+          <Input.TextArea
+            value={f.description}
+            rows={3}
+            onChange={(e) => c.patch('templateForm', { description: e.target.value })}
+          />
+        </Field>
+        <Field label="来源数据库" required>
+          <Select
+            showSearch
+            optionFilterProp="label"
+            value={m.templateSource || undefined}
+            options={options}
+            onChange={(value) => void c.templateSourceChanged(value)}
+          />
+        </Field>
+        <Field label="目标数据库" required>
+          <Select
+            mode="multiple"
+            optionFilterProp="label"
+            value={m.templateTargets}
+            options={options.filter((o) => o.value !== m.templateSource)}
+            onChange={(value) => c.set('templateTargets', value)}
+          />
+        </Field>
+      </Form>
+      <div className="structure-defaults">
+        <strong>统一结构默认</strong>
+        <StructureOptionsEditor
+          value={m.templateStructureDefaults}
+          disabled={m.templateSubmitting}
+          onChange={(options) => c.set('templateStructureDefaults', options)}
+        />
+        <Button
+          size="small"
+          disabled={m.templateSubmitting}
+          onClick={() => c.applyStructureDefaults(true)}
+        >
+          应用到当前已选结构表
+        </Button>
+      </div>
+      <DataTable<TableChoice>
+        rowKey="name"
+        dataSource={f.tables}
+        columns={[
+          { title: '表名', dataIndex: 'name' },
+          {
+            title: '结构',
+            width: 65,
+            align: 'center',
+            render: (_, row) => (
+              <Checkbox
+                aria-label={`${row.name} 模板结构`}
+                disabled={m.templateSubmitting}
+                checked={row.structure}
+                onChange={(e) => c.updateTemplateTable(row.name, { structure: e.target.checked })}
+              />
+            ),
+          },
+          {
+            title: '数据',
+            width: 65,
+            align: 'center',
+            render: (_, row) => (
+              <Checkbox
+                aria-label={`${row.name} 模板数据`}
+                disabled={m.templateSubmitting}
+                checked={row.data}
+                onChange={(e) => c.updateTemplateTable(row.name, { data: e.target.checked })}
+              />
+            ),
+          },
+          {
+            title: '结构细项',
+            width: 130,
+            render: (_, row) => (
+              <TableStructureOptions
+                label={`${row.name} 模板结构细项`}
+                value={row.structureOptions}
+                disabled={m.templateSubmitting || !row.structure}
+                onChange={(options) =>
+                  c.updateTemplateTable(row.name, { structureOptions: options })
+                }
+              />
+            ),
+          },
+          {
+            title: '匹配键',
+            render: (_, row) => (
+              <Input
+                value={row.keyText}
+                disabled={m.templateSubmitting || !row.data}
+                placeholder="默认主键"
+                onChange={(e) => c.updateTemplateTable(row.name, { keyText: e.target.value })}
+              />
+            ),
+          },
+        ]}
+      />
+    </Modal>
   );
 }

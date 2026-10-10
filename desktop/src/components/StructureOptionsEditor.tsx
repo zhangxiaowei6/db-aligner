@@ -1,4 +1,5 @@
-import { Checkbox, Popover, Button } from 'antd';
+import { AsyncButton as Button } from './AsyncButton';
+import { Checkbox, Popover } from 'antd';
 import type { StructureOptions } from '../types';
 import { effectiveOptions, structureLabels, structureSummary } from '../structure-options';
 

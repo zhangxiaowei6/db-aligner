@@ -1,60 +1,42 @@
-import { Button, Form, Input, Modal, Select, Space } from 'antd';
-import { EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { AsyncButton as Button } from './AsyncButton';
+import { Form, Input, Modal, Select, type InputRef } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { useEffect, useRef, useState } from 'react';
 import { useController } from '../controller';
 
 export function ConnectionOrganizationDialogs() {
   const c = useController();
   const { m } = c;
+  const nameInput = useRef<InputRef>(null);
   return (
     <>
       <Modal
-        title="编辑分组"
+        title={m.groupForm ? '编辑分组' : '新增分组'}
         open={m.groupDialog}
-        onCancel={() => c.set('groupDialog', false)}
-        footer={<Button onClick={() => c.set('groupDialog', false)}>关闭</Button>}
+        width={360}
+        centered
+        onCancel={c.closeGroup}
+        onOk={() => void c.saveGroup()}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={m.groupSubmitting}
+        okButtonProps={{ disabled: !m.groupName.trim() }}
+        afterOpenChange={(open) => {
+          if (open) nameInput.current?.focus({ cursor: 'all' });
+        }}
       >
-        <div className="group-list">
-          {m.state.connectionGroups.map((group) => (
-            <div className="group-list-row" key={group.id}>
-              <span>{group.name}</span>
-              <Button
-                size="small"
-                icon={<EditOutlined aria-hidden />}
-                onClick={() => c.editGroup(group)}
-              >
-                编辑名称
-              </Button>
-            </div>
-          ))}
-        </div>
         <Form layout="vertical" onFinish={() => void c.saveGroup()}>
-          <Form.Item label={m.groupForm ? `编辑分组：${m.groupForm.name}` : '新增分组'}>
+          <Form.Item label="分组名称">
             <Input
+              ref={nameInput}
               aria-label="分组名称"
               autoFocus
+              disabled={m.groupSubmitting}
               value={m.groupName}
               onChange={(event) => c.set('groupName', event.target.value)}
+              onPressEnter={() => void c.saveGroup()}
             />
           </Form.Item>
-          <Space>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={!!m.busy}
-              disabled={!m.groupName.trim()}
-            >
-              保存分组
-            </Button>
-            {m.groupForm && (
-              <Button
-                icon={<PlusOutlined aria-hidden />}
-                onClick={() => c.editGroup(undefined, true)}
-              >
-                新增分组
-              </Button>
-            )}
-          </Space>
         </Form>
       </Modal>
       <Modal
@@ -144,7 +126,7 @@ export function ConnectionGroupSelect() {
               icon={<PlusOutlined aria-hidden />}
               loading={saving}
               disabled={!name.trim()}
-              onClick={() => void create()}
+              onClick={() => create()}
             >
               新增
             </Button>

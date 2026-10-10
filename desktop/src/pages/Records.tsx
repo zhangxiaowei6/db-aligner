@@ -1,6 +1,6 @@
+import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
 import {
   Alert,
-  Button,
   Checkbox,
   Drawer,
   Empty,
@@ -149,7 +149,7 @@ export function HistoryPage() {
       title: '同步记录／备注',
       render: (_: unknown, row: SyncRecord) => (
         <>
-          <Button type="link" onClick={() => void c.action(() => c.openRecord(row.id))}>
+          <Button type="link" onClick={() => c.action(() => c.openRecord(row.id))}>
             {row.id}
           </Button>
           <div>{row.remark || '未填写备注'}</div>
@@ -210,7 +210,7 @@ export function HistoryPage() {
             <div className="selection-bar">
               <strong>已选择 {m.historySelection.length} 条同步记录</strong>
               <Space>
-                <Button onClick={() => void c.exportRecords(m.historySelection)}>导出记录</Button>
+                <Button onClick={() => c.exportRecords(m.historySelection)}>导出记录</Button>
                 <Button type="primary" onClick={c.openVersionDrawer}>
                   标记版本
                 </Button>
@@ -268,13 +268,13 @@ export function HistoryPage() {
               <div className="section-heading">
                 <h2>{version.number}</h2>
                 <Space wrap>
-                  <Button onClick={() => void c.editVersion()}>编辑说明</Button>
+                  <Button onClick={() => c.editVersion()}>编辑说明</Button>
                   <Button onClick={() => c.set('historyTab', 'records')}>追加记录</Button>
                   <Button
                     type="primary"
                     disabled={!versionRecords.length}
                     onClick={() =>
-                      void c.exportRecords(
+                      c.exportRecords(
                         versionRecords.map((r) => r.id),
                         version.number + '-scripts.zip',
                       )
@@ -399,9 +399,13 @@ export function RecordPage() {
                     title="脚本加载失败"
                     description={m.recordScriptErrors[file]}
                     action={
-                      <Button onClick={() => void c.action(() => c.changeRecordTab(m.recordTab))}>
+                      <RefreshButton
+                        loading={!!m.refreshing.recordScripts}
+                        result={m.refreshResults.recordScripts}
+                        onClick={() => c.refreshRecordScripts()}
+                      >
                         重试
-                      </Button>
+                      </RefreshButton>
                     }
                   />
                 ) : (
@@ -487,7 +491,7 @@ export function RecordPage() {
           <div className="section-heading top-gap">
             <h2>执行日志</h2>
             {['RUNNING', 'QUEUED'].includes(record.status) && (
-              <Button onClick={() => void c.cancelTask()}>停止后续任务</Button>
+              <Button onClick={() => c.cancelTask()}>停止后续任务</Button>
             )}
           </div>
           <div className="log-list">
@@ -507,7 +511,7 @@ export function RecordPage() {
         <Panel>
           <div className="section-heading">
             <h2>外部执行记录</h2>
-            <Button loading={!!m.busy} onClick={() => void c.verifyExternal()}>
+            <Button loading={!!m.busy} onClick={() => c.verifyExternal()}>
               校验目标库与恢复资料
             </Button>
           </div>
@@ -558,7 +562,7 @@ export function RecordPage() {
           disabled={
             ['UNEXECUTED', 'RUNNING', 'QUEUED'].includes(record.status) && !detail.external.verified
           }
-          onClick={() => void c.beginRollback(record.id)}
+          onClick={() => c.beginRollback(record.id)}
         >
           回滚预览
         </Button>
@@ -584,7 +588,7 @@ export function RecordDrawers() {
         footer={
           <Space>
             <Button onClick={() => c.set('versionDrawer', false)}>取消</Button>
-            <Button type="primary" loading={!!m.busy} onClick={() => void c.markVersion()}>
+            <Button type="primary" loading={!!m.busy} onClick={() => c.markVersion()}>
               确认标记
             </Button>
           </Space>
@@ -657,7 +661,7 @@ export function RecordDrawers() {
               type="primary"
               loading={!!m.busy}
               disabled={!m.externalIds.length}
-              onClick={() => void c.saveExternal()}
+              onClick={() => c.saveExternal()}
             >
               保存登记
             </Button>
@@ -704,7 +708,7 @@ export function RecordDrawers() {
                 title: '操作',
                 width: 80,
                 render: (_, row) => (
-                  <Button danger size="small" onClick={() => void c.clearArchive(row.id)}>
+                  <Button danger size="small" onClick={() => c.clearArchive(row.id)}>
                     清理
                   </Button>
                 ),

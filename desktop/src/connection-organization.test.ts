@@ -1,12 +1,60 @@
 import { expect, it } from 'vitest';
 import {
   connectionSignature,
+  groupDropPlacement,
   dropPlacement,
   normalizeOrganization,
   orderedConnections,
   portFromText,
 } from './connection-organization';
-import { initialModel, emptyConnection } from './model';
+import { initialModel, emptyConnection, dbOptions } from './model';
+
+it('orders database options by group then member without mutating saved arrays', () => {
+  const m = initialModel();
+  m.state.connectionGroups = [
+    { id: 'a', name: 'A', sortOrder: 1 },
+    { id: 'b', name: 'B', sortOrder: 0 },
+  ];
+  m.state.connections = [
+    { ...emptyConnection('default'), id: 'a', group: 'A', sortOrder: 0, databases: ['db'] },
+    { ...emptyConnection('default'), id: 'b2', group: 'B', sortOrder: 1, databases: ['two'] },
+    { ...emptyConnection('other'), id: 'hidden', group: 'B', sortOrder: 0, databases: ['hidden'] },
+    { ...emptyConnection('default'), id: 'b1', group: 'B', sortOrder: 0, databases: ['one'] },
+  ];
+  m.dbCache.b1 = ['one', 'discovered'];
+  const snapshot = JSON.stringify(m.state);
+  expect(dbOptions(m).map((option) => option.value)).toEqual([
+    'b1/one',
+    'b1/discovered',
+    'b2/two',
+    'a/db',
+  ]);
+  expect(JSON.stringify(m.state)).toBe(snapshot);
+});
+
+it('accepts only sibling group gaps and rejects nesting, self drops and pending moves', () => {
+  const input = {
+    organizationSaving: false,
+    dragNode: { type: 'group', groupId: 'b' },
+    dropNode: { type: 'group', groupId: 'a', pos: '0-0' },
+    dropToGap: true,
+    dropPosition: -1,
+  };
+  expect(groupDropPlacement(input)).toEqual({
+    groupId: 'b',
+    anchorGroupId: 'a',
+    placement: 'before',
+  });
+  expect(groupDropPlacement({ ...input, dropPosition: 1 })?.placement).toBe('after');
+  expect(groupDropPlacement({ ...input, dropToGap: false })).toBeNull();
+  expect(groupDropPlacement({ ...input, organizationSaving: true })).toBeNull();
+  expect(
+    groupDropPlacement({ ...input, dropNode: { ...input.dropNode, groupId: 'b' } }),
+  ).toBeNull();
+  expect(
+    groupDropPlacement({ ...input, dropNode: { ...input.dropNode, type: 'connection' } }),
+  ).toBeNull();
+});
 
 it('keeps discovery signatures across organization changes but detects server changes', () => {
   const connection = emptyConnection('default');
