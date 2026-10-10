@@ -71,6 +71,30 @@ Java 21 与 Maven 使用 `.tools` 内的项目工具链，首次引导需要网�
 
 UI 验收前运行 `npm run build`，真实桌面验收还需可用的引擎构建。浏览器使用本机 Chrome / Edge，可通过 `DATA_SYNC_QA_BROWSER` 指定程序。验收结果与截图位置见 README。
 
+### 手动打包规范
+
+在 Windows x64、Node.js 24 / npm 11 环境中，从仓库根目录的 PowerShell 执行完整打包命令：
+
+```powershell
+npm run dist
+```
+
+首次构建或全新检出时先准备依赖与项目工具链：
+
+```powershell
+npm ci
+npm run bootstrap
+npm run dist
+```
+
+- Java 21 与 Maven 由 `bootstrap` 下载到 `.tools`，首次准备需要网络，无需预装系统 Java / Maven。
+- 根目录 `npm run dist` 按顺序构建引擎、前端与 Electron，准备裁剪运行时，整理第三方许可，再生成 Windows x64 NSIS 安装包。不要以 `npm run dist -w desktop` 代替完整构建；该命令只调用 Electron 打包，会使用已有产物。
+- 输出目录为根目录 `release`：当前安装包为 `release/Data Sync Setup 0.1.0.exe`，直接运行程序为 `release/win-unpacked/Data Sync.exe`。无需安装版本必须保留完整 `win-unpacked` 目录及资源，不能只分发 EXE。
+- 安装包版本取自 `desktop/package.json`，文件名随版本变化。安装包附带 Java 运行时，当前未配置代码签名；保持发布产物不提交到源码仓库。
+- 报告打包结果时确认本次命令成功及对应产物，不能将已有安装包或仅 Electron 打包的成功作为本次完整构建证据。打包成功不能替代本文件第 6 节要求的测试和安装验收。
+
+人工操作说明见 [README 手动构建安装包](README.md#手动构建安装包)。
+
 ## 4. 架构与数据安全约束
 
 - 保持渲染进程 `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`，通过限定的 preload / IPC 接口访问主进程。生产加载本机打包资源，禁止新窗口；生产客户端与 Java 引擎不启动 HTTP 服务。
