@@ -42,6 +42,7 @@ public final class Jobs implements AutoCloseable {
             .anyMatch(id -> all.stream().noneMatch(c -> c.id.equals(id) && !c.blocked)))
       throw new IllegalArgumentException("请选择有效的同步变更");
     var r = new SyncRecord();
+    r.recoveryFormat = "LOCAL_V1";
     r.id =
         "SYNC-"
             + LocalDate.now().toString().replace("-", "")
@@ -62,6 +63,13 @@ public final class Jobs implements AutoCloseable {
         tr.steps.add(st);
       }
       if (tr.steps.isEmpty()) tr.status = "SKIPPED";
+      if (mode.equals("SAVE_ONLY"))
+        for (var choice : plan.tables)
+          if (choice.data()
+              && t.before.containsKey(choice.name())
+              && archives.chosen(r, t).stream()
+                  .anyMatch(x -> x.table.equals(choice.name()) && Archives.needsValueRestore(x)))
+            Archives.captureRecovery(t, tr, choice.name(), t.before.get(choice.name()).rows);
       r.results.add(tr);
     }
     archives.prepare(r);
@@ -165,27 +173,10 @@ public final class Jobs implements AutoCloseable {
           executeStep(r, tp, result, c, x);
         }
         if (token.get()) return;
-        for (String name : tables) {
-          var old = tp.before.get(name);
-          if (old.exists) {
-            String b = Archives.backupName(r.id, tp.ref.key(), name);
-            db.execute(
-                c,
-                "CREATE TABLE "
-                    + Sql.qualified(tp.ref, b)
-                    + " LIKE "
-                    + Sql.qualified(tp.ref, name));
-            synchronized (r) {
-              result.backups.put(name, b);
-              persist(r, "backup-created", Map.of("target", tp.ref.key(), "table", name));
-            }
-          }
-        }
+        // 目标库零污染：不再创建备份表；执行前只做状态复核并在锁内采集字段原值恢复资料。
         var locks = new LinkedHashSet<String>();
         for (String name : tables) {
           locks.add(Sql.qualified(tp.ref, name) + " WRITE");
-          if (result.backups.containsKey(name))
-            locks.add(Sql.qualified(tp.ref, result.backups.get(name)) + " WRITE");
           for (var f : r.plan.sourceSnapshot.get(name).foreignKeys)
             if (!tables.contains(f.referencedTable()))
               locks.add(Sql.qualified(tp.ref, f.referencedTable()) + " READ");
@@ -202,23 +193,45 @@ public final class Jobs implements AutoCloseable {
             if (old.exists) {
               if (!Sql.schemaHash(old).equals(Sql.schemaHash(now))
                   || choice(r, name).data() && !rowSetHash(old.rows).equals(rowSetHash(now.rows)))
-                throw new IllegalArgumentException("目标库在备份前发生变化：" + name);
-              String b = result.backups.get(name);
-              db.execute(
-                  c,
-                  "INSERT INTO "
-                      + Sql.qualified(tp.ref, b)
-                      + " SELECT * FROM "
-                      + Sql.qualified(tp.ref, name));
-              if (!db.rowsDigest(c, tp.ref, name).equals(db.rowsDigest(c, tp.ref, b)))
-                throw new IllegalArgumentException("备份校验失败：" + name);
-              result.backupDigests.put(name, db.digest(c, tp.ref, b));
+                throw new IllegalArgumentException("目标库在执行前发生变化：" + name);
             } else if (!db.rowsDigest(c, tp.ref, name).startsWith("0:"))
               throw new IllegalArgumentException("新建表已被外部写入，停止执行：" + name);
           }
+          for (String name : tables) {
+            if (!tp.before.get(name).exists) continue;
+            boolean needsRestore =
+                selected.stream()
+                    .anyMatch(x -> x.table.equals(name) && Archives.needsValueRestore(x));
+            if (!needsRestore) continue;
+            if (tp.before.get(name).primaryKey().isEmpty()) continue;
+            try {
+              var rows = db.readRows(c, tp.ref, name, 20000);
+              synchronized (r) {
+                Archives.captureRecovery(tp, result, name, rows);
+              }
+            } catch (Database.RowLimitException over) {
+              synchronized (r) {
+                persist(
+                    r,
+                    "recovery-capture-skipped",
+                    Map.of(
+                        "target",
+                        tp.ref.key(),
+                        "table",
+                        name,
+                        "message",
+                        Planner.safeMessage(over)));
+              }
+            }
+          }
+          // 本地档案与 SQLite 都必须完成持久化，才允许后续有损字段变更。
+          synchronized (r) {
+            archives.prepareLocalRecovery(r, tp, result);
+            persist(r, "recovery-captured", Map.of("target", tp.ref.key()));
+          }
           c.commit();
           synchronized (r) {
-            persist(r, "backup-verified", Map.of("target", tp.ref.key()));
+            persist(r, "pre-execute-verified", Map.of("target", tp.ref.key()));
           }
           int batchSize = store.get("settings", "global").path("batchSize").asInt(500);
           var batch = new ArrayList<Change>();
@@ -538,6 +551,12 @@ public final class Jobs implements AutoCloseable {
                       .get(name)
                       .equals(db.digest(c, tp.ref, result.backups.get(name)))))
             reason = "恢复备份已修改或缺少备份指纹";
+          else if (reason.isBlank()
+              && selected.stream()
+                  .filter(x -> done.contains(x.id) && x.table.equals(name))
+                  .anyMatch(Archives::needsValueRestore)
+              && !Archives.valueRestoreAvailable(r, tp, result, name))
+            reason = "缺少字段原值恢复资料（该表未纳入数据比较、超过 20,000 行或无主键），需人工恢复";
           reasons.put(name, reason);
         }
         for (var x : selected)
@@ -557,7 +576,7 @@ public final class Jobs implements AutoCloseable {
           item.targetKey = tp.ref.key();
           item.table = x.table;
           item.label = x.label;
-          item.sql = archives.inverse(r, tp, x);
+          item.sql = archives.inverse(r, tp, x, result);
           item.reason = reasons.getOrDefault(x.table, "无法校验");
           if (rowReasons.containsKey(x.id)) item.reason = rowReasons.get(x.id);
           item.eligible = item.reason.isBlank();
@@ -645,8 +664,13 @@ public final class Jobs implements AutoCloseable {
         for (String table : tables) {
           locks.add(Sql.qualified(tp.ref, table) + " WRITE");
           locks.add(Sql.qualified(tp.ref, table) + " AS t WRITE");
-          String b = Archives.backupName(original.id, tp.ref.key(), table);
-          if (db.snapshot(c, tp.ref, b, false).exists) {
+          var targetProof =
+              evidence(original).stream()
+                  .filter(t -> t.ref.equals(tp.ref))
+                  .findFirst()
+                  .orElseThrow();
+          String b = targetProof.backups.get(table);
+          if (b != null) {
             locks.add(Sql.qualified(tp.ref, b) + " READ");
             locks.add(Sql.qualified(tp.ref, b) + " AS b READ");
           }
@@ -669,6 +693,9 @@ public final class Jobs implements AutoCloseable {
           for (var item : items) {
             var change =
                 tp.changes.stream().filter(x -> x.id.equals(item.id)).findFirst().orElseThrow();
+            if (Archives.needsValueRestore(change)
+                && !Archives.valueRestoreAvailable(original, tp, proof, item.table))
+              throw new IllegalArgumentException("字段原值恢复资料缺失或摘要不符，需人工恢复");
             if (change.kind.endsWith("_ROW")) {
               String reason =
                   dataRecoveryReason(c, tp.ref, proof, change, lockedDigests.get(item.table));
@@ -687,7 +714,7 @@ public final class Jobs implements AutoCloseable {
             st.status = "IN_FLIGHT";
             tr.steps.add(st);
             persist(r, "rollback-step-started", Map.of("target", tp.ref.key(), "change", item.id));
-            for (String sql : item.sql) {
+            for (String sql : archives.inverse(original, tp, originalChange, proof)) {
               int count = db.execute(c, sql);
               if (originalChange.kind.endsWith("_ROW") && count != 1)
                 throw new IllegalArgumentException("恢复写入数量不符合预期");

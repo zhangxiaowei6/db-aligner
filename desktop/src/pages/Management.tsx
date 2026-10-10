@@ -15,7 +15,7 @@ import {
   Space,
   Tag,
 } from 'antd';
-import { PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
+import { EditOutlined, PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { connectionTestError } from '../connection-validation';
 import { orderedConnections, portFromText } from '../connection-organization';
@@ -31,6 +31,7 @@ import {
   Panel,
 } from '../components/shared';
 import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
+import { ConnectionGroupSelect } from '../components/ConnectionOrganization';
 import type { ConnectionInfo, TableChoice, Workspace } from '../types';
 
 export function WorkspacesPage() {
@@ -131,7 +132,9 @@ export function ConnectionsPage() {
             onChange={(e) => c.set('connectionSearch', e.target.value)}
           />
           <Space>
-            <Button onClick={() => c.editGroup()}>管理分组</Button>
+            <Button icon={<EditOutlined aria-hidden />} onClick={() => c.editGroup()}>
+              编辑分组
+            </Button>
             <Button
               danger
               disabled={!m.connectionSelection.length}
@@ -321,19 +324,7 @@ export function ConnectionsPage() {
             />
           </Field>
           <Field label="连接分组">
-            <Space.Compact block>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                style={{ flex: 1 }}
-                value={f.group}
-                options={[
-                  ...new Set([...m.state.connectionGroups.map((group) => group.name), f.group]),
-                ].map((name) => ({ value: name, label: name }))}
-                onChange={(group) => c.patch('connectionForm', { group })}
-              />
-              <Button onClick={() => c.editGroup()}>新增分组</Button>
-            </Space.Compact>
+            <ConnectionGroupSelect />
           </Field>
           <Form.Item
             label="关联工作区"

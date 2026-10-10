@@ -58,12 +58,19 @@ export interface RecordDetail {
     confirmedIds?: string[];
     remark?: string;
     verified?: boolean;
-    checks?: Record<string, string>[];
+    checks?: {
+      target: string;
+      table: string;
+      message: string;
+      valid?: boolean;
+      declaredIds?: string[];
+      recoveryAvailable?: boolean;
+    }[];
   };
   verification?: { notice: string; checks: Record<string, string>[] };
   files: string[];
 }
-export type ScopeTable = TableChoice & { comment: string };
+export type ScopeTable = TableChoice & { comment: string; missingTargets?: string[] };
 export interface CompareSelection {
   workspaceId: string;
   sourceKey: string;
@@ -94,6 +101,10 @@ export interface Model {
   treeChildren: Record<string, TreeNode[]>;
   sourceKey: string;
   targetKeys: string[];
+  /** 各目标库表名清单（"连接/库" → 表名），用于标注目标缺失表；加载失败的目标不出现在其中。 */
+  targetTables: Record<string, string[]>;
+  targetTablesLoading: Record<string, boolean>;
+  targetTablesErrors: Record<string, string>;
   scopeTables: ScopeTable[];
   structureDefaults: StructureOptions;
   templateStructureDefaults: StructureOptions;
@@ -154,7 +165,6 @@ export interface Model {
   recordTab: string;
   externalDrawer: boolean;
   externalIds: string[];
-  externalBackup: boolean;
   externalRemark: string;
   rollback?: RollbackPlan;
   rollbackIds: string[];
@@ -219,6 +229,9 @@ export function initialModel(): Model {
     treeChildren: {},
     sourceKey: '',
     targetKeys: [],
+    targetTables: {},
+    targetTablesLoading: {},
+    targetTablesErrors: {},
     scopeTables: [],
     structureDefaults: { ...allStructureOptions },
     templateStructureDefaults: { ...allStructureOptions },
@@ -279,7 +292,6 @@ export function initialModel(): Model {
     recordTab: 'scripts',
     externalDrawer: false,
     externalIds: [],
-    externalBackup: false,
     externalRemark: '',
     rollbackIds: [],
     rollbackRemark: '',

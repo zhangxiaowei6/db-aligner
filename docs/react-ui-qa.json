@@ -13,9 +13,9 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.4815063476562,
+        "x": 848.4803466796875,
         "y": 0,
-        "width": 639.9999389648438,
+        "width": 640,
         "height": 1056
       }
     },
@@ -76,9 +76,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.1144409179688,
+        "x": 848.4747314453125,
         "y": 0,
-        "width": 640.0000610351562,
+        "width": 640,
         "height": 1056
       }
     },
@@ -161,6 +161,11 @@
       "theme": "light"
     },
     {
+      "check": "missing-target-scope-indication",
+      "passed": true,
+      "theme": "light"
+    },
+    {
       "check": "template-options-confirm-data-compare-cancel-navigation-retry-copy-save-record",
       "passed": true,
       "theme": "light"
@@ -200,6 +205,11 @@
       "theme": "dark"
     },
     {
+      "check": "missing-target-scope-indication",
+      "passed": true,
+      "theme": "dark"
+    },
+    {
       "check": "template-options-confirm-data-compare-cancel-navigation-retry-copy-save-record",
       "passed": true,
       "theme": "dark"
@@ -227,6 +237,26 @@
       "check": "rollback-selection-blocked-and-cancel-confirmation",
       "passed": true,
       "theme": "dark"
+    },
+    {
+      "check": "native-html5-tree-drag-selection-cancel-invalid-empty-and-reorder",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "group-edit-icon-and-dropdown-create",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "native-html5-tree-drag-selection-cancel-invalid-empty-and-reorder",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "group-edit-icon-and-dropdown-create",
+      "theme": "dark",
+      "passed": true
     }
   ],
   "desktop": [],

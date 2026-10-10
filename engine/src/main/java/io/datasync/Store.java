@@ -93,7 +93,8 @@ public final class Store implements AutoCloseable {
     var records = list("record");
     for (var n : records)
       for (var result : n.path("results"))
-        ((com.fasterxml.jackson.databind.node.ObjectNode) result).remove("rowAfter");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) result)
+            .remove(List.of("rowAfter", "recoveryRows"));
     return records;
   }
 
@@ -105,6 +106,7 @@ public final class Store implements AutoCloseable {
       m.put("workspaceId", r.workspaceId);
       m.put("createdAt", r.createdAt);
       m.put("mode", r.mode);
+      m.put("recoveryFormat", r.recoveryFormat);
       m.put("status", r.status);
       m.put("remark", r.remark);
       m.put("parentId", r.parentId);

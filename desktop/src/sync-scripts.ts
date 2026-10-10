@@ -15,9 +15,19 @@ export function executionScript(changes: Change[]) {
 }
 
 export function recordScriptFiles(files: string[], tab: string) {
-  const suffix = tab === 'rollbackScripts' ? '04_rollback.sql' : '02_sync.sql';
-  return files.filter(
-    (file) => file.replaceAll('\\', '/').endsWith('/' + suffix) || file === suffix,
+  const suffixes =
+    tab === 'rollbackScripts' ? ['04_rollback.sql', '05_rollback_local.sql'] : ['02_sync.sql'];
+  const matches = files.filter((file) =>
+    suffixes.includes(file.replaceAll('\\', '/').split('/').at(-1)!),
+  );
+  return matches.filter(
+    (file) =>
+      !file.endsWith('04_rollback.sql') ||
+      !matches.some(
+        (candidate) =>
+          candidate.replaceAll('\\', '/') ===
+          file.replaceAll('\\', '/').replace(/04_rollback\.sql$/, '05_rollback_local.sql'),
+      ),
   );
 }
 

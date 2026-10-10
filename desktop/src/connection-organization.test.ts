@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import {
   connectionSignature,
+  dropPlacement,
   normalizeOrganization,
   orderedConnections,
   portFromText,
@@ -36,4 +37,106 @@ it.each(['', '0', '65536', '33063306', '3.5', '-1', '1e3', 'abc', ' 3306'])(
 );
 it.each(['1', '3306', '13306', '65535'])('accepts valid port %s exactly', (text) => {
   expect(portFromText(text)).toBe(Number(text));
+});
+
+const base = {
+  organizationSaving: false,
+  dragNode: { type: 'connection', connectionId: 'c1' },
+  hovered: undefined as { connectionId?: string; groupId?: string } | undefined,
+  hoveredBeforeMiddle: true,
+  dropNode: {} as { type?: string; groupId?: string; connectionId?: string; pos?: string },
+  dropToGap: false,
+  dropPosition: 0,
+};
+
+it('resolves anchor drops from the actual hovered row using pointer position', () => {
+  expect(
+    dropPlacement({
+      ...base,
+      hovered: { connectionId: 'c2', groupId: 'g1' },
+      hoveredBeforeMiddle: true,
+    }),
+  ).toEqual({
+    connectionId: 'c1',
+    groupId: 'g1',
+    placement: 'before',
+    anchorConnectionId: 'c2',
+  });
+  expect(
+    dropPlacement({
+      ...base,
+      hovered: { connectionId: 'c2', groupId: 'g1' },
+      hoveredBeforeMiddle: false,
+    })?.placement,
+  ).toBe('after');
+  // 悬停行是拖动节点自身时，不能按锚点处理。
+  expect(dropPlacement({ ...base, hovered: { connectionId: 'c1', groupId: 'g1' } })).toBeNull();
+});
+
+it('drops into a group row or group node at the end of that group', () => {
+  expect(dropPlacement({ ...base, hovered: { groupId: 'g1' } })).toEqual({
+    connectionId: 'c1',
+    groupId: 'g1',
+    placement: 'last',
+  });
+  expect(dropPlacement({ ...base, dropNode: { type: 'group', groupId: 'g2' } })).toEqual({
+    connectionId: 'c1',
+    groupId: 'g2',
+    placement: 'last',
+  });
+  // 拖动分组本身不产生移动。
+  expect(
+    dropPlacement({
+      ...base,
+      dragNode: { type: 'group' },
+      dropNode: { type: 'group', groupId: 'g2' },
+    }),
+  ).toBeNull();
+});
+
+it('resolves gap drops relative to the reported drop position', () => {
+  expect(
+    dropPlacement({
+      ...base,
+      dropNode: { type: 'connection', groupId: 'g1', connectionId: 'c3', pos: '0-0-1' },
+      dropToGap: true,
+      dropPosition: 0,
+    }),
+  ).toEqual({
+    connectionId: 'c1',
+    groupId: 'g1',
+    placement: 'before',
+    anchorConnectionId: 'c3',
+  });
+  expect(
+    dropPlacement({
+      ...base,
+      dropNode: { type: 'connection', groupId: 'g1', connectionId: 'c3', pos: '0-0-1' },
+      dropToGap: true,
+      dropPosition: 2,
+    })?.placement,
+  ).toBe('after');
+  // 非间隙落点（放入连接行内部）不被接受。
+  expect(
+    dropPlacement({
+      ...base,
+      dropNode: { type: 'connection', groupId: 'g1', connectionId: 'c3', pos: '0-0-1' },
+      dropToGap: false,
+      dropPosition: 1,
+    }),
+  ).toBeNull();
+});
+
+it('rejects drops while organization saving or without a valid group target', () => {
+  expect(dropPlacement({ ...base, organizationSaving: true })).toBeNull();
+  expect(dropPlacement(base)).toBeNull();
+  expect(
+    dropPlacement({
+      ...base,
+      dropNode: { type: 'connection', groupId: 'g1', connectionId: 'c3', pos: '0-0-1' },
+      dropToGap: true,
+      dropPosition: 2,
+      hovered: { groupId: 'g1' },
+    }),
+  ).toEqual({ connectionId: 'c1', groupId: 'g1', placement: 'last' });
 });

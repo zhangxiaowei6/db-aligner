@@ -2,6 +2,16 @@
 
 final result: passed
 
+## 2026-10-10：侧栏拖拽、缺表和分组交互
+
+生产浏览器浅色 / 深色共 39 项检查通过，[浏览器报告](docs/react-ui-qa.json) 的 `errors` 为空。保留比较确认、跨页面进度与取消、结构细项和仅保存确认覆盖；导航返回当前范围草稿，比较中可从设置返回查看和停止。原生窗口与主题验收 6 项通过，见 [原生报告](docs/react-desktop-qa.json)。
+
+新增原生 HTML5 鼠标拖拽验收：连接行单击唯一选中、再次点击及树内空白取消；拖拽开始取消选中；跨组移动、同组排序、首连接上方插入、空分组、Esc 取消、无效区域释放及分组自身拖动均检查结束状态。落点通过持久化后的分组和顺序确认，拖拽结束后没有来源、指示器或选中残留。浅深色截图见 [拖拽浅色](docs/screenshots/react-ant-design/tree-drag-light.png)、[拖拽深色](docs/screenshots/react-ant-design/tree-drag-dark.png)。拖动来源的单一边框与目标指示器分别表达来源和落点，不作为多个选中状态。
+
+分组入口统一为带编辑图标的“编辑分组”，分组列表中可编辑名称或切换新增。侧栏及连接表单旁不再显示独立新增分组按钮。连接编辑下拉底部的名称输入和带加号新增操作创建后自动选中；失败重试和草稿隔离由前端交互测试覆盖。已查看 [编辑分组](docs/screenshots/react-ant-design/group-edit-light.png)、[下拉新增浅色](docs/screenshots/react-ant-design/group-select-create-light.png)、[下拉新增深色](docs/screenshots/react-ant-design/group-select-create-dark.png)，输入、操作和主题对比清晰，弹窗底部按钮可操作。
+
+范围页以来源表清单展示缺表标识，提示包含目标库和连接名称；勾选缺表数据后补齐结构，比较确认说明“创建表并复制全部数据”。已有手动取消保留，失败清单显示原因和重试，不使用旧缓存推断缺表。截图见 [范围浅色](docs/screenshots/react-ant-design/scope-options-light.png)、[比较确认深色](docs/screenshots/react-ant-design/compare-confirmation-dark.png)。浏览器数据为虚构预览；本地恢复与目标库对象清单的真实证据见 [本轮验证记录](docs/validation.md)。
+
 ## 2026-10-09：比较进度、停止与结构细项补充验收
 
 在当前布局和已有交互基础上加入全局比较进度、比较二次确认和复用的七项结构编辑器。生产浏览器浅色 / 深色流程验证逐表调整、确认摘要中的例外、数据风险默认未勾选且禁止开始、跨页面保留停止入口、停止后保留匹配键和结构细项、重新比较，以及仅保存的原有确认。完整结果见 [浏览器验收报告](docs/react-ui-qa.json)，33 项检查通过，`errors` 为空；[原生窗口验收](docs/react-desktop-qa.json) 6 项通过。

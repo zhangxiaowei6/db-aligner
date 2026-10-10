@@ -56,6 +56,188 @@ async function footerCheck(page, label) {
 async function shot(page, name) {
   await page.screenshot({ path: path.join(screenshots, name + '.png'), animations: 'disabled' });
 }
+async function modalSettled(page) {
+  // Motion registers its entrance on animation frames after mounting the dialog.
+  await page.evaluate(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      ),
+  );
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('.ant-modal')].every((element) =>
+      element.getAnimations().every((animation) => animation.playState !== 'running'),
+    ),
+  );
+}
+async function organizationQA(browser, theme) {
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    assert.equal(await page.getByRole('button', { name: '新建分组', exact: true }).count(), 0);
+    await page
+      .locator('.sidebar-label')
+      .getByRole('button', { name: '数据库连接', exact: true })
+      .click();
+    await page.getByRole('button', { name: '编辑分组', exact: true }).click();
+    const manager = page.getByRole('dialog', { name: '编辑分组', exact: true });
+    assert.equal(await manager.locator('.anticon-edit').count(), 2);
+    await modalSettled(page);
+    await shot(page, `group-edit-${theme}`);
+    await manager.getByRole('button', { name: '新增分组', exact: true }).click();
+    await manager.getByRole('textbox', { name: '分组名称', exact: true }).fill('QA 空分组');
+    await manager.getByRole('button', { name: '保存分组', exact: true }).click();
+    await manager.waitFor({ state: 'hidden' });
+    const groupLabel = (id) =>
+      page.locator(`.tree-label[data-group-id="${id}"]:not([data-connection-id])`);
+    const connectionLabel = (id) => page.locator(`.tree-label[data-connection-id="${id}"]`);
+    const treeRow = (label) => page.getByRole('treeitem').filter({ has: label });
+    for (const id of ['preview-source-group', 'preview-target-group']) {
+      await treeRow(groupLabel(id)).locator('.ant-tree-switcher').click();
+    }
+    await connectionLabel('test').waitFor();
+    await page.locator('.ant-tree-treenode-motion').waitFor({ state: 'detached' });
+    await connectionLabel('test').click();
+    assert.equal(await page.locator('.ant-tree-treenode-selected').count(), 1);
+    await connectionLabel('test').click();
+    assert.equal(await page.locator('.ant-tree-treenode-selected').count(), 0);
+    await connectionLabel('test').click();
+    const treeBounds = await page.locator('.tree-scroll').boundingBox();
+    await page.mouse.click(treeBounds.x + 6, treeBounds.y + treeBounds.height - 6);
+    assert.equal(await page.locator('.ant-tree-treenode-selected').count(), 0);
+    async function startDrag(label, target, fraction = 0.5) {
+      const sourceBounds = await label.boundingBox();
+      const destinationBounds = await treeRow(target).boundingBox();
+      await page.mouse.move(
+        sourceBounds.x + sourceBounds.width / 2,
+        sourceBounds.y + sourceBounds.height / 2,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        sourceBounds.x + sourceBounds.width / 2 + 12,
+        sourceBounds.y + sourceBounds.height / 2 + 4,
+        { steps: 4 },
+      );
+      await page.mouse.move(
+        destinationBounds.x + destinationBounds.width - 16,
+        destinationBounds.y + destinationBounds.height * fraction,
+        { steps: 10 },
+      );
+      await page.mouse.move(
+        destinationBounds.x + destinationBounds.width - 15,
+        destinationBounds.y + destinationBounds.height * fraction,
+      );
+      assert.equal(await page.locator('.ant-tree-treenode.dragging').count(), 1);
+      assert.equal(await page.locator('.ant-tree-treenode-selected').count(), 0);
+      assert((await page.locator('.ant-tree-drop-indicator').count()) <= 1);
+    }
+    async function cleared() {
+      await page.waitForFunction(
+        () =>
+          !document.querySelector(
+            '.ant-tree-treenode.dragging, .ant-tree-drop-indicator, .ant-tree-treenode-selected, .ant-tree-node-selected',
+          ),
+      );
+    }
+    await startDrag(connectionLabel('test'), groupLabel('preview-target-group'));
+    await shot(page, `tree-drag-${theme}`);
+    await page.mouse.up();
+    await cleared();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.tree-label[data-connection-id="test"]')?.dataset.groupId ===
+        'preview-target-group',
+    );
+    await startDrag(connectionLabel('test'), connectionLabel('target0'), 0.08);
+    await page.mouse.up();
+    await cleared();
+    await page.waitForFunction(
+      () =>
+        document.querySelector(
+          '.tree-label[data-group-id="preview-target-group"][data-connection-id]',
+        )?.dataset.connectionId === 'test',
+    );
+    await startDrag(connectionLabel('test'), groupLabel('preview-source-group'));
+    await page.keyboard.press('Escape');
+    await page.mouse.up();
+    await cleared();
+    assert.equal(
+      await connectionLabel('test').getAttribute('data-group-id'),
+      'preview-target-group',
+    );
+    await startDrag(connectionLabel('test'), groupLabel('preview-source-group'));
+    await page.mouse.move(1000, 400, { steps: 8 });
+    await page.mouse.up();
+    await cleared();
+    assert.equal(
+      await connectionLabel('test').getAttribute('data-group-id'),
+      'preview-target-group',
+    );
+    await startDrag(groupLabel('preview-source-group'), groupLabel('preview-target-group'));
+    await page.mouse.up();
+    await cleared();
+    const empty = page.locator('.tree-label').filter({ hasText: /^QA 空分组$/ });
+    const emptyId = await empty.getAttribute('data-group-id');
+    await startDrag(connectionLabel('test'), empty);
+    await page.mouse.up();
+    await cleared();
+    // Empty groups start collapsed. Wait for the persisted move in the management list,
+    // then expand the group before checking its rendered child.
+    await page
+      .getByRole('row')
+      .filter({ hasText: '测试服务器' })
+      .getByText('QA 空分组', { exact: true })
+      .waitFor();
+    if ((await treeRow(empty).getAttribute('aria-expanded')) !== 'true')
+      await treeRow(empty).locator('.ant-tree-switcher').click();
+    await page.waitForFunction(
+      (id) =>
+        document.querySelector('.tree-label[data-connection-id="test"]')?.dataset.groupId === id,
+      emptyId,
+    );
+    report.browser.push({
+      check: 'native-html5-tree-drag-selection-cancel-invalid-empty-and-reorder',
+      theme,
+      passed: true,
+    });
+    await page
+      .locator('.page-scroll')
+      .getByRole('button', { name: '新建连接', exact: true })
+      .click();
+    const editor = page.getByRole('dialog', { name: '新建连接', exact: true });
+    await editor.waitFor();
+    // Modal entrance completion focuses the dialog. Wait for it before typing into
+    // the custom select popup, including when screenshots fast-forward animations.
+    await modalSettled(page);
+    assert.equal(await editor.getByRole('button', { name: '新增分组', exact: true }).count(), 0);
+    await editor.getByRole('combobox', { name: '连接分组', exact: true }).click();
+    await page.getByRole('textbox', { name: '新增连接分组名称', exact: true }).fill('QA 下拉新增');
+    await shot(page, `group-select-create-${theme}`);
+    await page.getByRole('button', { name: '新增', exact: true }).click();
+    await page.locator('.ant-select-content').filter({ hasText: 'QA 下拉新增' }).waitFor();
+    await page.keyboard.press('Escape');
+    await editor.getByRole('button', { name: /取\s*消/ }).click();
+    report.browser.push({ check: 'group-edit-icon-and-dropdown-create', theme, passed: true });
+  } catch (error) {
+    await page.screenshot({
+      path: path.join(repo, '.local-data', 'organization-qa-failure.png'),
+      animations: 'disabled',
+    });
+    await fs.writeFile(
+      path.join(repo, '.local-data', 'organization-qa-failure.txt'),
+      await page.locator('body').innerText(),
+    );
+    throw error;
+  } finally {
+    await context.close();
+  }
+}
 async function browserQA() {
   const log = await fs.open(path.join(repo, '.local-data', 'ui-qa-preview.log'), 'w');
   const vite = spawn(
@@ -277,6 +459,8 @@ async function browserQA() {
       assert.equal(await templateName.inputValue(), '基础字典与菜单');
       await page.getByRole('button', { name: '应用模板', exact: true }).click();
       await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
+      await page.getByText('目标缺失', { exact: true }).first().waitFor();
+      report.browser.push({ check: 'missing-target-scope-indication', passed: true });
       assert.equal(
         await page.getByRole('textbox', { name: 'sys_dict 匹配键' }).inputValue(),
         'code',
@@ -418,6 +602,7 @@ async function browserQA() {
       for (const item of report.browser.slice(reportStart)) item.theme = workflowTheme;
       await context.close();
     }
+    for (const theme of ['light', 'dark']) await organizationQA(browser, theme);
   } catch (error) {
     report.errors.push(String(error));
     if (lastPage && !lastPage.isClosed()) {

@@ -213,11 +213,7 @@ export function ExportPage() {
               默认不包含 DROP；开启后会在建表前生成 DROP TABLE IF EXISTS，执行会删除已有表及数据。
             </p>
             {m.includeDrop && (
-              <Alert
-                type="warning"
-                showIcon
-                title="文件含删除语句，执行前请核对目标数据库及备份。"
-              />
+              <Alert type="warning" showIcon title="文件含删除语句，执行前请核对目标数据库。" />
             )}
             <Form layout="vertical" className="top-gap">
               <div className="form-pair">

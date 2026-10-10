@@ -370,6 +370,12 @@ public final class Database {
     }
   }
 
+  public static final class RowLimitException extends IllegalArgumentException {
+    RowLimitException(int limit) {
+      super("基础数据超过 " + limit + " 行，首版请缩小同步范围");
+    }
+  }
+
   public List<Map<String, Object>> readRows(Connection c, DbRef ref, String table, int limit)
       throws Exception {
     var rows = new ArrayList<Map<String, Object>>();
@@ -382,8 +388,7 @@ public final class Database {
           s.executeQuery("SELECT * FROM " + Sql.qualified(ref, table) + " LIMIT " + (limit + 1))) {
         while (rs.next()) {
           ComparisonContext.rows(rows.size());
-          if (rows.size() >= limit)
-            throw new IllegalArgumentException("基础数据超过 " + limit + " 行，首版请缩小同步范围");
+          if (rows.size() >= limit) throw new RowLimitException(limit);
           rows.add(row(rs));
         }
         ComparisonContext.rows(rows.size());

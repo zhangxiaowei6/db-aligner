@@ -21,7 +21,7 @@ public final class External {
     if (record == null || !record.path("mode").asText().equals("SAVE_ONLY"))
       throw new IllegalArgumentException("仅保存记录可登记外部执行");
     var r = Json.MAPPER.treeToValue(record, SyncRecord.class);
-    if (ids.isEmpty() || !r.selectedIds.containsAll(ids))
+    if (ids.isEmpty() || new HashSet<>(ids).size() != ids.size() || !r.selectedIds.containsAll(ids))
       throw new IllegalArgumentException("执行范围无效");
     var state =
         Map.of(
@@ -46,7 +46,8 @@ public final class External {
     var declaration = store.get("external", id);
     var confirmed =
         declaration == null ? List.<String>of() : Json.strings(declaration.path("confirmedIds"));
-    boolean all = declaration != null && declaration.path("backupCompleted").asBoolean();
+    boolean local = r.recoveryFormat.equals("LOCAL_V1");
+    boolean all = declaration != null && (local || declaration.path("backupCompleted").asBoolean());
     var results = new ArrayList<TargetResult>();
     var checks = new ArrayList<Map<String, Object>>();
     for (var tp : r.plan.targets) {
@@ -54,22 +55,19 @@ public final class External {
       if (chosen.isEmpty()) continue;
       var tr = new TargetResult();
       tr.ref = tp.ref;
+      if (local)
+        r.results.stream()
+            .filter(t -> t.ref.equals(tp.ref))
+            .findFirst()
+            .ifPresent(
+                saved -> {
+                  tr.recoveryRows.putAll(saved.recoveryRows);
+                  tr.recoveryDigests.putAll(saved.recoveryDigests);
+                });
       results.add(tr);
       try (var c = db.openBound(tp.ref, tp.connectionIdentity)) {
-        String receipt = Sql.qualified(tp.ref, Archives.receiptName(r.id));
-        boolean receiptValid = false;
-        try (var s = c.createStatement();
-            var rs = s.executeQuery("SELECT stage,record_id,plan_hash FROM " + receipt)) {
-          var stages = new HashSet<String>();
-          while (rs.next())
-            if (rs.getString(2).equals(id) && rs.getString(3).equals(Json.hash(r.plan)))
-              stages.add(rs.getString(1));
-          receiptValid = stages.containsAll(List.of("prepared", "applied"));
-        } catch (java.sql.SQLException ignored) {
-        }
         for (String name : chosen.stream().map(x -> x.table).distinct().toList()) {
           var actual = db.snapshot(c, tp.ref, name, true);
-          var original = tp.before.get(name);
           var keyColumns =
               r.plan.tables.stream()
                   .filter(t -> t.name().equals(name))
@@ -81,35 +79,8 @@ public final class External {
             db.keyTokens(c, tp.ref, actual, keyColumns);
             Planner.keyed(actual, keyColumns);
           }
-          String b = Archives.backupName(id, tp.ref.key(), name),
-              post = Archives.postName(id, tp.ref.key(), name);
-          var postTable = db.snapshot(c, tp.ref, post, false);
-          boolean valid =
-              receiptValid
-                  && postTable.exists
-                  && sameColumns(actual, postTable)
-                  && db.rowsDigest(c, tp.ref, name).equals(db.rowsDigest(c, tp.ref, post));
-          String reason = valid ? "" : "执行凭据或执行后快照缺失／不一致";
-          if (original.exists) {
-            var backup =
-                db.snapshot(
-                    c,
-                    tp.ref,
-                    b,
-                    r.plan.tables.stream().anyMatch(t -> t.name().equals(name) && t.data()));
-            valid = valid && backup.exists && sameColumns(original, backup);
-            if (!valid && reason.isBlank()) reason = "备份结构与原始定义不符";
-            if (backup.exists
-                && r.plan.tables.stream().anyMatch(t -> t.name().equals(name) && t.data())
-                && !Jobs.rowSetHash(original.rows).equals(Jobs.rowSetHash(backup.rows))) {
-              valid = false;
-              reason = "备份原值与生成脚本时不符";
-            }
-            if (valid) {
-              tr.backups.put(name, b);
-              tr.backupDigests.put(name, db.digest(c, tp.ref, b));
-            }
-          }
+          boolean valid = local || legacyEvidence(r, tp, tr, name, actual, c);
+          String reason = valid ? "" : "旧记录的执行凭据、备份或执行后快照缺失／不一致";
           for (var x : chosen.stream().filter(x -> x.table.equals(name)).toList())
             if (!matches(x, actual, r.plan.sourceSnapshot.get(name), c, tp.ref)) {
               valid = false;
@@ -129,6 +100,11 @@ public final class External {
               if (afterRow != null) tr.rowAfter.put(x.id, afterRow);
             }
           }
+          boolean recoveryAvailable =
+              chosen.stream()
+                      .filter(x -> x.table.equals(name))
+                      .noneMatch(Archives::needsValueRestore)
+                  || Archives.valueRestoreAvailable(r, tp, tr, name);
           all = all && valid;
           checks.add(
               Map.of(
@@ -138,8 +114,14 @@ public final class External {
                   name,
                   "valid",
                   valid,
+                  "declaredIds",
+                  chosen.stream().filter(x -> x.table.equals(name)).map(x -> x.id).toList(),
+                  "recoveryAvailable",
+                  recoveryAvailable,
                   "message",
-                  valid ? "目标状态与恢复资料校验通过" : reason));
+                  valid
+                      ? "用户声明范围的当前状态验证通过；" + (recoveryAvailable ? "恢复资料可用" : "字段原值资料缺失或摘要不符，需人工恢复")
+                      : reason));
           for (var x : chosen.stream().filter(x -> x.table.equals(name)).toList()) {
             var st = new Step();
             st.changeId = x.id;
@@ -176,6 +158,48 @@ public final class External {
     store.event(id, Map.of("type", "external-verified", "evidence", state));
     store.put("external", id, state);
     return state;
+  }
+
+  /** 只读取旧脚本已创建的资料；新记录永远不会创建或依赖目标库辅助对象。 */
+  private boolean legacyEvidence(
+      SyncRecord r,
+      TargetPlan tp,
+      TargetResult proof,
+      String name,
+      Table actual,
+      java.sql.Connection c)
+      throws Exception {
+    boolean receiptValid = false;
+    try (var s = c.createStatement();
+        var rs =
+            s.executeQuery(
+                "SELECT stage,record_id,plan_hash FROM "
+                    + Sql.qualified(tp.ref, Archives.receiptName(r.id)))) {
+      var stages = new HashSet<String>();
+      while (rs.next())
+        if (rs.getString(2).equals(r.id) && rs.getString(3).equals(Json.hash(r.plan)))
+          stages.add(rs.getString(1));
+      receiptValid = stages.containsAll(List.of("prepared", "applied"));
+    } catch (java.sql.SQLException ignored) {
+    }
+    if (!receiptValid) return false;
+    String post = Archives.postName(r.id, tp.ref.key(), name);
+    var postTable = db.snapshot(c, tp.ref, post, false);
+    if (!postTable.exists
+        || !sameColumns(actual, postTable)
+        || !db.rowsDigest(c, tp.ref, name).equals(db.rowsDigest(c, tp.ref, post))) return false;
+    var old = tp.before.get(name);
+    if (old.exists) {
+      String backupName = Archives.backupName(r.id, tp.ref.key(), name);
+      boolean data = r.plan.tables.stream().anyMatch(t -> t.name().equals(name) && t.data());
+      var backup = db.snapshot(c, tp.ref, backupName, data);
+      if (!backup.exists
+          || !sameColumns(old, backup)
+          || data && !Jobs.rowSetHash(old.rows).equals(Jobs.rowSetHash(backup.rows))) return false;
+      proof.backups.put(name, backupName);
+      proof.backupDigests.put(name, db.digest(c, tp.ref, backupName));
+    }
+    return true;
   }
 
   private boolean sameColumns(Table a, Table b) {
@@ -245,8 +269,12 @@ public final class External {
                     "currentState",
                     state,
                     "recoveryStatus",
-                    trusted && (!tp.before.get(table).exists || backupValid)
-                        ? "可信执行后状态与恢复资料一致"
+                    trusted
+                            && recorded.equals("DONE")
+                            && (!result.backups.containsKey(table) || backupValid)
+                            && (!Archives.needsValueRestore(change)
+                                || Archives.valueRestoreAvailable(r, tp, result, table))
+                        ? "可信执行后状态一致，恢复资料可用"
                         : "缺少可信执行后证据或存在后续修改；自动恢复受限"));
           }
         }

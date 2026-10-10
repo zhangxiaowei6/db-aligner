@@ -13,6 +13,11 @@ import type { Appearance, State, SyncTemplate } from './types';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
 import { allStructureOptions } from './structure-options';
+import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
+import { recordScriptFiles } from './sync-scripts';
+
+// 真实 Ant Design 渲染的交互测试在本机可能超过默认 5 秒，统一放宽避免按环境速度抖动。
+vi.setConfig({ testTimeout: 30_000 });
 
 const bridge = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -1199,9 +1204,7 @@ describe('React business state and protocol', () => {
       files: [
         'README.txt',
         'hash-shop_a/target.json',
-        'hash-shop_a/01_prepare_backup.sql',
         'hash-shop_a/02_sync.sql',
-        'hash-shop_a/03_verify.sql',
         'hash-shop_a/04_rollback.sql',
       ],
       events: [],
@@ -1534,27 +1537,27 @@ describe('export preview retention', () => {
     ref: { connectionId: 'source', database: 'a' },
     table: 'dict',
   };
-  it('keeps generated SQL while changing options and source, and replaces it only after regeneration', async () => {
+  it('clears generated SQL when options, selection or source change, and replaces it after regeneration', async () => {
     await ready();
     await act(async () => controller.beginExport(exportNode));
     bridge.invoke.mockResolvedValueOnce({ sql: 'CREATE TABLE `dict` (`id` int);' });
     await act(async () => controller.updateExport());
-    const firstSql = controller.m.exportSql;
+    expect(controller.m.exportSql).not.toBe('');
     act(() => {
       controller.setIncludeDrop(true);
       controller.selectExport([]);
     });
-    expect(controller.m.exportSql).toBe(firstSql);
-    expect(controller.m.exportPreview?.includeDrop).toBe(false);
+    expect(controller.m.exportSql).toBe('');
+    expect(controller.m.exportPreview).toBeUndefined();
     await act(async () => controller.loadExport('source/b', 'dict'));
-    expect(controller.m.exportSql).toBe(firstSql);
+    expect(controller.m.exportSql).toBe('');
     const replacement = deferred<{ sql: string }>();
     bridge.invoke.mockReturnValueOnce(replacement.promise);
     let generating!: Promise<void>;
     act(() => {
       generating = controller.updateExport();
     });
-    expect(controller.m.exportSql).toBe(firstSql);
+    expect(controller.m.exportSql).toBe('');
     await act(async () => {
       replacement.resolve({ sql: 'DROP TABLE `dict`; CREATE TABLE `dict` (`id` bigint);' });
       await generating;
@@ -1587,4 +1590,306 @@ describe('export preview retention', () => {
     expect(controller.m.exportSql).toBe('');
     expect(controller.m.exportGenerating).toBe(false);
   });
+});
+
+describe('missing target tables in the sync scope', () => {
+  async function scope() {
+    await ready(
+      <>
+        <ScopePage />
+        <CompareConfirmation />
+      </>,
+    );
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        sourceKey: 'source/a',
+        scopeTables: ['dict', 'orders'].map((name) => ({
+          name,
+          comment: '',
+          structure: false,
+          data: false,
+          keyColumns: [],
+          keyText: '',
+          structureOptions: { ...allStructureOptions },
+        })),
+      })),
+    );
+  }
+
+  it('completes partial structure only for newly enabled data and preserves later overrides', async () => {
+    await scope();
+    await act(async () => controller.setTargets(['source/b']));
+    act(() =>
+      controller.updateScope('orders', {
+        structure: true,
+        structureOptions: { ...allStructureOptions, indexes: false },
+      }),
+    );
+    act(() => controller.updateScope('orders', { data: true }));
+    expect(controller.m.scopeTables[1].structureOptions).toEqual(allStructureOptions);
+    act(() => controller.updateScope('orders', { structure: false }));
+    act(() => controller.updateScope('dict', { data: true }));
+    await act(async () => controller.loadTargetTables(true));
+    expect(controller.m.scopeTables[1].structure).toBe(false);
+    await act(async () => controller.compare());
+    expect(screen.getByText(/仅数据同步无法写入/)).toBeTruthy();
+  });
+
+  it('deduplicates target reads and ignores completion after scope reset', async () => {
+    await scope();
+    const pending = deferred<{ name: string }[]>();
+    bridge.invoke.mockReturnValueOnce(pending.promise);
+    let first!: Promise<void>, second!: Promise<void>;
+    act(() => {
+      first = controller.setTargets(['source/b']);
+      second = controller.setTargets(['source/b']);
+    });
+    expect(bridge.invoke.mock.calls.filter(([method]) => method === 'tables.list')).toHaveLength(1);
+    await act(async () => controller.beginSync());
+    await act(async () => {
+      pending.resolve([]);
+      await Promise.all([first, second]);
+    });
+    expect(controller.m.targetTables).toEqual({});
+    expect(controller.m.targetTablesLoading).toEqual({});
+  });
+
+  it('keeps manual structure edits made during an in-flight target read', async () => {
+    await scope();
+    const pending = deferred<{ name: string }[]>();
+    bridge.invoke.mockReturnValueOnce(pending.promise);
+    let loading!: Promise<void>;
+    act(() => {
+      loading = controller.setTargets(['source/b']);
+      controller.updateScope('orders', { data: true });
+    });
+    act(() => controller.updateScope('orders', { structure: false }));
+    await act(async () => {
+      pending.resolve([]);
+      await loading;
+    });
+    expect(controller.m.scopeTables[1].structure).toBe(false);
+    expect(controller.missingTargets('orders')).toEqual(['source/b']);
+  });
+
+  it('clears failed refresh data, exposes retry, and invalidates changed connections', async () => {
+    await scope();
+    await act(async () => controller.setTargets(['source/b']));
+    expect(controller.missingTargets('orders')).toEqual(['source/b']);
+    bridge.invoke.mockRejectedValueOnce(new Error('目标不可达'));
+    await act(async () => controller.loadTargetTables(true));
+    expect(controller.missingTargets('orders')).toEqual([]);
+    expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
+    expect(screen.getByText('来源 / b：目标不可达')).toBeTruthy();
+    await act(async () => controller.loadTargetTables(true));
+    expect(controller.missingTargets('orders')).toEqual(['source/b']);
+    state.connections[0].port = 13306;
+    await act(async () => controller.loadState());
+    expect(controller.missingTargets('orders')).toEqual([]);
+  });
+
+  it('clears an obsolete loading state on configuration change and rejects its late response', async () => {
+    await scope();
+    const pending = deferred<{ name: string }[]>();
+    bridge.invoke.mockReturnValueOnce(pending.promise);
+    let loading!: Promise<void>;
+    act(() => {
+      loading = controller.setTargets(['source/b']);
+    });
+    expect(controller.m.targetTablesLoading['source/b']).toBe(true);
+    state.connections[0].port = 13306;
+    await act(async () => controller.loadState());
+    expect(controller.m.targetTablesLoading['source/b']).toBeUndefined();
+    await act(async () => controller.loadTargetTables(true));
+    await act(async () => {
+      pending.resolve([{ name: 'orders' }]);
+      await loading;
+    });
+    expect(controller.missingTargets('orders')).toEqual(['source/b']);
+    expect(controller.m.targetTablesLoading['source/b']).toBe(false);
+  });
+
+  it('normalizes missing data tables from templates and distinguishes structure-only and partial selections', async () => {
+    await scope();
+    await act(async () =>
+      controller.applyTemplate({
+        ...state.templates[0],
+        tables: [
+          {
+            name: 'dict',
+            data: true,
+            structure: true,
+            keyColumns: [],
+            structureOptions: { ...allStructureOptions, columns: false },
+          },
+        ],
+      }),
+    );
+    expect(controller.m.scopeTables[0].structureOptions?.columns).toBe(false); // Existing target table.
+    bridge.invoke.mockResolvedValueOnce([]);
+    await act(async () => controller.loadTargetTables(true));
+    expect(controller.m.scopeTables[0].structureOptions).toEqual(allStructureOptions);
+    act(() => {
+      controller.updateScope('dict', { data: false });
+      controller.compare();
+    });
+    expect(screen.getByText(/将创建表$/)).toBeTruthy();
+    act(() => {
+      controller.dismissCompareConfirmation();
+      controller.updateScope('dict', {
+        structureOptions: { ...allStructureOptions, columns: false },
+      });
+      controller.compare();
+    });
+    expect(screen.getByText(/结构细项不足/)).toBeTruthy();
+  });
+  it('flags tables missing in targets, auto-enables full structure for data sync, and annotates the confirmation', async () => {
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'tables.list') {
+        const database = (params as { ref?: { database?: string } }).ref?.database;
+        return database === 'b'
+          ? [{ name: 'dict', comment: '' }]
+          : [
+              { name: 'dict', comment: '' },
+              { name: 'orders', comment: '' },
+            ];
+      }
+      return original(method, params);
+    });
+    await ready(
+      <>
+        <ScopePage />
+        <CompareConfirmation />
+      </>,
+    );
+    act(() =>
+      controller.commit((s) => ({
+        ...s,
+        sourceKey: 'source/a',
+        scopeTables: ['dict', 'orders'].map((name) => ({
+          name,
+          comment: '',
+          structure: false,
+          data: false,
+          keyColumns: [],
+          keyText: '',
+          structureOptions: { ...allStructureOptions },
+        })),
+      })),
+    );
+    await act(async () => {
+      await controller.setTargets(['source/b']);
+    });
+    expect(controller.missingTargets('orders')).toEqual(['source/b']);
+    expect(controller.missingTargets('dict')).toEqual([]);
+    await act(async () => {
+      controller.updateScope('orders', { data: true });
+    });
+    const orders = controller.m.scopeTables.find((t) => t.name === 'orders')!;
+    expect(orders.structure).toBe(true);
+    expect(orders.structureOptions).toEqual(allStructureOptions);
+    // 目标库存在该表时不自动扩展范围。
+    await act(async () => {
+      controller.updateScope('dict', { data: true });
+    });
+    expect(controller.m.scopeTables.find((t) => t.name === 'dict')!.structure).toBe(false);
+    // 用户随后手动取消结构不被回改；引擎与确认弹窗仍按缺表规则提示。
+    await act(async () => {
+      controller.updateScope('orders', { structure: false });
+    });
+    expect(controller.m.scopeTables.find((t) => t.name === 'orders')!.structure).toBe(false);
+    await act(async () => {
+      controller.updateScope('orders', { structure: true });
+      controller.compare();
+    });
+    const pending = controller.m.compareConfirmation!;
+    expect(pending.tables.find((t) => t.name === 'orders')?.missingTargets).toEqual(['source/b']);
+    expect(pending.tables.find((t) => t.name === 'dict')?.missingTargets).toEqual([]);
+    expect(await screen.findByText(/将创建表并复制全部数据/)).toBeTruthy();
+    expect(screen.queryByText(/仅数据同步无法写入/)).toBeNull();
+  });
+});
+
+describe('group editing and creation', () => {
+  it('opens editing first and offers creation inside the group dialog', async () => {
+    await ready(
+      <>
+        <ConnectionsPage />
+        <ConnectionOrganizationDialogs />
+      </>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: '编辑分组' }));
+    expect(controller.m.groupForm?.name).toBe('测试');
+    expect(document.querySelector('.anticon-edit')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: '新增分组' }));
+    expect(controller.m.groupForm).toBeUndefined();
+    expect((screen.getByLabelText('分组名称') as HTMLInputElement).value).toBe('');
+  });
+
+  it('creates from the group dropdown, preserves connection fields and keeps failed input for retry', async () => {
+    const original = bridge.invoke.getMockImplementation()!;
+    let attempts = 0;
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'connectionGroups.save') {
+        if (++attempts === 1) throw new Error('分组保存失败');
+        const group = { id: 'created', name: (params as { name: string }).name, sortOrder: 1 };
+        state.connectionGroups.push(group);
+        return group;
+      }
+      return original(method, params);
+    });
+    await ready(<ConnectionsPage />);
+    act(() => {
+      controller.editConnection(state.connections[0]);
+      controller.patch('connectionForm', { password: 'draft-password', host: '192.0.2.99' });
+    });
+    expect(screen.queryByRole('button', { name: '新增分组' })).toBeNull();
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: '连接分组' }));
+    await userEvent.type(await screen.findByLabelText('新增连接分组名称'), '新测试组');
+    await userEvent.click(screen.getByRole('button', { name: /^新增$/ }));
+    await screen.findByText('分组保存失败');
+    expect((screen.getByLabelText('新增连接分组名称') as HTMLInputElement).value).toBe('新测试组');
+    await userEvent.click(screen.getByRole('button', { name: /^新增$/ }));
+    await waitFor(() => expect(controller.m.connectionForm.group).toBe('新测试组'));
+    expect(controller.m.connectionForm).toMatchObject({
+      host: '192.0.2.99',
+      password: 'draft-password',
+    });
+    expect(state.connections[0].group).toBe('测试');
+  });
+
+  it('ignores late selection updates after reopening a connection and prevents duplicate creation', async () => {
+    await ready();
+    act(() => controller.editConnection(state.connections[0]));
+    const pending = deferred<{ id: string; name: string; sortOrder: number }>();
+    bridge.invoke.mockReturnValueOnce(pending.promise);
+    let creating!: Promise<boolean>;
+    act(() => {
+      creating = controller.addConnectionGroup('新组');
+    });
+    await act(async () => {
+      expect(await controller.addConnectionGroup('重复')).toBe(false);
+      controller.closeConnection();
+      controller.editConnection(state.connections[0]);
+    });
+    await act(async () => {
+      pending.resolve({ id: 'new', name: '新组', sortOrder: 1 });
+      await creating;
+    });
+    expect(controller.m.connectionForm.group).toBe('测试');
+    expect(
+      bridge.invoke.mock.calls.filter(([method]) => method === 'connectionGroups.save'),
+    ).toHaveLength(1);
+  });
+});
+
+it('prefers local rollback scripts independently for each target and retains legacy fallback', () => {
+  expect(
+    recordScriptFiles(
+      ['a/04_rollback.sql', 'a/05_rollback_local.sql', 'b/04_rollback.sql', 'a/02_sync.sql'],
+      'rollbackScripts',
+    ),
+  ).toEqual(['a/05_rollback_local.sql', 'b/04_rollback.sql']);
 });

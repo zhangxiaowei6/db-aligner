@@ -137,6 +137,11 @@ public final class Model {
         backupDigests = new LinkedHashMap<>(),
         expected = new LinkedHashMap<>();
     public Map<String, Map<String, Object>> rowAfter = new LinkedHashMap<>();
+
+    /** 字段原值恢复资料：仅当结构变化需要恢复字段值且计划未含数据快照时，执行前在锁内读取（上限同基础数据）。 */
+    public Map<String, List<Map<String, Object>>> recoveryRows = new LinkedHashMap<>();
+
+    public Map<String, String> recoveryDigests = new LinkedHashMap<>();
   }
 
   public static class SyncRecord {
@@ -148,6 +153,7 @@ public final class Model {
         remark = "",
         parentId = "",
         archivePath = "";
+    public String recoveryFormat = "";
     public SyncPlan plan;
     public List<String> selectedIds = new ArrayList<>();
     public List<TargetResult> results = new ArrayList<>();

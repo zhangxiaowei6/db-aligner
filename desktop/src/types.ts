@@ -137,6 +137,8 @@ export interface TargetResult {
   steps: Step[];
   backups: Record<string, string>;
   expected: Record<string, string>;
+  recoveryRows?: Record<string, Record<string, unknown>[]>;
+  recoveryDigests?: Record<string, string>;
 }
 export interface SyncRecord {
   id: string;
@@ -147,6 +149,7 @@ export interface SyncRecord {
   remark: string;
   parentId: string;
   archivePath: string;
+  recoveryFormat?: string;
   plan?: SyncPlan;
   source?: DbRef;
   tables?: TableChoice[];

@@ -293,7 +293,7 @@ export function HistoryPage() {
               />
               <h3>版本脚本包</h3>
               <p className="hint">
-                按记录及目标库保留备份、同步、校验与回滚脚本，点击记录查看具体内容。
+                按记录及目标库保留同步与回滚脚本及本地恢复资料，点击记录查看具体内容。
               </p>
             </section>
           ) : (
@@ -516,11 +516,11 @@ export function RecordPage() {
               <dl className="metadata">
                 <dt>登记时间</dt>
                 <dd>{date(detail.external.declaredAt)}</dd>
-                <dt>执行范围</dt>
+                <dt>用户声明的执行范围</dt>
                 <dd>{detail.external.confirmedIds?.length || 0} 项变更</dd>
                 <dt>用户说明</dt>
                 <dd>{detail.external.remark || '—'}</dd>
-                <dt>核验状态</dt>
+                <dt>当前状态验证</dt>
                 <dd>{detail.external.verified ? '已核验' : '待核实'}</dd>
               </dl>
               {detail.external.checks && (
@@ -530,6 +530,15 @@ export function RecordPage() {
                   columns={[
                     { title: '目标库', dataIndex: 'target' },
                     { title: '表', dataIndex: 'table' },
+                    {
+                      title: '恢复资料',
+                      render: (_, row) =>
+                        row.recoveryAvailable === undefined
+                          ? '按旧记录规则核验'
+                          : row.recoveryAvailable
+                            ? '可用'
+                            : '需人工恢复',
+                    },
                     { title: '校验结果', dataIndex: 'message' },
                   ]}
                 />
@@ -655,7 +664,7 @@ export function RecordDrawers() {
           </Space>
         }
       >
-        <p className="hint">登记实际执行的变更；登记后仍需校验目标库与恢复资料。</p>
+        <p className="hint">登记实际执行的变更；登记后仍需校验目标库状态与恢复资料。</p>
         <Checkbox.Group
           className="external-choices"
           value={m.externalIds}
@@ -665,14 +674,6 @@ export function RecordDrawers() {
             label: `${ch.targetKey.split('/').slice(1).join('/')} / ${ch.table} / ${ch.label}`,
           }))}
         />
-        <div className="top-gap">
-          <Checkbox
-            checked={m.externalBackup}
-            onChange={(e) => c.set('externalBackup', e.target.checked)}
-          >
-            已执行备份及执行后校验快照步骤
-          </Checkbox>
-        </div>
         <Input.TextArea
           className="top-gap"
           rows={4}

@@ -587,8 +587,9 @@ export const previewBridge: DesktopBridge = {
       case 'databases.list':
         result = connections.find((c) => c.id === p.connectionId)?.databases || [];
         break;
-      case 'tables.list':
-        result = [
+      case 'tables.list': {
+        const database = (p.ref as DbRef | undefined)?.database || '';
+        const all = [
           { name: 'sys_dict', comment: '系统字典' },
           { name: 'sys_menu', comment: '菜单表' },
           { name: 'sys_user', comment: '用户表' },
@@ -596,7 +597,11 @@ export const previewBridge: DesktopBridge = {
           { name: 'order_items', comment: '订单明细表' },
           { name: 'order_refund_schedule_with_a_long_table_name', comment: '长表名截断示例' },
         ];
+        // 示例目标库 shop_b 缺少部分表，用于演示“目标缺失”标注与自动勾选结构。
+        result =
+          database === 'shop_b' ? all.filter((t) => !['orders', 'sys_menu'].includes(t.name)) : all;
         break;
+      }
       case 'table.get':
         result = { ...previewTable, name: p.table };
         break;
@@ -830,13 +835,7 @@ export const previewBridge: DesktopBridge = {
               (target.changes.some(
                 (change) => record?.selectedIds.includes(change.id) && !change.blocked,
               )
-                ? [
-                    'target.json',
-                    '01_prepare_backup.sql',
-                    '02_sync.sql',
-                    '03_verify.sql',
-                    '04_rollback.sql',
-                  ]
+                ? ['target.json', '02_sync.sql', '04_rollback.sql']
                 : ['target.json', '00_full_diff.sql']
               ).map((name) => `${target.ref.database}/${name}`),
             ),
@@ -865,7 +864,7 @@ export const previewBridge: DesktopBridge = {
                 .flatMap((change) => change.rollbackSql)
                 .map((sql) => (sql.endsWith(';') ? sql : sql + ';'))
                 .join('\n\n')
-            : '-- 浏览器设计预览\n-- 正式客户端按目标库生成备份、同步、校验、回滚脚本。\n-- 本页示例不连接或执行数据库，请在桌面客户端查看真实档案。';
+            : '-- 浏览器设计预览\n-- 正式客户端按目标库生成同步与回滚脚本，不在目标库创建任何备份或凭据表。\n-- 本页示例不连接或执行数据库，请在桌面客户端查看真实档案。';
         break;
       }
       case 'version.save': {

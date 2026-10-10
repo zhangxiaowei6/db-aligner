@@ -11,26 +11,28 @@
 
 面向界面的输出将超过 JavaScript 安全整数范围的 BIGINT 和浮点 / DECIMAL 数值转换为精确文本，小整数、端口、批次等仍为 JSON 数字。此转换仅用于通信展示，不改写原始计划、归档数值、比较摘要或实际 SQL。
 
-| 接口                                                                           | 用途                                                                        |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| `ping`, `state.load`                                                           | 协议版本、实体及记录摘要                                                    |
-| `entity.save`, `entity.delete`                                                 | 工作区、连接、模板、设置                                                    |
-| `connections.test`, `databases.list`, `tables.list`, `table.get`               | 真实 JDBC 与元数据                                                          |
-| `imports.parse`                                                                | 三种会话格式；主进程截留密码后返回解析结果                                  |
-| `sync.compare`                                                                 | `workspaceId`, `source`, `targets`, `tables` → `SyncPlan`                   |
-| `sync.compare.start`                                                           | 同样的比较范围，可选客户端 UUID `compareId` → `{compareId}`；注册后后台执行 |
-| `sync.compare.get`                                                             | `compareId` → `{compareId,status,progress,error,plan?}`；仅完成时提供计划   |
-| `sync.compare.cancel`                                                          | `compareId` → `{compareId,status}`；重复取消幂等，停止当前查询与后续读取    |
-| `sync.save`                                                                    | `planId`, `selectedIds`, `mode`, `remark` → `SyncRecord`                    |
-| `record.get`, `record.file`, `record.export`, `record.cancel`, `record.verify` | 详情、脚本、归档、取消与追加核验                                            |
-| `version.save`                                                                 | 新建 / 追加版本，显式移动记录                                               |
-| `external.declare`, `external.verify`                                          | 用户声明和独立恢复核验                                                      |
-| `rollback.preview`, `rollback.execute`                                         | 可信执行项、冲突原因与关联恢复记录                                          |
-| `schema.export`                                                                | `source`, `tables`, `includeDrop` → SQL                                     |
-| `backup.export`, `backup.prepareRestore`, `backup.finishRestore`               | 备份与暂存恢复                                                              |
-| `config.export`, `config.import`, `archives.clear`                             | 无凭据配置及资料清理                                                        |
+| 接口                                                                           | 用途                                                                                 |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `ping`, `state.load`                                                           | 协议版本、实体及记录摘要                                                             |
+| `entity.save`, `entity.delete`                                                 | 工作区、连接、模板、设置                                                             |
+| `connections.test`, `databases.list`, `tables.list`, `table.get`               | 真实 JDBC 与元数据                                                                   |
+| `imports.parse`                                                                | 三种会话格式；主进程截留密码后返回解析结果                                           |
+| `sync.compare`                                                                 | `workspaceId`, `source`, `targets`, `tables` → `SyncPlan`                            |
+| `sync.compare.start`                                                           | 同样的比较范围，可选客户端 UUID `compareId` → `{compareId}`；注册后后台执行          |
+| `sync.compare.get`                                                             | `compareId` → `{compareId,status,progress,error,plan?}`；仅完成时提供计划            |
+| `sync.compare.cancel`                                                          | `compareId` → `{compareId,status}`；重复取消幂等，停止当前查询与后续读取             |
+| `sync.save`                                                                    | `planId`, `selectedIds`, `mode`, `remark` → `SyncRecord`                             |
+| `record.get`, `record.file`, `record.export`, `record.cancel`, `record.verify` | 详情、脚本、归档、取消与追加核验                                                     |
+| `version.save`                                                                 | 新建 / 追加版本，显式移动记录                                                        |
+| `external.declare`, `external.verify`                                          | 用户声明执行范围与独立恢复核验；新记录不使用 `backupCompleted`，旧记录继续校验该参数 |
+| `rollback.preview`, `rollback.execute`                                         | 可信执行项、冲突原因与关联恢复记录                                                   |
+| `schema.export`                                                                | `source`, `tables`, `includeDrop` → SQL                                              |
+| `backup.export`, `backup.prepareRestore`, `backup.finishRestore`               | 备份与暂存恢复                                                                       |
+| `config.export`, `config.import`, `archives.clear`                             | 无凭据配置及资料清理                                                                 |
 
-`SyncPlan` 保存源快照、目标原状态、目标连接绑定 `connectionIdentity`（不含密码）、变更 SQL / 逆向 SQL、匹配列、风险和阻止原因。`SyncRecord.mode` 为 `SAVE_ONLY`、`EXECUTE_AND_SAVE` 或关联 `ROLLBACK`；执行状态单独保存，不由版本号推断。`RollbackPlan` 每项保存 eligible 和 reason；执行仍重新校验，不能只依赖预览。
+`SyncPlan` 保存源快照、目标原状态、目标连接绑定 `connectionIdentity`（不含密码）、变更 SQL / 逆向 SQL、匹配列、风险和阻止原因。`SyncRecord.mode` 为 `SAVE_ONLY`、`EXECUTE_AND_SAVE` 或关联 `ROLLBACK`；执行状态单独保存，不由版本号推断。新同步记录的可选 `recoveryFormat` 为 `LOCAL_V1`；旧记录缺省为空。`TargetResult.recoveryRows` 按表保存字段原值行，`recoveryDigests` 保存绑定原结构与行内容的摘要；存在表键且值为 `[]` 表示完整空表快照，缺键表示未采集。记录摘要排除大型 `recoveryRows`，详情按需返回。`RollbackPlan` 每项保存 eligible 和 reason；执行仍在锁内重新校验，不能只依赖预览。
+
+新执行不在目标数据库创建备份、收据或快照对象。恢复资料先写入 SQLite 与按目标追加的 `recovery.json`，再执行有损变更，并生成 `05_rollback_local.sql`。`record.get` 和 `record.file` 沿用现有接口返回这些资料；前端按目标优先展示 05，回退到原始 `04_rollback.sql`。旧记录的 `backups`、`backupDigests` 保留兼容，旧外部记录仍要求 `backupCompleted` 并读取原收据与快照；新外部记录兼容接收该参数但不使用。外部核验的表级检查增加 `declaredIds` 与 `recoveryAvailable`，分别表达声明范围和恢复可用性，`valid` 只表示该声明范围的当前状态核验结果。
 
 比较任务状态为 `RUNNING`、`CANCELLING`、`CANCELLED`、`COMPLETED`、`FAILED`。同一引擎只允许一个活动比较，清理完成后才释放活动名额；终态任务保留 10 分钟，成功计划沿用现有内存计划存储。`sync.compare` 保留原返回契约并复用后台比较流程。后台线程使用启动请求的凭据快照。取消一旦被接受，不再发布本次计划；完成先于取消发布时返回完成状态。
 

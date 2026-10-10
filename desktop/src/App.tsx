@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
 import { Alert, Breadcrumb, Button, Dropdown, Empty, Menu, Select, Space, Spin, Tree } from 'antd';
 import {
   BookOutlined,
@@ -7,6 +7,7 @@ import {
   CheckOutlined,
   CloseOutlined,
   DatabaseOutlined,
+  EditOutlined,
   FileOutlined,
   FolderOutlined,
   LoadingOutlined,
@@ -27,16 +28,19 @@ import appLogo from '../build/icon.png';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
 import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
-import { connectionGroupName, orderedConnections } from './connection-organization';
+import { connectionGroupName, dropPlacement, orderedConnections } from './connection-organization';
 
 function Shell() {
   const [sidebarWidth, setSidebarWidth] = useState(() => (window.innerWidth <= 1300 ? 256 : 280));
   const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
-  const draggedConnection = useRef<string | undefined>(undefined);
+  const [selectedTreeKeys, setSelectedTreeKeys] = useState<Key[]>([]);
   const resizeSidebar = (width: number) =>
     setSidebarWidth(Math.max(240, Math.min(640, window.innerWidth * 0.45, width)));
   const c = useController();
   const { m } = c;
+  // 拖拽状态完全由 antd/rc-tree 内部管理：不在 capture 层拦截或 preventDefault，
+  // 否则 dragend 永远不会触发，rc-tree 的拖拽高亮会永久残留（看起来像无法取消的选中）。
+  useEffect(() => setSelectedTreeKeys([]), [m.workspaceId]);
   const comparing = !!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status);
   const workspace = m.state.workspaces.find((w) => w.id === m.workspaceId);
   const connections = m.state.connections.filter((conn) =>
@@ -79,7 +83,7 @@ function Shell() {
         items: [
           { key: 'new', label: '新建连接', icon: <PlusOutlined /> },
           { key: 'import', label: '导入连接', icon: <FileOutlined /> },
-          { key: 'group-edit', label: '编辑分组' },
+          { key: 'group-edit', label: '编辑分组', icon: <EditOutlined /> },
         ],
         onClick: ({ key }: { key: string }) => {
           if (key === 'group-edit')
@@ -213,8 +217,7 @@ function Shell() {
               key: 'scope',
               icon: <PlusOutlined />,
               label: '新建同步',
-              disabled: comparing,
-              title: comparing ? '请先停止当前比较' : undefined,
+              title: comparing ? '返回当前比较，可查看进度或停止比较' : undefined,
             },
             { key: 'templates', icon: <BookOutlined />, label: '同步模板' },
             { key: 'history', icon: <ClockCircleOutlined />, label: '同步历史' },
@@ -222,7 +225,7 @@ function Shell() {
           onClick={({ key }) => {
             if (key === 'templates')
               c.editTemplate(m.state.templates.find((t) => t.workspaceId === m.workspaceId));
-            else if (key === 'scope') void c.beginSync();
+            else if (key === 'scope') c.navigate('scope');
             else c.navigate('history');
           }}
         />
@@ -269,52 +272,12 @@ function Shell() {
             <div className="connection-actions">
               <Button onClick={() => c.editConnection()}>新建连接</Button>
               <Button onClick={() => c.navigate('import')}>导入连接</Button>
-              <Button className="new-group-button" size="small" onClick={() => c.editGroup()}>
-                新建分组
-              </Button>
             </div>
           </div>
           <div
             className="tree-scroll"
-            onDragStartCapture={(event) => {
-              const label = (event.target as Element)
-                .closest('.ant-tree-treenode')
-                ?.querySelector<HTMLElement>('.tree-label');
-              if (!label?.dataset.connectionId) {
-                event.preventDefault();
-                event.stopPropagation();
-              }
-            }}
-            onDragOverCapture={(event) => {
-              const label = (event.target as Element)
-                .closest('.ant-tree-treenode')
-                ?.querySelector<HTMLElement>('.tree-label');
-              if (
-                draggedConnection.current &&
-                label?.dataset.groupId &&
-                !label.dataset.connectionId &&
-                !m.organizationSaving
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-              }
-            }}
-            onDropCapture={(event) => {
-              const label = (event.target as Element)
-                .closest('.ant-tree-treenode')
-                ?.querySelector<HTMLElement>('.tree-label');
-              const connectionId = draggedConnection.current;
-              if (
-                connectionId &&
-                label?.dataset.groupId &&
-                !label.dataset.connectionId &&
-                !m.organizationSaving
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                draggedConnection.current = undefined;
-                void c.moveConnection(connectionId, label.dataset.groupId, 'last', undefined, true);
-              }
+            onClick={(event) => {
+              if (!(event.target as Element).closest('.ant-tree-treenode')) setSelectedTreeKeys([]);
             }}
           >
             {tree.length ? (
@@ -322,6 +285,8 @@ function Shell() {
                 style={{ background: 'transparent' }}
                 key={m.workspaceId}
                 treeData={tree}
+                selectedKeys={selectedTreeKeys}
+                onSelect={(keys) => setSelectedTreeKeys(keys.slice(0, 1))}
                 blockNode
                 draggable={
                   m.organizationSaving
@@ -332,12 +297,8 @@ function Shell() {
                           ['connection', 'group'].includes((node as unknown as TreeNode).type),
                       }
                 }
-                onDragStart={({ node }) => {
-                  draggedConnection.current = node.connectionId;
-                }}
-                onDragEnd={() => {
-                  draggedConnection.current = undefined;
-                }}
+                onDragStart={() => setSelectedTreeKeys([])}
+                onDragEnd={() => setSelectedTreeKeys([])}
                 allowDrop={({ dragNode, dropNode, dropPosition }) =>
                   !m.organizationSaving &&
                   dragNode.type === 'connection' &&
@@ -347,54 +308,42 @@ function Shell() {
                     : dropNode.type === 'connection' && dropPosition !== 0)
                 }
                 onDrop={(info) => {
-                  if (info.dragNode.type !== 'connection') return;
+                  setSelectedTreeKeys([]);
                   // The tree maps the upper half of a group's first child to its parent.
                   // Use the actual hovered row so that this gap inserts before the first connection.
                   const hoveredRow = (info.event.target as Element).closest('.ant-tree-treenode');
                   const hoveredLabel = hoveredRow?.querySelector<HTMLElement>('.tree-label');
-                  const anchorId = hoveredLabel?.dataset.connectionId;
-                  const hoveredGroupId = hoveredLabel?.dataset.groupId;
-                  if (anchorId && hoveredGroupId && anchorId !== info.dragNode.connectionId) {
-                    const bounds = hoveredRow!.getBoundingClientRect();
+                  const bounds = hoveredRow?.getBoundingClientRect();
+                  const move = dropPlacement({
+                    organizationSaving: m.organizationSaving,
+                    dragNode: {
+                      type: info.dragNode.type,
+                      connectionId: info.dragNode.connectionId,
+                    },
+                    hovered: {
+                      connectionId: hoveredLabel?.dataset.connectionId,
+                      groupId: hoveredLabel?.dataset.groupId,
+                    },
+                    hoveredBeforeMiddle: bounds
+                      ? info.event.clientY < bounds.top + bounds.height / 2
+                      : true,
+                    dropNode: {
+                      type: info.node.type,
+                      groupId: info.node.groupId,
+                      connectionId: info.node.connectionId,
+                      pos: info.node.pos,
+                    },
+                    dropToGap: info.dropToGap,
+                    dropPosition: info.dropPosition,
+                  });
+                  if (move)
                     void c.moveConnection(
-                      info.dragNode.connectionId!,
-                      hoveredGroupId,
-                      info.event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after',
-                      anchorId,
+                      move.connectionId,
+                      move.groupId,
+                      move.placement,
+                      move.anchorConnectionId,
                       true,
                     );
-                    return;
-                  }
-                  const groupId = info.node.groupId;
-                  if (hoveredGroupId && !anchorId) {
-                    void c.moveConnection(
-                      info.dragNode.connectionId!,
-                      hoveredGroupId,
-                      'last',
-                      undefined,
-                      true,
-                    );
-                    return;
-                  }
-                  if (!groupId) return;
-                  if (info.node.type === 'group')
-                    void c.moveConnection(
-                      info.dragNode.connectionId!,
-                      groupId,
-                      'last',
-                      undefined,
-                      true,
-                    );
-                  else if (info.node.type === 'connection' && info.dropToGap) {
-                    const position = info.dropPosition - Number(info.node.pos.split('-').at(-1));
-                    void c.moveConnection(
-                      info.dragNode.connectionId!,
-                      groupId,
-                      position < 0 ? 'before' : 'after',
-                      info.node.connectionId,
-                      true,
-                    );
-                  }
                 }}
                 expandAction="doubleClick"
                 onDoubleClick={(_, node) => {
@@ -424,33 +373,6 @@ function Shell() {
                         node.type === 'connection' ? node.connectionId : undefined
                       }
                       data-group-id={node.groupId}
-                      onDragOver={
-                        node.type === 'group'
-                          ? (event) => {
-                              if (!draggedConnection.current || m.organizationSaving) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                            }
-                          : undefined
-                      }
-                      onDrop={
-                        node.type === 'group'
-                          ? (event) => {
-                              const connectionId = draggedConnection.current;
-                              if (!connectionId || !node.groupId || m.organizationSaving) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              draggedConnection.current = undefined;
-                              void c.moveConnection(
-                                connectionId,
-                                node.groupId,
-                                'last',
-                                undefined,
-                                true,
-                              );
-                            }
-                          : undefined
-                      }
                     >
                       {node.title}
                     </span>

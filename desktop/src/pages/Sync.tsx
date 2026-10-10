@@ -17,6 +17,7 @@ import {
   EditOutlined,
   FileOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SearchOutlined,
   TableOutlined,
   UploadOutlined,
@@ -99,7 +100,7 @@ export function ScopePage() {
                   value={m.targetKeys}
                   placeholder="选择目标库"
                   options={options.filter((o) => o.value !== m.sourceKey)}
-                  onChange={(keys) => c.set('targetKeys', keys)}
+                  onChange={(keys) => void c.setTargets(keys)}
                 />
               </Field>
             </div>
@@ -131,7 +132,47 @@ export function ScopePage() {
               })}
             </Space>
             <span className="hint">只读取已选表的结构与数据</span>
+            <Button
+              size="small"
+              aria-label="刷新目标表清单"
+              icon={<ReloadOutlined aria-hidden />}
+              disabled={comparing || !m.targetKeys.length}
+              loading={m.targetKeys.some((key) => m.targetTablesLoading[key])}
+              onClick={() => void c.loadTargetTables(true)}
+            >
+              刷新目标表清单
+            </Button>
           </div>
+          {m.targetKeys.some((key) => m.targetTablesLoading[key]) && (
+            <p className="hint" role="status">
+              正在检查目标库表清单…
+            </p>
+          )}
+          {m.targetKeys.some((key) => m.targetTablesErrors[key]) && (
+            <Alert
+              className="bottom-gap"
+              type="warning"
+              showIcon
+              title="部分目标库表清单加载失败，缺表情况尚未确认"
+              description={m.targetKeys
+                .filter((key) => m.targetTablesErrors[key])
+                .map(
+                  (key) =>
+                    `${options.find((option) => option.value === key)?.label || key}：${m.targetTablesErrors[key]}`,
+                )
+                .join('；')}
+              action={
+                <Button
+                  size="small"
+                  aria-label="重试"
+                  icon={<ReloadOutlined aria-hidden />}
+                  onClick={() => void c.loadTargetTables(true)}
+                >
+                  重试
+                </Button>
+              }
+            />
+          )}
           <div className="structure-defaults">
             <strong>统一结构默认</strong>
             <StructureOptionsEditor
@@ -159,12 +200,22 @@ export function ScopePage() {
                 key: 'name',
                 width: 240,
                 ellipsis: true,
-                render: (_, row) => (
-                  <span className="table-name-cell">
-                    <TableOutlined />
-                    <span title={row.name}>{row.name}</span>
-                  </span>
-                ),
+                render: (_, row) => {
+                  const missing = c.missingTargets(row.name);
+                  return (
+                    <span className="table-name-cell">
+                      <TableOutlined />
+                      <span title={row.name}>{row.name}</span>
+                      {!!missing.length && (
+                        <Tooltip
+                          title={`目标库缺少该表：${missing.map((key) => `${key.slice(key.indexOf('/') + 1)}（${m.state.connections.find((item) => item.id === key.slice(0, key.indexOf('/')))?.name || key.slice(0, key.indexOf('/'))}）`).join('、')}`}
+                        >
+                          <Tag color="orange">目标缺失</Tag>
+                        </Tooltip>
+                      )}
+                    </span>
+                  );
+                },
               },
               {
                 title: '表说明',
@@ -227,6 +278,9 @@ export function ScopePage() {
             ]}
           />
           <p className="hint">删除与高风险结构变更默认不选中，在差异预览中逐项确认。</p>
+          <p className="hint">
+            标注“目标缺失”的表勾选数据时，会自动同时勾选完整表结构：先创建表，再复制全部数据。
+          </p>
           <p className="hint">
             业务键匹配保留目标主键，不自动映射关联表
             ID。已有表的字段定义或顺序变化时，请先同步结构，再重新比较数据。
@@ -336,6 +390,39 @@ export function DiffPage() {
             title={`${t.ref.database}：${t.error}`}
           />
         ))}
+      {plan.targets.map((target) => {
+        const missing = plan.tables.filter(
+          (table) => table.data && target.before[table.name]?.exists === false,
+        );
+        if (!missing.length) return null;
+        const connection = m.state.connections.find((item) => item.id === target.ref.connectionId);
+        return (
+          <Alert
+            className="bottom-gap missing-data-tables"
+            key={`missing:${target.ref.connectionId}/${target.ref.database}`}
+            type="warning"
+            showIcon
+            title={`${target.ref.database}${connection ? `（${connection.name}）` : ''}：目标缺少数据同步表`}
+            description={
+              <ul>
+                {missing.map((table) => (
+                  <li key={table.name}>
+                    <strong>{table.name}</strong>：
+                    {target.changes.some(
+                      (change) =>
+                        change.table === table.name &&
+                        change.kind === 'CREATE_TABLE' &&
+                        !change.blocked,
+                    )
+                      ? '同步数据前必须选中创建表操作，先建表、后写入数据。'
+                      : '仅数据同步无法写入，请启用完整结构同步或先创建目标表。'}
+                  </li>
+                ))}
+              </ul>
+            }
+          />
+        );
+      })}
       <div className="diff-toolbar">
         <Tabs
           activeKey={m.diffTab}

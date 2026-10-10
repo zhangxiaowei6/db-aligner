@@ -319,6 +319,47 @@ class ComparisonIntegrationTest {
               plan.targets.getFirst().changes.stream()
                   .anyMatch(c -> c.table.equals("dict") && c.commentOnly()));
 
+          db.execute(admin, "INSERT INTO " + Sql.qualified(source, "missing") + " VALUES (1),(2)");
+          var completeMissing =
+              Json.node(
+                  Map.of(
+                      "workspaceId",
+                      "default",
+                      "source",
+                      source,
+                      "targets",
+                      List.of(target),
+                      "tables",
+                      List.of(
+                          new TableChoice(
+                              "missing", true, true, List.of(), StructureOptions.all())),
+                      "$secrets",
+                      secrets));
+          var completePlan =
+              Json.MAPPER.convertValue(
+                  service.handle("sync.compare", completeMissing), SyncPlan.class);
+          var missingChanges = completePlan.targets.getFirst().changes;
+          assertTrue(missingChanges.stream().noneMatch(x -> x.blocked), Json.write(completePlan));
+          assertEquals(
+              1, missingChanges.stream().filter(x -> x.kind.equals("CREATE_TABLE")).count());
+          assertEquals(2, missingChanges.stream().filter(x -> x.kind.equals("ADD_ROW")).count());
+          var missingRecord =
+              Json.MAPPER.convertValue(
+                  service.handle(
+                      "sync.save",
+                      Json.node(
+                          Map.of(
+                              "planId",
+                              completePlan.id,
+                              "selectedIds",
+                              missingChanges.stream().map(x -> x.id).toList(),
+                              "mode",
+                              "EXECUTE_AND_SAVE"))),
+                  SyncRecord.class);
+          assertEquals("SUCCESS", waitRecord(service, missingRecord.id).status);
+          assertEquals(2, db.snapshot(admin, target, "missing", true).rows.size());
+          MySqlIntegrationTest.assertNoEngineObjects(db, target);
+
           // Metadata-lock wait proves cancellation reaches JDBC, rather than waiting for the next
           // table.
           db.execute(admin, "LOCK TABLES " + Sql.qualified(source, "dict") + " WRITE");

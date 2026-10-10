@@ -1,4 +1,6 @@
 import { Button, Form, Input, Modal, Select, Space } from 'antd';
+import { EditOutlined, PlusOutlined } from '@ant-design/icons';
+import { useEffect, useRef, useState } from 'react';
 import { useController } from '../controller';
 
 export function ConnectionOrganizationDialogs() {
@@ -7,7 +9,7 @@ export function ConnectionOrganizationDialogs() {
   return (
     <>
       <Modal
-        title="管理连接分组"
+        title="编辑分组"
         open={m.groupDialog}
         onCancel={() => c.set('groupDialog', false)}
         footer={<Button onClick={() => c.set('groupDialog', false)}>关闭</Button>}
@@ -16,7 +18,11 @@ export function ConnectionOrganizationDialogs() {
           {m.state.connectionGroups.map((group) => (
             <div className="group-list-row" key={group.id}>
               <span>{group.name}</span>
-              <Button size="small" onClick={() => c.editGroup(group)}>
+              <Button
+                size="small"
+                icon={<EditOutlined aria-hidden />}
+                onClick={() => c.editGroup(group)}
+              >
                 编辑名称
               </Button>
             </div>
@@ -40,7 +46,14 @@ export function ConnectionOrganizationDialogs() {
             >
               保存分组
             </Button>
-            {m.groupForm && <Button onClick={() => c.editGroup()}>新增分组</Button>}
+            {m.groupForm && (
+              <Button
+                icon={<PlusOutlined aria-hidden />}
+                onClick={() => c.editGroup(undefined, true)}
+              >
+                新增分组
+              </Button>
+            )}
           </Space>
         </Form>
       </Modal>
@@ -71,5 +84,73 @@ export function ConnectionOrganizationDialogs() {
         />
       </Modal>
     </>
+  );
+}
+
+export function ConnectionGroupSelect() {
+  const c = useController();
+  const { m } = c;
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const session = useRef(0);
+  useEffect(() => {
+    session.current += 1;
+    setName('');
+  }, [m.connectionForm.id, m.connectionDialog]);
+  async function create() {
+    if (saving || !name.trim()) return;
+    setSaving(true);
+    const started = session.current;
+    const submitted = name;
+    try {
+      if ((await c.addConnectionGroup(submitted)) && started === session.current)
+        setName((value) => (value === submitted ? '' : value));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <Select
+      aria-label="连接分组"
+      showSearch
+      optionFilterProp="label"
+      style={{ width: '100%' }}
+      value={m.connectionForm.group}
+      options={[
+        ...new Set([...m.state.connectionGroups.map((g) => g.name), m.connectionForm.group]),
+      ]
+        .filter(Boolean)
+        .map((label) => ({ value: label, label }))}
+      onChange={(group) => c.patch('connectionForm', { group })}
+      popupRender={(menu) => (
+        <>
+          {menu}
+          <div className="group-select-create">
+            <Input
+              aria-label="新增连接分组名称"
+              placeholder="新分组名称"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void create();
+                }
+              }}
+            />
+            <Button
+              aria-label="新增"
+              icon={<PlusOutlined aria-hidden />}
+              loading={saving}
+              disabled={!name.trim()}
+              onClick={() => void create()}
+            >
+              新增
+            </Button>
+          </div>
+        </>
+      )}
+    />
   );
 }

@@ -162,6 +162,13 @@ body,
 .compare-range {
   overflow-wrap: anywhere;
 }
+.group-select-create {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
 .tree-scroll {
   flex: 1;
   min-height: 0;
@@ -199,6 +206,12 @@ body,
 }
 .tree-scroll :is(.ant-tree-indent, .ant-tree-switcher, .ant-tree-iconEle) {
   flex-shrink: 0;
+}
+.tree-scroll
+  .ant-tree-treenode:not(.ant-tree-treenode-selected)
+  .ant-tree-node-content-wrapper.ant-tree-node-selected {
+  background: transparent;
+  color: inherit;
 }
 .tree-scroll .ant-tree-title {
   flex: 1;

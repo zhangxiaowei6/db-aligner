@@ -1,7 +1,7 @@
 import { Alert, Checkbox, Modal, Tag } from 'antd';
 import { useEffect, useState } from 'react';
 import { useController } from '../controller';
-import { effectiveOptions, structureSummary } from '../structure-options';
+import { effectiveOptions, fullStructure, structureSummary } from '../structure-options';
 
 export function CompareConfirmation() {
   const c = useController();
@@ -69,6 +69,22 @@ export function CompareConfirmation() {
           {tables.map((table) => (
             <li key={table.name}>
               <strong>{table.name}</strong>
+              {!!table.missingTargets?.length && (
+                <div>
+                  <Tag color="orange">目标缺失</Tag>
+                  {table.missingTargets.map((key) => (
+                    <span key={key}>{database(key)}；</span>
+                  ))}
+                  {' 缺少该表：'}
+                  {table.structure && fullStructure(table.structureOptions)
+                    ? table.data
+                      ? '将创建表并复制全部数据'
+                      : '将创建表'
+                    : table.structure
+                      ? '结构细项不足，无法创建完整表，该表将被阻止'
+                      : '仅数据同步无法写入，该表将被阻止'}
+                </div>
+              )}
               {table.structure && (
                 <div>
                   <Tag>结构</Tag>

@@ -14,7 +14,7 @@ import { copyModel } from './copy';
 import { connectionTestError } from './connection-validation';
 import { connectionSignature, normalizeOrganization } from './connection-organization';
 import { SyncExecutionConfirmation } from './components/SyncExecutionConfirmation';
-import { effectiveOptions } from './structure-options';
+import { allStructureOptions, effectiveOptions, fullStructure } from './structure-options';
 import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
 import {
   changesOf,
@@ -63,14 +63,27 @@ function useBusinessController() {
   const syncSubmitPending = useRef(false);
   const compareStarting = useRef(false);
   const compareCancelPending = useRef(false);
+  const targetTableLoads = useRef(new Map<string, { signature: string; promise: Promise<void> }>());
+  const structureOverrides = useRef(new Set<string>());
+  const connectionEditorGeneration = useRef(0);
+  const groupSaving = useRef(false);
   const comparisonActive = () =>
     !!latest.current.compareTask &&
     ['RUNNING', 'CANCELLING'].includes(latest.current.compareTask.status);
+  // 已知表清单且不含该表的目标库才算“缺失”；加载失败或未加载完成的目标不参与标注。
+  const missingTargetsOf = (s: Model, name: string) =>
+    s.targetKeys.filter((key) => {
+      const tables = s.targetTables[key];
+      return Array.isArray(tables) && !tables.includes(name);
+    });
   const compareSelection = (s: Model): CompareSelection => ({
     workspaceId: s.workspaceId,
     sourceKey: s.sourceKey,
     targetKeys: s.targetKeys,
-    tables: s.scopeTables,
+    tables: s.scopeTables.map((table) => ({
+      ...table,
+      missingTargets: missingTargetsOf(s, table.name),
+    })),
     structureDefaults: s.structureDefaults,
   });
   const selectionSignature = (selection: CompareSelection) => JSON.stringify(selection);
@@ -92,6 +105,7 @@ function useBusinessController() {
         'targetKeys',
         'scopeTables',
         'structureDefaults',
+        'targetTables',
       ] as const)
         Object.assign(next, { [key]: current[key] });
     }
@@ -160,9 +174,30 @@ function useBusinessController() {
     try {
       const state = normalizeOrganization(await api<State>('state.load'));
       if (!valid()) return;
+      const unchangedTarget = ([key]: [string, unknown]) => {
+        const id = fromKey(key).connectionId;
+        return (
+          state.connections.some((c) => c.id === id) &&
+          connectionSignature(latest.current.state.connections.find((c) => c.id === id)) ===
+            connectionSignature(state.connections.find((c) => c.id === id))
+        );
+      };
+      for (const key of targetTableLoads.current.keys()) {
+        if (!unchangedTarget([key, undefined])) {
+          requests.current.delete('targetTables:' + key);
+          targetTableLoads.current.delete(key);
+        }
+      }
       commit((s) => ({
         ...s,
         state,
+        targetTables: Object.fromEntries(Object.entries(s.targetTables).filter(unchangedTarget)),
+        targetTablesLoading: Object.fromEntries(
+          Object.entries(s.targetTablesLoading).filter(unchangedTarget),
+        ),
+        targetTablesErrors: Object.fromEntries(
+          Object.entries(s.targetTablesErrors).filter(unchangedTarget),
+        ),
         dbCache: Object.fromEntries(
           Object.entries(s.dbCache).filter(
             ([id]) =>
@@ -239,7 +274,10 @@ function useBusinessController() {
     }
   }
   function navigate(page: Page) {
+    const previous = latest.current.page;
     set('page', page);
+    if (page === 'scope' && previous !== 'scope' && latest.current.sourceKey && !comparisonActive())
+      void loadTargetTables(true);
     if (preview && page === 'import' && !latest.current.importRows.length) void loadImportExample();
   }
   async function loadImportExample() {
@@ -416,6 +454,7 @@ function useBusinessController() {
     mode: 'structure' | 'data' = 'structure',
   ) {
     requests.current.delete('beginSync');
+    structureOverrides.current.clear();
     commit((s) => ({ ...s, sourceKey: source, scopeTables: [] }));
     const valid = request('scope');
     if (!source) return false;
@@ -436,16 +475,127 @@ function useBusinessController() {
         })),
         targetKeys: s.targetKeys.filter((k) => k !== source),
       }));
+      await loadTargetTables();
+      if (valid()) ensureStructureForMissingTables();
       return true;
     });
   }
+  async function loadTargetTables(force = false) {
+    if (comparisonActive()) return;
+    const s = latest.current;
+    await Promise.all(
+      s.targetKeys.map(async (key) => {
+        const ref = fromKey(key);
+        const connection = s.state.connections.find((item) => item.id === ref?.connectionId);
+        const signature = connectionSignature(connection) + '/' + (ref?.database || '');
+        const pending = targetTableLoads.current.get(key);
+        if (pending?.signature === signature) return pending.promise;
+        if (!force && s.targetTables[key] && !s.targetTablesErrors[key]) return;
+        const valid = request('targetTables:' + key);
+        const current = () =>
+          valid() &&
+          latest.current.workspaceId === s.workspaceId &&
+          latest.current.targetKeys.includes(key) &&
+          connectionSignature(
+            latest.current.state.connections.find((item) => item.id === ref.connectionId),
+          ) +
+            '/' +
+            ref.database ===
+            signature;
+        commit((v) => ({
+          ...v,
+          targetTables: Object.fromEntries(
+            Object.entries(v.targetTables).filter(([id]) => id !== key),
+          ),
+          targetTablesLoading: { ...v.targetTablesLoading, [key]: true },
+          targetTablesErrors: { ...v.targetTablesErrors, [key]: '' },
+        }));
+        let loading!: Promise<void>;
+        loading = (async () => {
+          try {
+            const rows = await api<{ name: string }[]>('tables.list', { ref });
+            if (current()) {
+              commit((v) => ({
+                ...v,
+                targetTables: { ...v.targetTables, [key]: rows.map((row) => row.name) },
+                targetTablesLoading: { ...v.targetTablesLoading, [key]: false },
+              }));
+              ensureStructureForMissingTables();
+            }
+          } catch (error) {
+            if (current())
+              commit((v) => ({
+                ...v,
+                targetTablesLoading: { ...v.targetTablesLoading, [key]: false },
+                targetTablesErrors: {
+                  ...v.targetTablesErrors,
+                  [key]: error instanceof Error ? error.message : String(error),
+                },
+              }));
+          } finally {
+            if (targetTableLoads.current.get(key)?.promise === loading)
+              targetTableLoads.current.delete(key);
+          }
+        })();
+        targetTableLoads.current.set(key, { signature, promise: loading });
+        await loading;
+      }),
+    );
+  }
+  function ensureStructureForMissingTables(names?: string[]) {
+    if (comparisonActive()) return;
+    let added = 0;
+    commit((s) => {
+      let changed = false;
+      const scopeTables = s.scopeTables.map((table) => {
+        if (
+          !table.data ||
+          structureOverrides.current.has(table.name) ||
+          (names && !names.includes(table.name))
+        )
+          return table;
+        if (table.structure && fullStructure(table.structureOptions)) return table;
+        if (!missingTargetsOf(s, table.name).length) return table;
+        changed = true;
+        added += 1;
+        // 引擎只有全部结构细项才能创建缺失表；数据同步依赖已选的创建表变更。
+        return { ...table, structure: true, structureOptions: { ...allStructureOptions } };
+      });
+      return changed ? { ...s, scopeTables } : s;
+    });
+    if (added)
+      void message.info(
+        `目标库缺少 ${added} 张已选数据表，已同时勾选完整表结构：先创建表，再复制全部数据`,
+      );
+  }
+  async function setTargets(keys: string[]) {
+    if (comparisonActive()) return;
+    if (JSON.stringify(keys) !== JSON.stringify(latest.current.targetKeys)) {
+      structureOverrides.current.clear();
+      for (const key of latest.current.targetKeys)
+        if (!keys.includes(key)) {
+          requests.current.delete('targetTables:' + key);
+          targetTableLoads.current.delete(key);
+        }
+    }
+    set('targetKeys', keys);
+    await loadTargetTables();
+    ensureStructureForMissingTables();
+  }
   function resetSync() {
     for (const key of ['scope', 'beginSync', 'templateScope']) requests.current.delete(key);
+    targetTableLoads.current.clear();
+    structureOverrides.current.clear();
+    for (const key of requests.current.keys())
+      if (key.startsWith('targetTables:')) requests.current.delete(key);
     const initial = initialModel();
     commit((s) => ({
       ...s,
       sourceKey: '',
       targetKeys: [],
+      targetTables: {},
+      targetTablesLoading: {},
+      targetTablesErrors: {},
       scopeTables: [],
       structureDefaults: initial.structureDefaults,
       tableSearch: '',
@@ -475,12 +625,20 @@ function useBusinessController() {
     if (source) await loadScope(source, node?.table, mode);
   }
   function toggleScope(type: 'structure' | 'data') {
+    const names: string[] = [];
     commit((s) => {
       const matches = (table: ScopeTable) =>
         table.name.toLowerCase().includes(s.tableSearch.toLowerCase());
       const visible = s.scopeTables.filter(matches);
       if (!visible.length) return s;
       const selected = !visible.every((table) => table[type]);
+      for (const table of visible) {
+        if (type === 'structure') structureOverrides.current.add(table.name);
+        else if (selected && !table.data) {
+          structureOverrides.current.delete(table.name);
+          names.push(table.name);
+        }
+      }
       return {
         ...s,
         scopeTables: s.scopeTables.map((table) =>
@@ -488,12 +646,19 @@ function useBusinessController() {
         ),
       };
     });
+    if (type === 'data') ensureStructureForMissingTables(names);
   }
   function updateScope(name: string, fields: Partial<ScopeTable>) {
+    if (fields.structure !== undefined || fields.structureOptions !== undefined)
+      structureOverrides.current.add(name);
+    if (fields.data && !latest.current.scopeTables.find((t) => t.name === name)?.data)
+      structureOverrides.current.delete(name);
     commit((s) => ({
       ...s,
       scopeTables: s.scopeTables.map((t) => (t.name === name ? { ...t, ...fields } : t)),
     }));
+    // 仅在用户勾选数据时补勾结构；随后手动取消结构不被回改，由引擎阻止规则兜底。
+    if (fields.data) ensureStructureForMissingTables([name]);
   }
   const choices = (tables: TableChoice[]) =>
     tables
@@ -644,6 +809,10 @@ function useBusinessController() {
     }
   }
   function applyStructureDefaults(template = false) {
+    if (!template)
+      latest.current.scopeTables
+        .filter((t) => t.structure)
+        .forEach((t) => structureOverrides.current.add(t.name));
     commit((s) =>
       template
         ? {
@@ -770,6 +939,7 @@ function useBusinessController() {
     });
   }
   function editConnection(c?: ConnectionInfo, group?: string) {
+    connectionEditorGeneration.current += 1;
     const form = c
       ? { ...copyModel(c), password: '', certificatePassword: '' }
       : {
@@ -787,6 +957,7 @@ function useBusinessController() {
     }));
   }
   function closeConnection() {
+    connectionEditorGeneration.current += 1;
     commit((s) => ({
       ...s,
       connectionDialog: false,
@@ -795,30 +966,60 @@ function useBusinessController() {
       databasesText: '',
     }));
   }
-  function editGroup(group?: ConnectionGroup) {
+  function editGroup(group?: ConnectionGroup, create = false) {
+    group = group || (create ? undefined : latest.current.state.connectionGroups[0]);
     commit((s) => ({ ...s, groupDialog: true, groupForm: group, groupName: group?.name || '' }));
   }
   async function saveGroup() {
+    if (groupSaving.current) return;
+    groupSaving.current = true;
     const s = latest.current;
     const name = s.groupName.trim();
-    await action(async () => {
-      if (!name) throw new Error('请输入分组名称');
-      const group = await api<ConnectionGroup>('connectionGroups.save', {
-        id: s.groupForm?.id,
-        name,
+    try {
+      await action(async () => {
+        if (!name) throw new Error('请输入分组名称');
+        const group = await api<ConnectionGroup>('connectionGroups.save', {
+          id: s.groupForm?.id,
+          name,
+        });
+        commit((v) => ({
+          ...v,
+          groupDialog: false,
+          connectionForm:
+            v.connectionDialog && s.groupForm && v.connectionForm.group === s.groupForm.name
+              ? { ...v.connectionForm, group: group.name }
+              : v.connectionForm,
+          importGroup:
+            s.groupForm && v.importGroup === s.groupForm.name ? group.name : v.importGroup,
+        }));
+        await loadState();
+        void message.success('分组已保存');
       });
-      commit((v) => ({
-        ...v,
-        groupDialog: false,
-        connectionForm:
-          v.connectionDialog && (!s.groupForm || v.connectionForm.group === s.groupForm.name)
-            ? { ...v.connectionForm, group: group.name }
-            : v.connectionForm,
-        importGroup: s.groupForm && v.importGroup === s.groupForm.name ? group.name : v.importGroup,
+    } finally {
+      groupSaving.current = false;
+    }
+  }
+  async function addConnectionGroup(name: string) {
+    if (groupSaving.current || !name.trim()) return false;
+    groupSaving.current = true;
+    const s = latest.current;
+    const generation = connectionEditorGeneration.current;
+    try {
+      return !!(await action(async () => {
+        const group = await api<ConnectionGroup>('connectionGroups.save', { name: name.trim() });
+        await loadState();
+        if (
+          generation === connectionEditorGeneration.current &&
+          latest.current.connectionDialog &&
+          latest.current.connectionForm.id === s.connectionForm.id &&
+          latest.current.connectionForm.group === s.connectionForm.group
+        )
+          patch('connectionForm', { group: group.name });
+        return true;
       }));
-      await loadState();
-      void message.success('分组已保存');
-    });
+    } finally {
+      groupSaving.current = false;
+    }
   }
   function chooseConnectionGroup(connection: ConnectionInfo) {
     const group = latest.current.state.connectionGroups.find((g) => g.name === connection.group);
@@ -1234,6 +1435,7 @@ function useBusinessController() {
       }),
       page: 'scope',
     }));
+    ensureStructureForMissingTables();
   }
   function openVersionDrawer() {
     commit((s) => ({
@@ -1407,7 +1609,6 @@ function useBusinessController() {
     commit((s) => ({
       ...s,
       externalIds: [...record.selectedIds],
-      externalBackup: false,
       externalRemark: '',
       externalDrawer: true,
     }));
@@ -1420,7 +1621,7 @@ function useBusinessController() {
       await api('external.declare', {
         id,
         confirmedIds: s.externalIds,
-        backupCompleted: s.externalBackup,
+        backupCompleted: false,
         remark: s.externalRemark,
       });
       set('externalDrawer', false);
@@ -1494,15 +1695,22 @@ function useBusinessController() {
     await loadExport(source, node?.table);
   }
   async function loadExport(source = latest.current.exportSource, preselect?: string) {
-    commit((s) => ({ ...s, exportSource: source, exportTables: [] }));
+    request('exportSQL'); // 来源切换使进行中的生成响应失效
+    commit((s) => ({
+      ...s,
+      exportSource: source,
+      exportTables: [],
+      exportSql: '',
+      exportPreview: undefined,
+    }));
     const valid = request('exportScope');
     if (!source) return;
     await action(async () => {
       const rows = await api<{ name: string; comment: string }[]>('tables.list', {
         ref: fromKey(source),
       });
-      if (!valid() || latest.current.page !== 'export' || latest.current.exportSource !== source)
-        return;
+      // 过期响应由 request 令牌与 exportSource 比对丢弃；离开导出页时 commit 统一清空导出状态。
+      if (!valid() || latest.current.exportSource !== source) return;
       commit((s) => ({
         ...s,
         exportTables: rows.map((t) => ({ ...t, selected: !!preselect && t.name === preselect })),
@@ -1514,6 +1722,7 @@ function useBusinessController() {
     const s = latest.current;
     const tables = s.exportTables.filter((t) => t.selected).map((t) => t.name);
     if (s.loading || s.busy || !s.exportSource || !tables.length) return;
+    invalidateExportPreview(); // 重新生成前清空旧预览并作废旧请求
     const valid = request('exportSQL');
     commit((v) => ({ ...v, exportGenerating: true }));
     try {
@@ -1523,7 +1732,7 @@ function useBusinessController() {
           tables,
           includeDrop: s.includeDrop,
         });
-        if (valid() && latest.current.page === 'export')
+        if (valid())
           commit((v) => ({
             ...v,
             exportSql: result.sql,
@@ -1539,10 +1748,19 @@ function useBusinessController() {
       ...s,
       exportTables: s.exportTables.map((t) => ({ ...t, selected: names.includes(t.name) })),
     }));
+    invalidateExportPreview();
   }
   function setIncludeDrop(value: boolean) {
     if (value === latest.current.includeDrop) return;
     commit((s) => ({ ...s, includeDrop: value }));
+    invalidateExportPreview();
+  }
+  /** 选择、范围或来源变化后，清空当前预览并作废进行中的生成请求。 */
+  function invalidateExportPreview() {
+    request('exportSQL');
+    commit((s) =>
+      s.exportSql || s.exportPreview ? { ...s, exportSql: '', exportPreview: undefined } : s,
+    );
   }
   async function saveSql() {
     const s = latest.current;
@@ -1822,6 +2040,9 @@ function useBusinessController() {
     refreshTable,
     beginSync,
     loadScope,
+    setTargets,
+    loadTargetTables,
+    missingTargets: (name: string) => missingTargetsOf(latest.current, name),
     toggleScope,
     updateScope,
     compare,
@@ -1836,6 +2057,7 @@ function useBusinessController() {
     editConnection,
     editGroup,
     saveGroup,
+    addConnectionGroup,
     chooseConnectionGroup,
     moveConnection,
     closeConnection,
