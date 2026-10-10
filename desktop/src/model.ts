@@ -109,6 +109,8 @@ export interface Model {
   targetTablesLoading: Record<string, boolean>;
   targetTablesErrors: Record<string, string>;
   scopeTables: ScopeTable[];
+  scopeMode: 'structure' | 'data';
+  templateMode: 'structure' | 'data';
   scopeTemplateId: string;
   applyingTemplateId: string;
   appliedTemplate?: { id: string; name: string };
@@ -247,6 +249,8 @@ export function initialModel(): Model {
     targetTablesLoading: {},
     targetTablesErrors: {},
     scopeTables: [],
+    scopeMode: 'structure',
+    templateMode: 'structure',
     scopeTemplateId: '',
     applyingTemplateId: '',
     templateApplyError: '',

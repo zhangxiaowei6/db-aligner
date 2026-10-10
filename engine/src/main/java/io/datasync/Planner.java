@@ -16,6 +16,9 @@ public final class Planner {
       String workspace, DbRef source, List<DbRef> targets, List<TableChoice> tables)
       throws Exception {
     tables = tables.stream().filter(t -> t.structure() || t.data()).toList();
+    if (tables.stream().anyMatch(TableChoice::structure)
+        && tables.stream().anyMatch(TableChoice::data))
+      throw new IllegalArgumentException("每次只能同步结构或数据，请选择一种同步类型");
     for (var choice : tables)
       if (choice.structure() && !choice.options().any())
         throw new IllegalArgumentException("请选择结构细项：" + choice.name());
@@ -71,6 +74,12 @@ public final class Planner {
           try {
             var a = p.sourceSnapshot.get(choice.name());
             var b = db.snapshot(c, target, choice.name(), choice.data());
+            tp.before.put(choice.name(), b);
+            if (choice.data() && !b.exists) {
+              tp.skippedTables.add(choice.name());
+              if (context != null) context.stage(target, choice.name(), "目标缺表，已跳过");
+              continue;
+            }
             if (choice.data() && b.supported)
               try {
                 db.keyTokens(

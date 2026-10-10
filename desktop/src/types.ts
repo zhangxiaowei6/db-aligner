@@ -113,6 +113,7 @@ export interface TargetPlan {
   connectionIdentity?: Record<string, unknown>;
   before: Record<string, Table>;
   changes: Change[];
+  skippedTables?: string[];
 }
 export interface SyncPlan {
   id: string;

@@ -126,7 +126,7 @@ beforeEach(() => {
       description: '',
       source: { connectionId: 'source', database: 'a' },
       targets: [{ connectionId: 'source', database: 'b' }],
-      tables: [{ name: 'dict', structure: true, data: true, keyColumns: ['code'] }],
+      tables: [{ name: 'dict', structure: true, data: false, keyColumns: ['code'] }],
     },
   ];
   bridge.invoke.mockImplementation(async (method: string, params: Record<string, unknown> = {}) => {
@@ -306,10 +306,11 @@ describe('comparison confirmation and cancellation', () => {
         sourceKey: 'source/a',
         targetKeys: ['source/b'],
         tableSearch: 'dict',
+        scopeMode: data ? 'data' : 'structure',
         scopeTables: ['dict', 'hidden'].map((name) => ({
           name,
           comment: '',
-          structure: true,
+          structure: !data,
           data,
           keyColumns: [],
           keyText: '',
@@ -354,6 +355,7 @@ describe('comparison confirmation and cancellation', () => {
     );
     act(() =>
       controller.updateScope('dict', {
+        structure: true,
         structureOptions: {
           columns: false,
           columnOrder: false,
@@ -565,13 +567,13 @@ describe('React business state and protocol', () => {
         ],
       })),
     );
-    await userEvent.click(screen.getByRole('button', { name: /结\s*构$/ }));
+    await userEvent.click(screen.getByRole('button', { name: '选择结构表' }));
     expect(controller.m.scopeTables.map((table) => table.structure)).toEqual([true, true]);
     expect(controller.m.scopeTables.map((table) => table.data)).toEqual([false, false]);
-    expect(screen.getByRole('button', { name: /结\s*构$/ }).getAttribute('aria-pressed')).toBe(
+    expect(screen.getByRole('button', { name: '选择结构表' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
-    await userEvent.click(screen.getByRole('button', { name: /结\s*构$/ }));
+    await userEvent.click(screen.getByRole('button', { name: '选择结构表' }));
     expect(controller.m.scopeTables.map((table) => table.structure)).toEqual([false, true]);
     await userEvent.click(screen.getByRole('button', { name: /数\s*据$/ }));
     expect(controller.m.scopeTables.map((table) => table.data)).toEqual([true, false]);
@@ -1733,6 +1735,28 @@ describe('export preview retention', () => {
 });
 
 describe('missing target tables in the sync scope', () => {
+  it('switches the entire scope to one mode, preserves keys, and disables the other type', async () => {
+    await scope();
+    act(() => {
+      controller.updateScope('dict', { structure: true, keyText: 'code' });
+      controller.updateScope('orders', { structure: true });
+    });
+    await userEvent.click(screen.getByRole('radio', { name: '同步数据' }));
+    expect(controller.m.scopeMode).toBe('data');
+    expect(controller.m.scopeTables.every((table) => table.data && !table.structure)).toBe(true);
+    expect(controller.m.scopeTables[0].keyText).toBe('code');
+    expect(
+      (screen.getByRole('checkbox', { name: 'dict 表结构' }) as HTMLInputElement).disabled,
+    ).toBe(true);
+    act(() => controller.set('tableSearch', 'dict'));
+    act(() => controller.toggleScope('structure'));
+    expect(controller.m.scopeTables.every((table) => table.structure && !table.data)).toBe(true);
+    expect(
+      (screen.getByRole('checkbox', { name: 'dict 基础数据' }) as HTMLInputElement).disabled,
+    ).toBe(true);
+    expect(controller.m.scopeTables[0].keyText).toBe('code');
+  });
+
   async function scope() {
     await ready(
       <>
@@ -1757,7 +1781,7 @@ describe('missing target tables in the sync scope', () => {
     );
   }
 
-  it('completes partial structure only for newly enabled data and preserves later overrides', async () => {
+  it('keeps structure options without auto-enabling structure for missing data tables', async () => {
     await scope();
     await act(async () => controller.setTargets(['source/b']));
     act(() =>
@@ -1767,13 +1791,16 @@ describe('missing target tables in the sync scope', () => {
       }),
     );
     act(() => controller.updateScope('orders', { data: true }));
-    expect(controller.m.scopeTables[1].structureOptions).toEqual(allStructureOptions);
+    expect(controller.m.scopeTables[1].structureOptions).toEqual({
+      ...allStructureOptions,
+      indexes: false,
+    });
     act(() => controller.updateScope('orders', { structure: false }));
     act(() => controller.updateScope('dict', { data: true }));
     await act(async () => controller.loadTargetTables(true));
     expect(controller.m.scopeTables[1].structure).toBe(false);
     await act(async () => controller.compare());
-    expect(screen.getByText(/仅数据同步无法写入/)).toBeTruthy();
+    expect(screen.getByText(/将在上述目标库自动跳过/)).toBeTruthy();
   });
 
   it('deduplicates target reads and ignores completion after scope reset', async () => {
@@ -1850,41 +1877,38 @@ describe('missing target tables in the sync scope', () => {
     expect(controller.m.targetTablesLoading['source/b']).toBe(false);
   });
 
-  it('normalizes missing data tables from templates and distinguishes structure-only and partial selections', async () => {
+  it('requires a mode for mixed legacy templates and preserves partial structure settings', async () => {
     await scope();
-    await act(async () =>
-      controller.applyTemplate({
-        ...state.templates[0],
-        tables: [
-          {
-            name: 'dict',
-            data: true,
-            structure: true,
-            keyColumns: [],
-            structureOptions: { ...allStructureOptions, columns: false },
-          },
-        ],
-      }),
-    );
-    expect(controller.m.scopeTables[0].structureOptions?.columns).toBe(false); // Existing target table.
+    const template = {
+      ...state.templates[0],
+      tables: [
+        {
+          name: 'dict',
+          data: true,
+          structure: true,
+          keyColumns: [],
+          structureOptions: { ...allStructureOptions, columns: false },
+        },
+      ],
+    };
+    await act(async () => controller.applyTemplate(template));
+    const dialog = screen.getByRole('dialog', { name: '请选择旧模板的同步类型' });
+    expect(controller.m.scopeTables.every((table) => !table.data && !table.structure)).toBe(true);
+    await userEvent.click(within(dialog).getByRole('radio', { name: '同步数据' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '应用所选类型' }));
+    await waitFor(() => expect(controller.m.appliedTemplate?.id).toBe(template.id));
+    expect(controller.m.scopeMode).toBe('data');
+    expect(controller.m.scopeTables[0].structure).toBe(false);
+    expect(controller.m.scopeTables[0].data).toBe(true);
+    expect(controller.m.scopeTables[0].structureOptions?.columns).toBe(false);
     bridge.invoke.mockResolvedValueOnce([]);
     await act(async () => controller.loadTargetTables(true));
-    expect(controller.m.scopeTables[0].structureOptions).toEqual(allStructureOptions);
-    act(() => {
-      controller.updateScope('dict', { data: false });
-      controller.compare();
-    });
-    expect(screen.getByText(/将创建表$/)).toBeTruthy();
-    act(() => {
-      controller.dismissCompareConfirmation();
-      controller.updateScope('dict', {
-        structureOptions: { ...allStructureOptions, columns: false },
-      });
-      controller.compare();
-    });
+    expect(controller.m.scopeTables[0].structureOptions?.columns).toBe(false);
+    act(() => controller.setScopeMode('structure'));
+    await act(async () => controller.compare());
     expect(screen.getByText(/结构细项不足/)).toBeTruthy();
   });
-  it('flags tables missing in targets, auto-enables full structure for data sync, and annotates the confirmation', async () => {
+  it('flags missing targets, keeps data mode exclusive, and explains skipping in the confirmation', async () => {
     const original = bridge.invoke.getMockImplementation()!;
     bridge.invoke.mockImplementation(async (method, params) => {
       if (method === 'tables.list') {
@@ -1928,7 +1952,7 @@ describe('missing target tables in the sync scope', () => {
       controller.updateScope('orders', { data: true });
     });
     const orders = controller.m.scopeTables.find((t) => t.name === 'orders')!;
-    expect(orders.structure).toBe(true);
+    expect(orders.structure).toBe(false);
     expect(orders.structureOptions).toEqual(allStructureOptions);
     // 目标库存在该表时不自动扩展范围。
     await act(async () => {
@@ -1941,13 +1965,12 @@ describe('missing target tables in the sync scope', () => {
     });
     expect(controller.m.scopeTables.find((t) => t.name === 'orders')!.structure).toBe(false);
     await act(async () => {
-      controller.updateScope('orders', { structure: true });
       controller.compare();
     });
     const pending = controller.m.compareConfirmation!;
     expect(pending.tables.find((t) => t.name === 'orders')?.missingTargets).toEqual(['source/b']);
     expect(pending.tables.find((t) => t.name === 'dict')?.missingTargets).toEqual([]);
-    expect(await screen.findByText(/将创建表并复制全部数据/)).toBeTruthy();
+    expect(await screen.findByText(/将在上述目标库自动跳过/)).toBeTruthy();
     expect(screen.queryByText(/仅数据同步无法写入/)).toBeNull();
   });
 });

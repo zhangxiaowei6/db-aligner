@@ -703,21 +703,34 @@ export function TemplateEditor() {
           />
         </Field>
       </Form>
-      <div className="structure-defaults">
-        <strong>统一结构默认</strong>
-        <StructureOptionsEditor
-          value={m.templateStructureDefaults}
+      <Field label="同步类型">
+        <Radio.Group
+          value={m.templateMode}
           disabled={m.templateSubmitting}
-          onChange={(options) => c.set('templateStructureDefaults', options)}
+          onChange={(event) => c.setTemplateMode(event.target.value)}
+          options={[
+            { label: '同步结构', value: 'structure' },
+            { label: '同步数据', value: 'data' },
+          ]}
         />
-        <Button
-          size="small"
-          disabled={m.templateSubmitting}
-          onClick={() => c.applyStructureDefaults(true)}
-        >
-          应用到当前已选结构表
-        </Button>
-      </div>
+      </Field>
+      {m.templateMode === 'structure' && (
+        <div className="structure-defaults">
+          <strong>统一结构默认</strong>
+          <StructureOptionsEditor
+            value={m.templateStructureDefaults}
+            disabled={m.templateSubmitting}
+            onChange={(options) => c.set('templateStructureDefaults', options)}
+          />
+          <Button
+            size="small"
+            disabled={m.templateSubmitting}
+            onClick={() => c.applyStructureDefaults(true)}
+          >
+            应用到当前已选结构表
+          </Button>
+        </div>
+      )}
       <DataTable<TableChoice>
         rowKey="name"
         dataSource={f.tables}
@@ -730,7 +743,7 @@ export function TemplateEditor() {
             render: (_, row) => (
               <Checkbox
                 aria-label={`${row.name} 模板结构`}
-                disabled={m.templateSubmitting}
+                disabled={m.templateSubmitting || m.templateMode !== 'structure'}
                 checked={row.structure}
                 onChange={(e) => c.updateTemplateTable(row.name, { structure: e.target.checked })}
               />
@@ -743,7 +756,7 @@ export function TemplateEditor() {
             render: (_, row) => (
               <Checkbox
                 aria-label={`${row.name} 模板数据`}
-                disabled={m.templateSubmitting}
+                disabled={m.templateSubmitting || m.templateMode !== 'data'}
                 checked={row.data}
                 onChange={(e) => c.updateTemplateTable(row.name, { data: e.target.checked })}
               />

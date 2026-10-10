@@ -1,5 +1,17 @@
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
-import { Alert, Checkbox, Empty, Form, Input, Select, Space, Tabs, Tag, Tooltip } from 'antd';
+import {
+  Alert,
+  Checkbox,
+  Empty,
+  Form,
+  Input,
+  Radio,
+  Select,
+  Space,
+  Tabs,
+  Tag,
+  Tooltip,
+} from 'antd';
 import {
   ArrowRightOutlined,
   DatabaseOutlined,
@@ -167,7 +179,17 @@ export function ScopePage() {
           </div>
           <div className="scope-toolbar">
             <Space wrap>
-              {(['structure', 'data'] as const).map((kind) => {
+              <Radio.Group
+                aria-label="同步类型"
+                value={m.scopeMode}
+                disabled={comparing}
+                onChange={(event) => c.setScopeMode(event.target.value)}
+                options={[
+                  { label: '同步结构', value: 'structure' },
+                  { label: '同步数据', value: 'data' },
+                ]}
+              />
+              {([m.scopeMode] as const).map((kind) => {
                 return (
                   <SelectionToggle
                     key={kind}
@@ -176,12 +198,12 @@ export function ScopePage() {
                     selected={filtered.filter((table) => table[kind]).length}
                     onToggle={() => c.toggleScope(kind)}
                   >
-                    {kind === 'structure' ? '结构' : '数据'}
+                    {kind === 'structure' ? '选择结构表' : '选择数据表'}
                   </SelectionToggle>
                 );
               })}
             </Space>
-            <span className="hint">只读取已选表的结构与数据</span>
+            <span className="hint">每次只同步一种类型；切换类型保留已选表</span>
             <RefreshButton
               size="small"
               aria-label="刷新目标表清单"
@@ -233,21 +255,23 @@ export function ScopePage() {
               }
             />
           )}
-          <div className="structure-defaults">
-            <strong>统一结构默认</strong>
-            <StructureOptionsEditor
-              value={m.structureDefaults}
-              disabled={comparing}
-              onChange={(options) => c.set('structureDefaults', options)}
-            />
-            <Button
-              size="small"
-              disabled={comparing || !m.scopeTables.some((table) => table.structure)}
-              onClick={() => c.applyStructureDefaults()}
-            >
-              应用到当前已选结构表
-            </Button>
-          </div>
+          {m.scopeMode === 'structure' && (
+            <div className="structure-defaults">
+              <strong>统一结构默认</strong>
+              <StructureOptionsEditor
+                value={m.structureDefaults}
+                disabled={comparing}
+                onChange={(options) => c.set('structureDefaults', options)}
+              />
+              <Button
+                size="small"
+                disabled={comparing || !m.scopeTables.some((table) => table.structure)}
+                onClick={() => c.applyStructureDefaults()}
+              >
+                应用到当前已选结构表
+              </Button>
+            </div>
+          )}
           <DataTable<ScopeTable>
             size="small"
             className="scope-table"
@@ -290,8 +314,8 @@ export function ScopePage() {
                 align: 'center',
                 render: (_, row) => (
                   <Checkbox
-                    disabled={comparing}
                     checked={row.structure}
+                    disabled={comparing || m.scopeMode !== 'structure'}
                     aria-label={`${row.name} 表结构`}
                     onChange={(e) => c.updateScope(row.name, { structure: e.target.checked })}
                   />
@@ -315,8 +339,8 @@ export function ScopePage() {
                 align: 'center',
                 render: (_, row) => (
                   <Checkbox
-                    disabled={comparing}
                     checked={row.data}
+                    disabled={comparing || m.scopeMode !== 'data'}
                     aria-label={`${row.name} 基础数据`}
                     onChange={(e) => c.updateScope(row.name, { data: e.target.checked })}
                   />
@@ -339,7 +363,7 @@ export function ScopePage() {
           />
           <p className="hint">删除与高风险结构变更默认不选中，在差异预览中逐项确认。</p>
           <p className="hint">
-            标注“目标缺失”的表勾选数据时，会自动同时勾选完整表结构：先创建表，再复制全部数据。
+            数据同步仅处理源库与目标库都存在的同名表；目标缺表时自动跳过，不创建表。
           </p>
           <p className="hint">
             业务键匹配保留目标主键，不自动映射关联表
@@ -455,14 +479,16 @@ export function DiffPage() {
                 {missing.map((table) => (
                   <li key={table.name}>
                     <strong>{table.name}</strong>：
-                    {target.changes.some(
-                      (change) =>
-                        change.table === table.name &&
-                        change.kind === 'CREATE_TABLE' &&
-                        !change.blocked,
-                    )
-                      ? '同步数据前必须选中创建表操作，先建表、后写入数据。'
-                      : '仅数据同步无法写入，请启用完整结构同步或先创建目标表。'}
+                    {target.skippedTables?.includes(table.name)
+                      ? '已自动跳过：目标库不存在该表。其他目标库中的同名表继续同步。'
+                      : target.changes.some(
+                            (change) =>
+                              change.table === table.name &&
+                              change.kind === 'CREATE_TABLE' &&
+                              !change.blocked,
+                          )
+                        ? '同步数据前必须选中创建表操作，先建表、后写入数据。'
+                        : '仅数据同步无法写入，请启用完整结构同步或先创建目标表。'}
                   </li>
                 ))}
               </ul>

@@ -7,14 +7,15 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import { App, Input } from 'antd';
+import { App, Input, Radio } from 'antd';
+import { mixedSyncModes, syncModeOf, tablesForMode, type SyncMode } from './sync-mode';
 import { api, onEvent, preview, windowAction } from './api';
 import { previewPlan } from './preview';
 import { copyModel } from './copy';
 import { connectionTestError } from './connection-validation';
 import { connectionSignature, normalizeOrganization } from './connection-organization';
 import { SyncExecutionConfirmation } from './components/SyncExecutionConfirmation';
-import { allStructureOptions, effectiveOptions, fullStructure } from './structure-options';
+import { effectiveOptions } from './structure-options';
 import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
 import {
   changesOf,
@@ -64,7 +65,6 @@ function useBusinessController() {
   const compareStarting = useRef(false);
   const compareCancelPending = useRef(false);
   const targetTableLoads = useRef(new Map<string, { signature: string; promise: Promise<void> }>());
-  const structureOverrides = useRef(new Set<string>());
   const connectionEditorGeneration = useRef(0);
   const groupSaving = useRef(false);
   const groupEditorGeneration = useRef(0);
@@ -135,6 +135,7 @@ function useBusinessController() {
         'sourceKey',
         'targetKeys',
         'scopeTables',
+        'scopeMode',
         'structureDefaults',
         'targetTables',
       ] as const)
@@ -344,6 +345,7 @@ function useBusinessController() {
       sourceKey: '',
       targetKeys: [],
       scopeTables: [],
+      scopeMode: 'structure',
       plan: undefined,
       selectedIds: [],
       currentChangeId: '',
@@ -579,11 +581,10 @@ function useBusinessController() {
   async function loadScope(
     source = latest.current.sourceKey,
     preselect?: string,
-    mode: 'structure' | 'data' = 'structure',
+    mode: 'structure' | 'data' = latest.current.scopeMode,
   ) {
     requests.current.delete('beginSync');
-    structureOverrides.current.clear();
-    commit((s) => ({ ...s, sourceKey: source, scopeTables: [] }));
+    commit((s) => ({ ...s, sourceKey: source, scopeTables: [], scopeMode: mode }));
     const valid = request('scope');
     if (!source) return false;
     return await action(async () => {
@@ -604,7 +605,6 @@ function useBusinessController() {
         targetKeys: s.targetKeys.filter((k) => k !== source),
       }));
       await loadTargetTables();
-      if (valid()) ensureStructureForMissingTables();
       return true;
     });
   }
@@ -648,7 +648,6 @@ function useBusinessController() {
                 targetTables: { ...v.targetTables, [key]: rows.map((row) => row.name) },
                 targetTablesLoading: { ...v.targetTablesLoading, [key]: false },
               }));
-              ensureStructureForMissingTables();
             }
           } catch (error) {
             if (current())
@@ -670,36 +669,9 @@ function useBusinessController() {
       }),
     );
   }
-  function ensureStructureForMissingTables(names?: string[]) {
-    if (comparisonActive()) return;
-    let added = 0;
-    commit((s) => {
-      let changed = false;
-      const scopeTables = s.scopeTables.map((table) => {
-        if (
-          !table.data ||
-          structureOverrides.current.has(table.name) ||
-          (names && !names.includes(table.name))
-        )
-          return table;
-        if (table.structure && fullStructure(table.structureOptions)) return table;
-        if (!missingTargetsOf(s, table.name).length) return table;
-        changed = true;
-        added += 1;
-        // 引擎只有全部结构细项才能创建缺失表；数据同步依赖已选的创建表变更。
-        return { ...table, structure: true, structureOptions: { ...allStructureOptions } };
-      });
-      return changed ? { ...s, scopeTables } : s;
-    });
-    if (added)
-      void message.info(
-        `目标库缺少 ${added} 张已选数据表，已同时勾选完整表结构：先创建表，再复制全部数据`,
-      );
-  }
   async function setTargets(keys: string[]) {
     if (comparisonActive()) return;
     if (JSON.stringify(keys) !== JSON.stringify(latest.current.targetKeys)) {
-      structureOverrides.current.clear();
       for (const key of latest.current.targetKeys)
         if (!keys.includes(key)) {
           requests.current.delete('targetTables:' + key);
@@ -708,12 +680,10 @@ function useBusinessController() {
     }
     set('targetKeys', keys);
     await loadTargetTables();
-    ensureStructureForMissingTables();
   }
   function resetSync() {
     for (const key of ['scope', 'beginSync', 'templateScope']) requests.current.delete(key);
     targetTableLoads.current.clear();
-    structureOverrides.current.clear();
     for (const key of requests.current.keys())
       if (key.startsWith('targetTables:')) requests.current.delete(key);
     const initial = initialModel();
@@ -725,6 +695,7 @@ function useBusinessController() {
       targetTablesLoading: {},
       targetTablesErrors: {},
       scopeTables: [],
+      scopeMode: 'structure',
       structureDefaults: initial.structureDefaults,
       tableSearch: '',
       scopeRemark: '',
@@ -752,41 +723,37 @@ function useBusinessController() {
     const source = refKey(node.ref);
     if (source) await loadScope(source, node?.table, mode);
   }
-  function toggleScope(type: 'structure' | 'data') {
-    const names: string[] = [];
+  function setScopeMode(mode: SyncMode) {
+    if (comparisonActive()) return;
+    commit((s) => ({ ...s, scopeMode: mode, scopeTables: tablesForMode(s.scopeTables, mode) }));
+  }
+  function toggleScope(type: SyncMode) {
+    if (comparisonActive()) return;
     commit((s) => {
       const matches = (table: ScopeTable) =>
         table.name.toLowerCase().includes(s.tableSearch.toLowerCase());
       const visible = s.scopeTables.filter(matches);
       if (!visible.length) return s;
-      const selected = !visible.every((table) => table[type]);
-      for (const table of visible) {
-        if (type === 'structure') structureOverrides.current.add(table.name);
-        else if (selected && !table.data) {
-          structureOverrides.current.delete(table.name);
-          names.push(table.name);
-        }
-      }
+      const selected = s.scopeMode !== type || !visible.every((table) => table[type]);
       return {
         ...s,
-        scopeTables: s.scopeTables.map((table) =>
+        scopeMode: type,
+        scopeTables: tablesForMode(s.scopeTables, type).map((table) =>
           matches(table) ? { ...table, [type]: selected } : table,
         ),
       };
     });
-    if (type === 'data') ensureStructureForMissingTables(names);
   }
   function updateScope(name: string, fields: Partial<ScopeTable>) {
-    if (fields.structure !== undefined || fields.structureOptions !== undefined)
-      structureOverrides.current.add(name);
-    if (fields.data && !latest.current.scopeTables.find((t) => t.name === name)?.data)
-      structureOverrides.current.delete(name);
+    if (comparisonActive()) return;
+    const mode = fields.data ? 'data' : fields.structure ? 'structure' : latest.current.scopeMode;
     commit((s) => ({
       ...s,
-      scopeTables: s.scopeTables.map((t) => (t.name === name ? { ...t, ...fields } : t)),
+      scopeMode: mode,
+      scopeTables: tablesForMode(s.scopeTables, mode).map((t) =>
+        t.name === name ? { ...t, ...fields, [mode === 'data' ? 'structure' : 'data']: false } : t,
+      ),
     }));
-    // 仅在用户勾选数据时补勾结构；随后手动取消结构不被回改，由引擎阻止规则兜底。
-    if (fields.data) ensureStructureForMissingTables([name]);
   }
   const choices = (tables: TableChoice[]) =>
     tables
@@ -802,6 +769,10 @@ function useBusinessController() {
     if (comparisonActive() || latest.current.compareConfirmation || compareStarting.current) return;
     const s = latest.current;
     if (!s.sourceKey || !s.targetKeys.length || !choices(s.scopeTables).length) return;
+    if (mixedSyncModes(s.scopeTables)) {
+      void message.warning('每次只能同步结构或数据，请选择一种同步类型');
+      return;
+    }
     const empty = s.scopeTables.find(
       (t) => t.structure && !Object.values(effectiveOptions(t.structureOptions)).some(Boolean),
     );
@@ -937,10 +908,6 @@ function useBusinessController() {
     }
   }
   function applyStructureDefaults(template = false) {
-    if (!template)
-      latest.current.scopeTables
-        .filter((t) => t.structure)
-        .forEach((t) => structureOverrides.current.add(t.name));
     commit((s) =>
       template
         ? {
@@ -1562,11 +1529,20 @@ function useBusinessController() {
           targets: s.targetKeys.map(fromKey),
           tables: choices(s.scopeTables),
         };
+    const mode = t ? syncModeOf(t.tables) : s.scopeMode;
+    if (t && mixedSyncModes(t.tables))
+      void message.info('旧模板包含结构和数据，当前按结构模式载入；可切换同步类型后保存');
     commit((v) => ({
       ...v,
+      templateMode: mode,
       templateForm: {
         ...form,
-        tables: form.tables.map((t) => ({ ...t, keyText: t.keyColumns.join(', ') })),
+        tables: form.tables.map((t) => ({
+          ...t,
+          structure: mode === 'structure' && t.structure,
+          data: mode === 'data' && t.data,
+          keyText: t.keyColumns.join(', '),
+        })),
       },
       templateSource: form.source.connectionId ? refKey(form.source) : '',
       templateTargets: form.targets.map(refKey),
@@ -1609,12 +1585,29 @@ function useBusinessController() {
         });
     });
   }
-  function updateTemplateTable(name: string, fields: Partial<TableChoice>) {
+  function setTemplateMode(mode: SyncMode) {
     commit((s) => ({
       ...s,
+      templateMode: mode,
+      templateForm: { ...s.templateForm, tables: tablesForMode(s.templateForm.tables, mode) },
+    }));
+  }
+  function updateTemplateTable(name: string, fields: Partial<TableChoice>) {
+    const mode = fields.data
+      ? 'data'
+      : fields.structure
+        ? 'structure'
+        : latest.current.templateMode;
+    commit((s) => ({
+      ...s,
+      templateMode: mode,
       templateForm: {
         ...s.templateForm,
-        tables: s.templateForm.tables.map((t) => (t.name === name ? { ...t, ...fields } : t)),
+        tables: tablesForMode(s.templateForm.tables, mode).map((t) =>
+          t.name === name
+            ? { ...t, ...fields, [mode === 'data' ? 'structure' : 'data']: false }
+            : t,
+        ),
       },
     }));
   }
@@ -1628,6 +1621,8 @@ function useBusinessController() {
       await action(async () => {
         if (!s.templateForm.name.trim() || !s.templateSource || !s.templateTargets.length)
           throw new Error('请填写模板名称并选择来源与目标库');
+        if (mixedSyncModes(s.templateForm.tables))
+          throw new Error('每次只能同步结构或数据，请选择一种同步类型');
         await api('entity.save', {
           kind: 'template',
           value: {
@@ -1650,9 +1645,52 @@ function useBusinessController() {
       set('templateSubmitting', false);
     }
   }
-  async function applyTemplate(t: SyncTemplate) {
-    if (comparisonActive() || latest.current.applyingTemplateId) return;
+  async function applyTemplate(t: SyncTemplate, chosenMode?: SyncMode) {
+    if (
+      comparisonActive() ||
+      latest.current.applyingTemplateId ||
+      t.workspaceId !== latest.current.workspaceId
+    )
+      return;
+    if (mixedSyncModes(t.tables) && !chosenMode) {
+      let mode: SyncMode = latest.current.scopeMode;
+      const signature = selectionSignature(compareSelection(latest.current));
+      modal.confirm({
+        title: '请选择旧模板的同步类型',
+        content: (
+          <div>
+            <p>此模板同时包含结构和数据。本次只能使用一种类型，请确认选择。</p>
+            <Radio.Group
+              defaultValue={mode}
+              onChange={(event) => {
+                mode = event.target.value;
+              }}
+              options={[
+                { label: '同步结构', value: 'structure' },
+                { label: '同步数据', value: 'data' },
+              ]}
+            />
+          </div>
+        ),
+        okText: '应用所选类型',
+        cancelText: '取消',
+        onOk: () => {
+          if (signature !== selectionSignature(compareSelection(latest.current))) {
+            void message.warning('同步范围已改变，请重新应用模板');
+            return;
+          }
+          return applyTemplate(t, mode);
+        },
+      });
+      return;
+    }
     const template = copyModel(t);
+    const mode = chosenMode || syncModeOf(template.tables);
+    template.tables = template.tables.map((table) => ({
+      ...table,
+      structure: mode === 'structure' && table.structure,
+      data: mode === 'data' && table.data,
+    }));
     const valid = request('applyTemplate');
     commit((s) => ({
       ...s,
@@ -1665,7 +1703,7 @@ function useBusinessController() {
       const source = refKey(template.source);
       set('sourceKey', source);
       set('targetKeys', template.targets.map(refKey));
-      if (!(await loadScope(source))) {
+      if (!(await loadScope(source, undefined, mode))) {
         if (valid()) set('templateApplyError', '模板应用失败，请检查来源数据库后重试');
         return;
       }
@@ -1690,7 +1728,6 @@ function useBusinessController() {
         }),
         page: 'scope',
       }));
-      ensureStructureForMissingTables();
       commit((s) => ({
         ...s,
         scopeTemplateId: template.id,
@@ -2268,7 +2305,7 @@ function useBusinessController() {
           ...s,
           scopeTables: s.scopeTables.map((t) =>
             ['sys_dict', 'sys_menu', 'sys_user'].includes(t.name)
-              ? { ...t, structure: true, data: t.name !== 'sys_user', keyText: 'code' }
+              ? { ...t, structure: true, data: false, keyText: 'code' }
               : t,
           ),
         }));
@@ -2328,6 +2365,8 @@ function useBusinessController() {
     setTargets,
     loadTargetTables,
     missingTargets: (name: string) => missingTargetsOf(latest.current, name),
+    setScopeMode,
+    setTemplateMode,
     toggleScope,
     updateScope,
     compare,

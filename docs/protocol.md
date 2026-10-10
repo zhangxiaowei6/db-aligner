@@ -41,6 +41,8 @@
 
 `compare-progress` 事件带 `compareId` 和 `progress:{ref,table,phase,completed,total,rows}`，阶段和终态立即发送，行数更新最多每 200ms 一次；终态事件增加 `status,error`，不携带完整计划。`total` 为已选表数 ×（1 + 目标库数），表示源表读取和各目标表比较的处理单元，不代表行数或耗时比例。前端每秒查询状态兜底，只接收当前任务事件；控制接口通信超时为 15 秒，超时后请求取消并继续核验。取消确认前不会解锁范围。
 
+`sync.compare` 与 `sync.compare.start` 沿用 `TableChoice.structure` / `data` 布尔字段，但新比较中所有已选表只能启用同一种类型：任一表同时启用两种或不同表混合两种都会拒绝比较。数据模式下目标缺表自动跳过，`TargetPlan.skippedTables` 保存该目标跳过的表名，不产生 `BLOCKED`、DDL 或 DML 变更；旧计划缺省该字段按空数组展示，原有执行、核验和恢复证据仍兼容读取。Electron 允许方法与 preload 桥接不变，新增字段为响应资料。旧混合模板仍可读取，应用时用户选择单一类型再重新比较。
+
 `TableChoice.structureOptions` 可选，包含全部七个布尔值：`columns`、`columnOrder`、`tableComment`、`columnComments`、`indexes`、`foreignKeys`、`tableCollation`。缺省或 null 兼容为全选；提供对象时缺少布尔项拒绝请求；开启结构但细项全空拒绝比较。`columns` 包含字段增删和定义，`tableCollation` 只控制表默认字符集/排序规则，普通/唯一索引不自动同步主键变更。部分结构不能创建缺失表，也不会自动补入未选字段依赖。
 
 字段变更 `after.column` 保存实际计划定义，`MODIFY_COLUMN.changedParts` 标记所改的 `columns`、`columnOrder`、`columnComments`。只改注释保留目标其他属性，默认选中；字段定义或顺序仍受风险限制。新增字段在未选顺序时追加，未选字段注释时不带源注释。核验、界面与回滚依据实际计划定义，旧记录没有该字段时兼容使用源定义。

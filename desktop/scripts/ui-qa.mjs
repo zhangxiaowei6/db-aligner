@@ -70,6 +70,56 @@ async function modalSettled(page) {
     ),
   );
 }
+async function syncModeQA(browser, theme) {
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByRole('radio', { name: '同步数据', exact: true }).check();
+    const structureBoxes = page.getByRole('checkbox', { name: / 表结构$/ });
+    for (const box of await structureBoxes.all()) {
+      assert(await box.isDisabled());
+      assert.equal(await box.isChecked(), false);
+    }
+    assert.equal(await page.locator('.structure-defaults').count(), 0);
+    const key = page.getByRole('textbox', { name: 'sys_dict 匹配键', exact: true });
+    assert.equal(await key.inputValue(), 'code');
+    await shot(page, `scope-data-mode-${theme}`);
+    await footerCheck(page, `scope-data-mode-${theme}`);
+    await page.getByRole('radio', { name: '同步结构', exact: true }).check();
+    assert.equal(await key.inputValue(), 'code');
+    assert(await key.isDisabled());
+    assert(await page.getByRole('checkbox', { name: 'sys_dict 表结构', exact: true }).isChecked());
+    await page.getByRole('radio', { name: '同步数据', exact: true }).check();
+    await page.getByRole('button', { name: '开始比较', exact: true }).click();
+    const confirmation = page.getByRole('dialog', { name: '确认比较范围', exact: true });
+    await confirmation.waitFor();
+    assert((await confirmation.innerText()).includes('将在上述目标库自动跳过'));
+    assert(await confirmation.getByRole('button', { name: '确认并开始比较' }).isDisabled());
+    await confirmation.getByRole('checkbox', { name: /性能影响/ }).check();
+    await shot(page, `compare-data-skip-${theme}`);
+    await confirmation.getByRole('button', { name: '确认并开始比较' }).click();
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page
+      .getByText(/已自动跳过：目标库不存在该表/)
+      .first()
+      .waitFor();
+    await shot(page, `diff-data-skip-${theme}`);
+    report.browser.push({
+      check: 'exclusive-sync-mode-and-per-target-missing-data-skip',
+      theme,
+      passed: true,
+    });
+  } finally {
+    await context.close();
+  }
+}
 async function organizationQA(browser, theme) {
   const context = await browser.newContext({
     viewport: { width: 1488, height: 1056 },
@@ -975,8 +1025,7 @@ async function browserQA() {
       const comparison = page.getByRole('dialog', { name: '确认比较范围', exact: true });
       await comparison.waitFor();
       await comparison.getByText('逐表设置', { exact: true }).waitFor();
-      assert(await comparison.getByRole('button', { name: '确认并开始比较' }).isDisabled());
-      await comparison.getByRole('checkbox', { name: /性能影响/ }).check();
+      assert.equal(await comparison.getByRole('checkbox', { name: /性能影响/ }).count(), 0);
       await shot(page, `compare-confirmation-${workflowTheme}`);
       await comparison.getByRole('button', { name: '确认并开始比较' }).click();
       await page.getByRole('region', { name: '比较进度' }).waitFor();
@@ -1000,7 +1049,6 @@ async function browserQA() {
       await shot(page, `scope-options-${workflowTheme}`);
       await page.getByRole('button', { name: '开始比较', exact: true }).click();
       await comparison.waitFor();
-      await comparison.getByRole('checkbox', { name: /性能影响/ }).check();
       await comparison.getByRole('button', { name: '确认并开始比较' }).click();
       await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
       await page.getByRole('button', { name: '复制 SQL', exact: true }).click();
@@ -1099,7 +1147,10 @@ async function browserQA() {
       for (const item of report.browser.slice(reportStart)) item.theme = workflowTheme;
       await context.close();
     }
-    for (const theme of ['light', 'dark']) await organizationQA(browser, theme);
+    for (const theme of ['light', 'dark']) {
+      await syncModeQA(browser, theme);
+      await organizationQA(browser, theme);
+    }
     for (const theme of ['light', 'dark']) await connectionActionsQA(browser, theme);
     for (const theme of ['light', 'dark']) await refreshAndTemplateQA(browser, theme);
   } catch (error) {
