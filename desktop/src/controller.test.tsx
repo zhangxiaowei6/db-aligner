@@ -3035,8 +3035,8 @@ describe('module-owned operation feedback', () => {
   });
 });
 
-it('loads only the active target script and rejects late target and tab responses', async () => {
-  await ready();
+it('shows all target scripts together and rejects late responses after switching tabs', async () => {
+  await ready(<RecordPage />);
   const normal = bridge.invoke.getMockImplementation()!;
   const pending = deferred<string>();
   bridge.invoke.mockImplementation((method, params) => {
@@ -3070,18 +3070,26 @@ it('loads only the active target script and rejects late target and tab response
         : Promise.resolve(String(params.file));
     return normal(method, params);
   });
-  await act(async () => controller.openRecord('targets'));
+  let late!: Promise<void>;
+  act(() => {
+    late = controller.openRecord('targets');
+  });
+  await waitFor(() =>
+    expect(controller.m.recordScripts['third/02_sync.sql']).toBe('third/02_sync.sql'),
+  );
   expect(
     bridge.invoke.mock.calls
       .filter(([method]) => method === 'record.file')
       .map(([, params]) => params.file),
-  ).toEqual(['first/02_sync.sql']);
-  let late!: Promise<void>;
-  act(() => {
-    late = controller.selectRecordScript('second/02_sync.sql');
+  ).toEqual(['first/02_sync.sql', 'second/02_sync.sql', 'third/02_sync.sql']);
+  expect(controller.m.recordScripts).toEqual({
+    'first/02_sync.sql': 'first/02_sync.sql',
+    'third/02_sync.sql': 'third/02_sync.sql',
   });
-  await act(async () => controller.selectRecordScript('third/02_sync.sql'));
-  expect(controller.m.recordScripts).toEqual({ 'third/02_sync.sql': 'third/02_sync.sql' });
+  expect(screen.queryByRole('combobox', { name: '记录脚本目标库' })).toBeNull();
+  for (const target of ['first', 'second', 'third']) {
+    expect(screen.getByRole('region', { name: `${target} 执行脚本` })).toBeTruthy();
+  }
   await act(async () => controller.changeRecordTab('rollbackScripts'));
   expect(controller.m.fileSelected).toBe('third/05_rollback_local.sql');
   await act(async () => {
@@ -3097,6 +3105,146 @@ it('loads only the active target script and rejects late target and tab response
     ),
   ).toBe(false);
 });
+
+it('confirms rollback details, permits cancellation and submits the confirmed selection once', async () => {
+  await ready();
+  const rollback = {
+    id: 'rollback',
+    recordId: 'original-record',
+    items: [
+      {
+        id: 'restore',
+        targetKey: 'source/b',
+        table: 'dict',
+        label: '恢复字段',
+        reason: '',
+        eligible: true,
+        selected: true,
+        sql: ['ALTER TABLE b.dict DROP COLUMN added;'],
+      },
+    ],
+  };
+  act(() =>
+    controller.commit((current) => ({
+      ...current,
+      page: 'rollback',
+      rollback,
+      rollbackIds: ['restore'],
+      detail: {
+        record: {
+          id: rollback.recordId,
+          workspaceId: 'default',
+          createdAt: '',
+          mode: 'EXECUTE_AND_SAVE',
+          status: 'SUCCESS',
+          remark: '',
+          parentId: '',
+          archivePath: '',
+          selectedIds: [],
+          results: [],
+          source: { connectionId: 'source', database: 'a' },
+        },
+        files: [],
+        events: [],
+        external: {},
+      },
+    })),
+  );
+  let pending!: Promise<void>;
+  act(() => {
+    pending = controller.executeRollback();
+  });
+  const dialog = await screen.findByRole('dialog', { name: '执行回滚' });
+  expect(within(dialog).getByRole('region', { name: '原同步来源数据库' }).textContent).toContain(
+    'a',
+  );
+  expect(within(dialog).getByRole('region', { name: '目标数据库' }).textContent).toContain('b');
+  expect(dialog.textContent).toContain('192.0.2.10:3306');
+  expect(dialog.textContent).toContain('共恢复 1 项已选变更');
+  expect(within(dialog).getByRole('region', { name: '本次执行脚本' }).textContent).toContain(
+    rollback.items[0].sql[0],
+  );
+  await act(async () => controller.executeRollback());
+  expect(screen.getAllByRole('dialog')).toHaveLength(1);
+  await userEvent.click(within(dialog).getByRole('button', { name: /取\s*消/ }));
+  await act(async () => {
+    await pending;
+  });
+  expect(bridge.invoke.mock.calls.some(([method]) => method === 'rollback.execute')).toBe(false);
+  expect(controller.m.rollbackSubmitting).toBeUndefined();
+  const normal = bridge.invoke.getMockImplementation()!;
+  const execution = deferred<never>();
+  bridge.invoke.mockImplementation((method, params) =>
+    method === 'rollback.execute' ? execution.promise : normal(method, params),
+  );
+  act(() => {
+    pending = controller.executeRollback();
+  });
+  await screen.findByRole('dialog', { name: '执行回滚' });
+  await userEvent.click(
+    within(screen.getByRole('dialog')).getByRole('button', { name: '执行所选回滚' }),
+  );
+  await waitFor(() =>
+    expect(bridge.invoke.mock.calls.filter(([method]) => method === 'rollback.execute')).toEqual([
+      ['rollback.execute', { id: rollback.recordId, selectedIds: ['restore'], remark: '' }],
+    ]),
+  );
+  await act(async () => controller.executeRollback());
+  expect(bridge.invoke.mock.calls.filter(([method]) => method === 'rollback.execute')).toHaveLength(
+    1,
+  );
+  await act(async () => {
+    execution.reject(new Error('fixture execution'));
+    await pending;
+  });
+});
+
+it.each(['selection', 'preview', 'workspace'] as const)(
+  'requires new rollback confirmation after changing %s',
+  async (change) => {
+    await ready();
+    const rollback = {
+      id: 'rollback',
+      recordId: 'original-record',
+      items: [
+        {
+          id: 'restore',
+          targetKey: 'source/b',
+          table: 'dict',
+          label: '恢复字段',
+          reason: '',
+          eligible: true,
+          selected: true,
+          sql: ['ALTER TABLE b.dict DROP COLUMN added;'],
+        },
+      ],
+    };
+    act(() =>
+      controller.commit((current) => ({
+        ...current,
+        page: 'rollback',
+        rollback,
+        rollbackIds: ['restore'],
+      })),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = controller.executeRollback();
+    });
+    const dialog = await screen.findByRole('dialog', { name: '执行回滚' });
+    act(() => {
+      if (change === 'selection') controller.set('rollbackIds', []);
+      if (change === 'preview') controller.set('rollback', structuredClone(rollback));
+      if (change === 'workspace') controller.set('workspaceId', 'second');
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: '执行所选回滚' }));
+    await act(async () => {
+      await pending;
+    });
+    expect(bridge.invoke.mock.calls.some(([method]) => method === 'rollback.execute')).toBe(false);
+    await screen.findByText('回滚范围已改变，请重新确认后执行');
+  },
+);
 
 it('normalizes legacy Windows target manifest paths during lazy script loading', async () => {
   await ready();

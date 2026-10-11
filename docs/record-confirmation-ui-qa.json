@@ -1,0 +1,86 @@
+{
+  "browser": [
+    {
+      "check": "record-execution-all-targets-light",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "record-execution-all-targets-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "record-rollback-all-targets-light",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "record-rollback-all-targets-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "record-all-targets-copy-and-rollback-confirmation",
+      "theme": "light",
+      "passed": true,
+      "targets": 3,
+      "rollbackTargets": 2,
+      "canceledWithoutSubmission": true
+    },
+    {
+      "check": "record-execution-all-targets-dark",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "record-execution-all-targets-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "record-rollback-all-targets-dark",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "record-rollback-all-targets-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "record-all-targets-copy-and-rollback-confirmation",
+      "theme": "dark",
+      "passed": true,
+      "targets": 3,
+      "rollbackTargets": 2,
+      "canceledWithoutSubmission": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

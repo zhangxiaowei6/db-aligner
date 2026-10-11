@@ -378,74 +378,48 @@ export function RecordPage() {
       />
       {['scripts', 'rollbackScripts'].includes(m.recordTab) ? (
         <div className="record-sql-sections">
-          {!!scriptFiles.length && (
-            <Select
-              aria-label="记录脚本目标库"
-              className="script-target-select"
-              value={scriptFiles.includes(m.fileSelected) ? m.fileSelected : scriptFiles[0]}
-              onChange={(file) => void c.action(() => c.selectRecordScript(file))}
-              options={scriptFiles.map((file) => {
-                const folder = file.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
-                const ref = m.recordScriptTargets[folder];
-                const connection = m.state.connections.find(
-                  (item) => item.id === ref?.connectionId,
-                );
-                return {
-                  value: file,
-                  label: ref
-                    ? `${connection?.name || ref.connectionId} / ${ref.database}`
-                    : folder || '目标数据库',
-                };
-              })}
-            />
-          )}
-          {scriptFiles
-            .filter(
-              (file) =>
-                file === (scriptFiles.includes(m.fileSelected) ? m.fileSelected : scriptFiles[0]),
-            )
-            .map((file) => {
-              const folder = file.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
-              const ref = m.recordScriptTargets[folder];
-              const target = ref?.database || folder.replace(/^[a-f0-9]{12}-/, '') || '目标数据库';
-              const connection = m.state.connections.find((item) => item.id === ref?.connectionId);
-              return (
-                <section
-                  key={file}
-                  aria-label={`${target} ${rollbackScripts ? '回滚脚本' : '执行脚本'}`}
-                >
-                  <div className="section-heading">
-                    <h3>
-                      {target}
-                      {connection ? ` / ${connection.name}` : ''}
-                    </h3>
-                  </div>
-                  {m.recordScriptErrors[file] ? (
-                    <Alert
-                      type="error"
-                      showIcon
-                      title="脚本加载失败"
-                      description={m.recordScriptErrors[file]}
-                      action={
-                        <RefreshButton
-                          key={recordRefreshKey(m)}
-                          loading={!!m.refreshing[recordRefreshKey(m)]}
-                          result={m.refreshResults[recordRefreshKey(m)]}
-                          onClick={() => c.refreshRecordScripts()}
-                        >
-                          重试
-                        </RefreshButton>
-                      }
-                    />
-                  ) : (
-                    <SqlView
-                      key={record.id + '/' + file}
-                      sql={m.recordScripts[file] ?? '-- 正在加载脚本内容'}
-                    />
-                  )}
-                </section>
-              );
-            })}
+          {scriptFiles.map((file) => {
+            const folder = file.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
+            const ref = m.recordScriptTargets[folder];
+            const target = ref?.database || folder.replace(/^[a-f0-9]{12}-/, '') || '目标数据库';
+            const connection = m.state.connections.find((item) => item.id === ref?.connectionId);
+            return (
+              <section
+                key={file}
+                aria-label={`${target} ${rollbackScripts ? '回滚脚本' : '执行脚本'}`}
+              >
+                <div className="section-heading">
+                  <h3>
+                    {target}
+                    {connection ? ` / ${connection.name}` : ''}
+                  </h3>
+                </div>
+                {m.recordScriptErrors[file] ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    title="脚本加载失败"
+                    description={m.recordScriptErrors[file]}
+                    action={
+                      <RefreshButton
+                        key={recordRefreshKey(m)}
+                        loading={!!m.refreshing[recordRefreshKey(m)]}
+                        result={m.refreshResults[recordRefreshKey(m)]}
+                        onClick={() => c.refreshRecordScripts()}
+                      >
+                        重试
+                      </RefreshButton>
+                    }
+                  />
+                ) : (
+                  <SqlView
+                    key={record.id + '/' + file}
+                    sql={m.recordScripts[file] ?? '-- 正在加载脚本内容'}
+                  />
+                )}
+              </section>
+            );
+          })}
           {!scriptFiles.length && (
             <Empty description={detail.files.length ? '暂无此类脚本' : '档案不可用或已清理'} />
           )}

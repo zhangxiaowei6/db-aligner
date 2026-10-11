@@ -19,6 +19,7 @@ import {
   normalizeOrganization,
 } from './connection-organization';
 import { SyncExecutionConfirmation } from './components/SyncExecutionConfirmation';
+import { RollbackExecutionConfirmation } from './components/RollbackExecutionConfirmation';
 import { effectiveOptions } from './structure-options';
 import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
 import {
@@ -95,6 +96,7 @@ function useBusinessController() {
   const { message, modal } = App.useApp();
   const closePending = useRef(false);
   const syncSubmitPending = useRef(false);
+  const rollbackSubmitPending = useRef(false);
   const compareStarting = useRef(false);
   const compareCancelPending = useRef(false);
   const targetTableLoads = useRef(new Map<string, { signature: string; promise: Promise<void> }>());
@@ -2153,18 +2155,6 @@ function useBusinessController() {
     }));
     await loadRecordScripts(tab);
   }
-  async function selectRecordScript(file: string) {
-    const s = latest.current;
-    if (!s.detail || !recordScriptFiles(s.detail.files, s.recordTab).includes(file)) return;
-    clearRefresh(recordRefreshKey(s));
-    commit((current) => ({
-      ...current,
-      fileSelected: file,
-      recordScripts: {},
-      recordScriptErrors: {},
-    }));
-    await loadRecordScripts(s.recordTab);
-  }
   async function refreshRecordScripts() {
     const s = latest.current;
     if (!s.detail) return;
@@ -2176,9 +2166,7 @@ function useBusinessController() {
         latest.current.recordView !== s.recordView
       )
         return false;
-      const errors = [latest.current.recordScriptErrors[latest.current.fileSelected]].filter(
-        Boolean,
-      );
+      const errors = Object.values(latest.current.recordScriptErrors).filter(Boolean);
       if (errors.length) throw new Error(errors.join('；'));
     });
   }
@@ -2186,23 +2174,23 @@ function useBusinessController() {
     const s = latest.current;
     if (!s.detail || !['scripts', 'rollbackScripts'].includes(tab)) return;
     const id = s.detail.record.id;
-    const file = recordScriptFiles(s.detail.files, tab).includes(s.fileSelected)
-      ? s.fileSelected
-      : defaultScriptFile(s.detail.files, tab);
-    if (!file) return;
-    if (file !== s.fileSelected) set('fileSelected', file);
+    const files = recordScriptFiles(s.detail.files, tab);
+    if (!files.length) return;
     const requestValid = request('recordScripts');
     const valid = () =>
       requestValid() &&
       latest.current.page === 'record' &&
       latest.current.recordView === s.recordView &&
       latest.current.detail?.record.id === id &&
-      latest.current.recordTab === tab &&
-      latest.current.fileSelected === file;
+      latest.current.recordTab === tab;
     // Target manifests identify the connection even when two connections use the same database name.
-    const folder = file.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
+    const folders = new Set(
+      files.map((file) => file.replaceAll('\\', '/').split('/').slice(0, -1).join('/')),
+    );
     const manifests = s.detail.files.filter(
-      (candidate) => candidate.replaceAll('\\', '/') === `${folder}/target.json`,
+      (candidate) =>
+        candidate.replaceAll('\\', '/').endsWith('/target.json') &&
+        folders.has(candidate.replaceAll('\\', '/').slice(0, -'/target.json'.length)),
     );
     await Promise.all(
       manifests.map(async (file) => {
@@ -2227,15 +2215,15 @@ function useBusinessController() {
     );
     if (!valid()) return;
     await Promise.all(
-      [file].map(async (file) => {
+      files.map(async (file) => {
         if (!force && s.recordScripts[file] !== undefined) return;
         try {
           const sql = await api<string>('record.file', { id, file });
           if (valid() && latest.current.detail?.record.id === id) {
             commit((current) => ({
               ...current,
-              recordScripts: { [file]: sql },
-              recordScriptErrors: { [file]: '' },
+              recordScripts: { ...current.recordScripts, [file]: sql },
+              recordScriptErrors: { ...current.recordScriptErrors, [file]: '' },
             }));
           }
         } catch (error) {
@@ -2243,6 +2231,7 @@ function useBusinessController() {
             commit((current) => ({
               ...current,
               recordScriptErrors: {
+                ...current.recordScriptErrors,
                 [file]: error instanceof Error ? error.message : String(error),
               },
             }));
@@ -2337,17 +2326,41 @@ function useBusinessController() {
   }
   async function executeRollback() {
     const s = latest.current;
-    if (!s.rollback || latest.current.rollbackSubmitting) return;
+    if (!s.rollback || !s.rollbackIds.length || rollbackSubmitPending.current) return;
+    const record =
+      s.detail?.record.id === s.rollback.recordId
+        ? s.detail.record
+        : s.state.records.find((item) => item.id === s.rollback!.recordId);
+    rollbackSubmitPending.current = true;
     set('rollbackSubmitting', s.rollback.recordId);
     try {
+      const accepted = await modal.confirm({
+        title: '执行回滚',
+        centered: true,
+        width: 960,
+        content: (
+          <RollbackExecutionConfirmation
+            rollback={s.rollback}
+            selectedIds={s.rollbackIds}
+            source={record?.plan?.source || record?.source}
+            connections={s.state.connections}
+          />
+        ),
+        okText: '执行所选回滚',
+        cancelText: '取消',
+      });
+      if (!accepted) return;
+      const current = latest.current;
       if (
-        !(await confirm(
-          '执行回滚',
-          `将恢复已选的 ${s.rollbackIds.length} 项变更，执行前会再次核验目标状态与恢复资料。`,
-          '执行所选回滚',
-        ))
-      )
+        current.workspaceId !== s.workspaceId ||
+        current.rollback !== s.rollback ||
+        current.rollbackView !== s.rollbackView ||
+        current.page !== s.page ||
+        JSON.stringify(current.rollbackIds) !== JSON.stringify(s.rollbackIds)
+      ) {
+        void message.info('回滚范围已改变，请重新确认后执行');
         return;
+      }
       await action(async () => {
         const r = await api<SyncRecord>('rollback.execute', {
           id: s.rollback!.recordId,
@@ -2358,6 +2371,7 @@ function useBusinessController() {
         if (latest.current.workspaceId === s.workspaceId) await openRecord(r.id);
       });
     } finally {
+      rollbackSubmitPending.current = false;
       set('rollbackSubmitting', undefined);
     }
   }
@@ -2784,7 +2798,6 @@ function useBusinessController() {
     openRecord,
     changeRecordTab,
     selectFile,
-    selectRecordScript,
     exportRecords,
     auditRecord,
     cancelTask,

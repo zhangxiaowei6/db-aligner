@@ -1,5 +1,36 @@
 # 0.1.0 验证记录
 
+## 2026-10-12：回滚详细确认与全部目标脚本
+
+本次仅调整前端确认、档案读取展示与浏览器验收，不改变引擎的比较、执行、恢复或协议。
+保留工作目录中已有的连接组织等修改；默认测试针对当时完整工作目录运行。
+实际环境：Windows x64、Node.js 22.22.2、npm 10.9.7、项目 Java 21.0.12.1、
+Chrome 154.0.8037.98。Node／npm 为本机实测版本，不作为 README 中 24／11 的推荐版本替代。
+
+- `npm run typecheck`、`npm run build`：退出 0。生产构建包含前端与 Electron，
+  保留主包大于 500 kB 的体积提示；日志 `.local-data/rollback-confirm-build.log`。
+- `npm test`：退出 0，前端 16 文件、176 项通过；引擎 25 项中 23 项通过、
+  2 个真库入口跳过，0 失败／错误。日志 `.local-data/rollback-confirm-tests.log`。
+  jsdom 保留既有 CSS 解析提示；首次受限 Vitest 启动因 `spawn EPERM` 失败，允许子进程后通过。
+- `npm run test -w desktop -- src/components/SyncExecutionConfirmation.test.tsx src/components/RollbackExecutionConfirmation.test.tsx src/controller.test.tsx`：
+  3 文件、105 项通过。覆盖回滚目标过滤、预览顺序与全部 SQL 复制、旧来源缺失提示、
+  取消不提交、防重复及确认期间范围变化拦截；多目标档案独立展示，页签切换拒绝过期结果，
+  05 优先于 04 的兼容回退保留。
+- `npm run qa:ui -w desktop`：本轮完整套件未通过，连接组织场景等待“QA 空分组”超时；
+  与本次回滚及记录脚本检查无关，未修复其他工作中的连接组织场景。
+  当时工作目录有并行界面验收，通用报告可能被其他运行覆盖；本轮命令日志为
+  `.local-data/rollback-confirm-ui.log`，不把该次完整套件记为通过。
+- `npm run qa:ui -w desktop -- --record-confirmation`：专项退出 0，浅色／深色 10 项检查，
+  `errors` 为空，见[专项报告](record-confirmation-ui-qa.json)。使用三个虚构目标档案与
+  两个可恢复目标（其中一个含 80 条 SQL），检查全部目标分段展示、无目标下拉框、
+  完整复制、回滚地址与数量、阻止项排除、目标切换、取消未提交及最小窗口操作可达。
+  Windows 剪贴板读取把 LF 转为 CRLF，内容核对仅统一换行后比较，不修改业务 SQL。
+  日志 `.local-data/rollback-confirm-ui-targeted.log`。
+
+已查看最终浅色／深色与 1180 × 760 最小窗口截图，见[设计 QA](../design-qa.md)。
+未运行三版本真库、原生客户端、完整打包或干净安装验收；浏览器资料全部虚构，
+不证明真实回滚执行或已有安装包更新。截图与专项报告路径保存本轮最终结果。
+
 ## 2026-10-12：连接提示、拼写检查与空分组删除
 
 实际环境：Windows x64、Node.js 22.22.2、npm 10.9.7、项目 Java 21 与 Google Java Format 1.28.0。
@@ -25,7 +56,6 @@
   并行工作期间出现过其他修改缺少 `selectRecordScript` 导出导致的构建失败，随后最终类型检查与构建通过。
 
 本次不涉及 MySQL 比较、执行或恢复逻辑；没有连接真实数据库，也未进行安装包发布或干净安装验收。
-
 
 ## 2026-10-11：SQL 分页与界面性能修复
 

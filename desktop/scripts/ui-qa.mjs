@@ -9,6 +9,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { performanceQA } from './performance-qa.mjs';
+import { recordConfirmationQA } from './record-confirmation-qa.mjs';
 const require = createRequire(import.meta.url);
 const desktop = path.resolve(import.meta.dirname, '..');
 const repo = path.resolve(desktop, '..');
@@ -1288,6 +1289,17 @@ async function browserQA() {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     browser = await chromium.launch({ headless: true, executablePath });
+    if (process.argv.includes('--record-confirmation')) {
+      await recordConfirmationQA(browser, {
+        desktop,
+        report,
+        observe,
+        shot,
+        modalSettled,
+        footerCheck,
+      });
+      return;
+    }
     if (process.argv.includes('--connection-form')) {
       for (const theme of ['light', 'dark']) await connectionFormQA(browser, theme);
       return;
@@ -1571,6 +1583,22 @@ async function browserQA() {
       await page.getByRole('heading', { level: 1, name: '同步记录详情', exact: true }).waitFor();
       for (const label of ['执行结果', '外部执行校验', '执行脚本', '回滚脚本']) {
         await page.getByRole('tab', { name: label, exact: true }).click();
+        if (label === '执行脚本' || label === '回滚脚本') {
+          assert.equal(await page.getByRole('combobox', { name: '记录脚本目标库' }).count(), 0);
+          const sections = page.locator('.record-sql-sections > section');
+          assert((await sections.count()) > 1, 'all target scripts must be shown together');
+          await page.waitForFunction(
+            () =>
+              !document
+                .querySelector('.record-sql-sections')
+                ?.innerText.includes('正在加载脚本内容'),
+          );
+          await shot(
+            page,
+            `record-${label === '执行脚本' ? 'execution' : 'rollback'}-all-targets-${workflowTheme}`,
+          );
+          await footerCheck(page, `record-all-targets-${label}-${workflowTheme}`);
+        }
       }
       await page.getByRole('button', { name: '登记外部执行', exact: true }).click();
       const external = page.getByRole('dialog', { name: '登记外部执行', exact: true });
@@ -1652,6 +1680,35 @@ async function browserQA() {
       await page.getByRole('button', { name: '执行所选回滚', exact: true }).click();
       const confirmation = page.getByRole('dialog', { name: '执行回滚', exact: true });
       await confirmation.waitFor();
+      await modalSettled(page);
+      assert(
+        (await confirmation.getByRole('region', { name: '原同步来源数据库' }).innerText()).includes(
+          'shop_test',
+        ),
+      );
+      assert(
+        (await confirmation.getByRole('region', { name: '目标数据库' }).innerText()).includes(
+          'shop_a',
+        ),
+      );
+      assert(
+        !(await confirmation.getByRole('region', { name: '目标数据库' }).innerText()).includes(
+          'shop_b',
+        ),
+      );
+      assert((await confirmation.innerText()).includes('共恢复 1 项已选变更'));
+      assert(
+        (await confirmation.getByRole('region', { name: '本次执行脚本' }).innerText()).includes(
+          "UPDATE shop_a.sys_dict SET dict_name='订单状态配置'",
+        ),
+      );
+      await shot(page, `rollback-execution-confirmation-${workflowTheme}`);
+      await page.setViewportSize({ width: 1180, height: 760 });
+      await modalSettled(page);
+      const executeButton = confirmation.getByRole('button', { name: '执行所选回滚' });
+      assert(await executeButton.isVisible());
+      await executeButton.hover();
+      await shot(page, `rollback-execution-confirmation-minimum-${workflowTheme}`);
       await confirmation.getByRole('button', { name: /取\s*消/ }).click();
       await confirmation.waitFor({ state: 'hidden' });
       await footerCheck(page, `rollback-${workflowTheme}`);
@@ -1885,19 +1942,21 @@ try {
       'docs',
       native
         ? 'react-desktop-qa.json'
-        : process.argv.includes('--connection-form')
-          ? 'connection-form-ui-qa.json'
-          : process.argv.includes('--performance')
-            ? 'performance-ui-qa.json'
-            : process.argv.includes('--tree-organization')
-              ? 'tree-organization-qa.json'
-              : process.argv.includes('--context-feedback')
-                ? 'context-feedback-qa.json'
-                : process.argv.includes('--sync-modes')
-                  ? 'sync-mode-ui-qa.json'
-                  : process.argv.includes('--diff-scroll')
-                    ? 'diff-scroll-ui-qa.json'
-                    : 'react-ui-qa.json',
+        : process.argv.includes('--record-confirmation')
+          ? 'record-confirmation-ui-qa.json'
+          : process.argv.includes('--connection-form')
+            ? 'connection-form-ui-qa.json'
+            : process.argv.includes('--performance')
+              ? 'performance-ui-qa.json'
+              : process.argv.includes('--tree-organization')
+                ? 'tree-organization-qa.json'
+                : process.argv.includes('--context-feedback')
+                  ? 'context-feedback-qa.json'
+                  : process.argv.includes('--sync-modes')
+                    ? 'sync-mode-ui-qa.json'
+                    : process.argv.includes('--diff-scroll')
+                      ? 'diff-scroll-ui-qa.json'
+                      : 'react-ui-qa.json',
     ),
     JSON.stringify(report, null, 2) + '\n',
   );

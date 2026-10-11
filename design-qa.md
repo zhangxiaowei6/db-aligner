@@ -1,5 +1,28 @@
 # 设计 QA 记录
 
+## 2026-10-12：回滚确认与全目标记录脚本
+
+回滚确认复用同步确认布局，展示原同步来源、实际回滚目标、连接名、地址和端口、
+每库及总变更数量与完整已选 SQL。来源明确作为历史背景展示，实际写入目标单独列出。
+脚本可按目标切换、滚动并完整复制；最小窗口内容区滚动，底部确认／取消按钮可操作。
+浅色／深色均跟随现有主题。
+
+记录详情的执行与回滚脚本按目标数据库、连接名称分段，全部目标在同一页依次展示，
+没有目标库下拉框；各段保留独立 SQL 查看和复制。页面纵向滚动，底部操作不被内容覆盖。
+本条取代下述 2026-10-11 性能条目中历史脚本使用目标选择器的交互，执行确认仍按目标切换。
+
+已查看本轮最终截图：
+[执行脚本浅色](docs/screenshots/react-ant-design/record-execution-all-targets-light.png)、
+[回滚脚本深色](docs/screenshots/react-ant-design/record-rollback-all-targets-dark.png)、
+[回滚确认浅色](docs/screenshots/react-ant-design/rollback-execution-confirmation-light.png)、
+[最小窗口回滚确认深色](docs/screenshots/react-ant-design/rollback-execution-confirmation-minimum-dark.png)。
+其余浅／深色及最小窗口截图使用同目录的 `record-*-all-targets*` 与
+`rollback-execution-confirmation*` 文件名。
+
+专项浅／深色 10 项检查通过，控制台错误为 0；完整 UI 套件在其他连接组织场景超时，
+不能记为完整通过。环境、实际命令与证明范围见[验证记录](docs/validation.md)。
+本轮使用虚构档案和恢复项，不连接数据库，也不证明原生客户端、安装包或真实回滚已验证。
+
 ## 2026-10-12：连接填写提示与空分组删除
 
 新建与编辑共用表单补齐全部输入和选择提示，SSL 证书项同样覆盖；已有默认值保留。
@@ -14,7 +37,6 @@
 [删除确认浅色](docs/screenshots/react-ant-design/group-delete-confirmation-light.png)、
 [删除确认深色](docs/screenshots/react-ant-design/group-delete-confirmation-dark.png)。
 实际命令与验证边界见[验证记录](docs/validation.md)。
-
 
 ## 2026-10-11：SQL 大脚本与虚拟列表性能
 

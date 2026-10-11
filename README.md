@@ -49,13 +49,14 @@ npm run dist
 
 界面验收先运行 `npm run build`，原生桌面验收还需可用引擎构建。脚本使用本机 Chrome／Edge，可通过 `DATA_SYNC_QA_BROWSER` 指定程序；浏览器验收用虚构数据，原生验收用隔离资料目录。
 
-| 验收命令（仓库根目录）                            | 主要用途                                  | 报告                                       |
-| ------------------------------------------------- | ----------------------------------------- | ------------------------------------------ |
-| `npm run qa:ui -w desktop`                        | 布局、主题与业务交互                      | [浏览器 UI](docs/react-ui-qa.json)         |
-| `npm run qa:tree -w desktop`                      | 1,000／5,000 表虚拟滚动、重查、刷新与重试 | [连接树](docs/tree-qa.json)                |
-| `npm run qa:ui -w desktop -- --tree-organization` | 分组与原生 HTML5 拖拽                     | [连接组织](docs/tree-organization-qa.json) |
-| `npm run qa:ui -w desktop -- --context-feedback`  | 右键反馈隔离与当前页面编辑                | [右键反馈](docs/context-feedback-qa.json)  |
-| `npm run qa:desktop -w desktop`                   | 原生窗口、主题持久化与关闭确认            | [桌面](docs/react-desktop-qa.json)         |
+| 验收命令（仓库根目录）                              | 主要用途                                  | 报告                                                  |
+| --------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------- |
+| `npm run qa:ui -w desktop`                          | 布局、主题与业务交互                      | [浏览器 UI](docs/react-ui-qa.json)                    |
+| `npm run qa:tree -w desktop`                        | 1,000／5,000 表虚拟滚动、重查、刷新与重试 | [连接树](docs/tree-qa.json)                           |
+| `npm run qa:ui -w desktop -- --tree-organization`   | 分组与原生 HTML5 拖拽                     | [连接组织](docs/tree-organization-qa.json)            |
+| `npm run qa:ui -w desktop -- --context-feedback`    | 右键反馈隔离与当前页面编辑                | [右键反馈](docs/context-feedback-qa.json)             |
+| `npm run qa:ui -w desktop -- --record-confirmation` | 全目标记录脚本、回滚详细确认与取消        | [记录与回滚确认](docs/record-confirmation-ui-qa.json) |
+| `npm run qa:desktop -w desktop`                     | 原生窗口、主题持久化与关闭确认            | [桌面](docs/react-desktop-qa.json)                    |
 
 截图保存在 `docs/screenshots/react-ant-design/`，视觉复核见[设计 QA](design-qa.md)。验证组合与前置条件见[验证技能](.agents/skills/verification/SKILL.md)，实际执行结果与限制见[验证记录](docs/validation.md)；这些报告路径保存对应最近一次结果，不是每次历史运行的独立快照。
 
