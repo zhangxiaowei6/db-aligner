@@ -12,6 +12,7 @@ import {
   initialModel,
   selection,
   type TreeNode,
+  type Page,
 } from './model';
 import { previewPlan, previewTable } from './preview';
 import { DiffPage, ScopePage } from './pages/Sync';
@@ -167,6 +168,133 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it.each<Page>(['scope', 'diff', 'history', 'settings'])(
+  'creates connections in place on %s through cancel, failed save and successful save',
+  async (page) => {
+    await ready();
+    act(() => {
+      controller.set('page', page);
+      controller.set('sourceKey', 'source/a');
+      controller.set('scopeRemark', '保留同步草稿');
+      controller.editConnection();
+    });
+    expect(controller.m.page).toBe(page);
+    expect(controller.m.connectionForm.group).toBe('测试');
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: '新建连接' })).getByRole('button', {
+        name: /^取\s*消$/,
+      }),
+    );
+    expect(controller.m.page).toBe(page);
+    act(() => {
+      controller.editConnection();
+      controller.patch('connectionForm', { name: '新连接', user: 'tester' });
+    });
+    bridge.invoke.mockRejectedValueOnce(new Error('保存失败'));
+    await act(async () => controller.saveConnection());
+    expect(controller.m.page).toBe(page);
+    expect(controller.m.connectionDialog).toBe(true);
+    expect(controller.m.connectionForm.name).toBe('新连接');
+    await act(async () => controller.saveConnection());
+    expect(controller.m.page).toBe(page);
+    expect(controller.m.connectionDialog).toBe(false);
+    expect(controller.m.sourceKey).toBe('source/a');
+    expect(controller.m.scopeRemark).toBe('保留同步草稿');
+  },
+);
+
+it('does not navigate back when a connection save finishes after leaving the source page', async () => {
+  await ready();
+  act(() => {
+    controller.set('page', 'scope');
+    controller.editConnection();
+    controller.patch('connectionForm', { name: '新连接', user: 'tester' });
+  });
+  const pending = deferred<unknown>();
+  bridge.invoke.mockImplementationOnce(() => pending.promise);
+  let save!: ReturnType<Controller['saveConnection']>;
+  act(() => {
+    save = controller.saveConnection();
+    controller.navigate('history');
+  });
+  await act(async () => {
+    pending.resolve({ ok: true });
+    await save;
+  });
+  expect(controller.m.page).toBe('history');
+  expect(controller.m.connectionDialog).toBe(false);
+});
+
+it('does not offer a deleted default group after reopening a connection form', async () => {
+  state.connectionGroups = [
+    { id: 'default-group', name: '数据库连接', sortOrder: 0 },
+    { id: 'other-group', name: '测试', sortOrder: 1 },
+  ];
+  await ready();
+  const normal = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async (method, params) => {
+    if (method === 'connectionGroups.delete') {
+      state.connectionGroups = state.connectionGroups.filter(
+        (group) => group.id !== params.groupId,
+      );
+      return { ok: true };
+    }
+    return normal(method, params);
+  });
+  let removal!: ReturnType<Controller['removeGroup']>;
+  act(() => {
+    removal = controller.removeGroup('default-group');
+  });
+  await userEvent.click(
+    within(await screen.findByRole('dialog', { name: '删除分组' })).getByRole('button', {
+      name: /^删\s*除$/,
+    }),
+  );
+  await act(async () => {
+    await removal;
+    controller.editConnection();
+  });
+  expect(controller.m.connectionForm.group).toBe('测试');
+  await userEvent.click(screen.getByRole('combobox', { name: '连接分组' }));
+  expect(document.querySelector('.ant-select-dropdown')?.textContent).not.toContain('数据库连接');
+  act(() => {
+    controller.closeConnection();
+    controller.editConnection(undefined, '数据库连接');
+  });
+  expect(controller.m.connectionForm.group).toBe('测试');
+});
+
+it('leaves an empty group selection and blocks implicit group recreation until one is added', async () => {
+  state.connections = [];
+  await ready();
+  act(() => {
+    controller.editConnection();
+    controller.patch('connectionForm', { name: '新连接', user: 'tester' });
+  });
+  expect(controller.m.connectionForm.group).toBe('');
+  expect(screen.getByText('请选择连接分组')).toBeTruthy();
+  await act(async () => controller.saveConnection());
+  expect(bridge.invoke.mock.calls.some(([method]) => method === 'entity.save')).toBe(false);
+  expect(controller.m.connectionDialog).toBe(true);
+  const normal = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async (method, params) => {
+    if (method === 'connectionGroups.save') {
+      const group = { id: 'new-group', name: params.name, sortOrder: 0 };
+      state.connectionGroups.push(group);
+      return group;
+    }
+    return normal(method, params);
+  });
+  await act(async () => controller.addConnectionGroup('新分组'));
+  expect(controller.m.connectionForm.group).toBe('新分组');
+  expect(controller.m.connectionForm.name).toBe('新连接');
+  await act(async () => controller.saveConnection());
+  expect(bridge.invoke).toHaveBeenCalledWith('entity.save', {
+    kind: 'connection',
+    value: expect.objectContaining({ group: '新分组' }),
+  });
 });
 
 it('blocks deletion of a group occupied only in another workspace', async () => {
@@ -917,6 +1045,7 @@ describe('React business state and protocol', () => {
   });
   it('assigns a stable id to a connection saved directly from the empty management page and invalidates old tree responses', async () => {
     await ready();
+    act(() => controller.editConnection());
     act(() => controller.patch('connectionForm', { name: '新连接', user: 'qa' }));
     await act(async () => {
       await controller.saveConnection();
@@ -3007,7 +3136,7 @@ describe('module-owned operation feedback', () => {
       controller.set('page', 'diff');
       controller.set('sourceKey', 'source/a');
       controller.set('scopeRemark', 'keep draft');
-      controller.editConnection(state.connections[0], undefined, true);
+      controller.editConnection(state.connections[0]);
     });
     expect(controller.m.page).toBe('diff');
     const dialog = screen.getByRole('dialog', { name: '编辑连接' });
@@ -3023,7 +3152,7 @@ describe('module-owned operation feedback', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /^取\s*消$/ }));
     expect(controller.m.page).toBe('diff');
     expect(controller.m.scopeRemark).toBe('keep draft');
-    act(() => controller.editConnection(state.connections[0], undefined, true));
+    act(() => controller.editConnection(state.connections[0]));
     await act(async () => {
       await controller.saveConnection();
       pending.resolve();

@@ -208,7 +208,7 @@ export const emptyConnection = (workspaceId: string): ConnectionInfo => ({
   host: 'localhost',
   port: 3306,
   user: '',
-  group: '数据库连接',
+  group: '',
   databases: [],
   workspaceIds: [workspaceId],
   ssl: false,

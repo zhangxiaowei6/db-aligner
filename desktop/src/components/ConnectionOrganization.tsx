@@ -98,12 +98,8 @@ export function ConnectionGroupSelect() {
       showSearch
       optionFilterProp="label"
       style={{ width: '100%' }}
-      value={m.connectionForm.group}
-      options={[
-        ...new Set([...m.state.connectionGroups.map((g) => g.name), m.connectionForm.group]),
-      ]
-        .filter(Boolean)
-        .map((label) => ({ value: label, label }))}
+      value={m.connectionForm.group || undefined}
+      options={m.state.connectionGroups.map((group) => ({ value: group.name, label: group.name }))}
       onChange={(group) => c.patch('connectionForm', { group })}
       popupRender={(menu) => (
         <>

@@ -1,5 +1,15 @@
 # 设计 QA 记录
 
+## 2026-10-12：新建连接原页弹窗与已删分组排除
+
+在浅色／深色浏览器预览中，从差异预览、新建同步、同步历史和设置打开“新建连接”，
+表单均停留在当前页面；取消和保存后仍保持原页面。删除“数据库连接”后重新打开表单，
+下拉选项不再出现该分组；空分组选择要求通过下拉框的“新增”显式创建。
+
+截图：[差异预览浅色](docs/screenshots/react-ant-design/connection-new-in-place-差异预览-light.png)、
+[设置深色](docs/screenshots/react-ant-design/connection-new-in-place-设置-dark.png)。
+完整检查见[验证记录](docs/validation.md)。
+
 ## 2026-10-12：回滚确认与全目标记录脚本
 
 回滚确认复用同步确认布局，展示原同步来源、实际回滚目标、连接名、地址和端口、

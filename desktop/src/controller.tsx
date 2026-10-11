@@ -379,7 +379,9 @@ function useBusinessController() {
           s.state.connections.some((c) => c.id === s.connectionForm.id) &&
           !state.connections.some((c) => c.id === s.connectionForm.id)
             ? emptyConnection(s.workspaceId)
-            : s.connectionForm,
+            : state.connectionGroups.some((group) => group.name === s.connectionForm.group)
+              ? s.connectionForm
+              : { ...s.connectionForm, group: '' },
         sourceKey:
           s.sourceKey && !state.connections.some((c) => c.id === fromKey(s.sourceKey).connectionId)
             ? ''
@@ -1303,14 +1305,17 @@ function useBusinessController() {
       set('workspaceSubmitting', false);
     }
   }
-  function editConnection(c?: ConnectionInfo, group?: string, preservePage = false) {
+  function editConnection(c?: ConnectionInfo, group?: string) {
     connectionEditorGeneration.current += 1;
     const form = c
       ? { ...copyModel(c), password: '', certificatePassword: '' }
       : {
           ...emptyConnection(latest.current.workspaceId),
           id: crypto.randomUUID(),
-          ...(group ? { group } : {}),
+          group:
+            latest.current.state.connectionGroups.find((value) => value.name === group)?.name ||
+            latest.current.state.connectionGroups[0]?.name ||
+            '',
         };
     commit((s) => ({
       ...s,
@@ -1318,7 +1323,6 @@ function useBusinessController() {
       connectionTest: undefined,
       connectionDialog: true,
       databasesText: form.databases.join(', '),
-      page: preservePage ? s.page : 'connections',
     }));
   }
   function closeConnection() {
@@ -1505,6 +1509,8 @@ function useBusinessController() {
         throw new Error('请填写连接名称、服务器、用户并选择工作区');
       const validation = connectionTestError(form);
       if (validation) throw new Error(validation);
+      if (!latest.current.state.connectionGroups.some((group) => group.name === form.group))
+        throw new Error('请选择现有连接分组，或先新增分组');
       await api('entity.save', { kind: 'connection', value: form });
       if (latest.current.connectionForm === s.connectionForm)
         commit((v) => ({

@@ -592,6 +592,7 @@ async function connectionFormQA(browser, theme) {
     const editor = page.getByRole('dialog', { name: '新建连接', exact: true });
     await editor.waitFor();
     await modalSettled(page);
+    assert.equal(await page.locator('h1').innerText(), '差异预览');
     for (const text of [
       '请输入连接名称，例如：开发环境',
       '请输入 IP 或域名，例如：127.0.0.1',
@@ -627,6 +628,7 @@ async function connectionFormQA(browser, theme) {
     assert(saveBounds && saveBounds.y + saveBounds.height <= 760);
     await shot(page, `connection-ssl-minimum-${theme}`);
     await editor.getByRole('button', { name: /取\s*消/ }).click();
+    assert.equal(await page.locator('h1').innerText(), '差异预览');
     const group = page.locator('.tree-label[data-node-type="group"]').first();
     await group.click({ button: 'right' });
     await page.getByRole('menuitem', { name: '新增分组', exact: true }).click();
@@ -650,6 +652,50 @@ async function connectionFormQA(browser, theme) {
     await page.getByRole('menuitem', { name: '删除分组', exact: true }).click();
     await confirmation.getByRole('button', { name: /^删\s*除$/ }).click();
     await empty.waitFor({ state: 'detached' });
+    await group.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '新增分组', exact: true }).click();
+    await create.getByRole('textbox', { name: '分组名称' }).fill('数据库连接');
+    await create.getByRole('button', { name: /^保\s*存$/ }).click();
+    await create.waitFor({ state: 'hidden' });
+    const defaultGroup = page
+      .locator('.tree-label[data-node-type="group"]')
+      .filter({ hasText: /^数据库连接$/ });
+    await defaultGroup.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '删除分组', exact: true }).click();
+    await confirmation.getByRole('button', { name: /^删\s*除$/ }).click();
+    await defaultGroup.waitFor({ state: 'detached' });
+    for (const heading of ['差异预览', '新建同步', '同步历史', '设置']) {
+      if (heading !== '差异预览')
+        await page.getByRole('menuitem', { name: new RegExp(heading) }).click();
+      const originalHeading = await page.locator('h1').innerText();
+      await page.locator('aside').getByRole('button', { name: '新建连接', exact: true }).click();
+      await editor.waitFor();
+      await modalSettled(page);
+      assert.equal(await page.locator('h1').innerText(), originalHeading);
+      await editor.getByRole('combobox', { name: '连接分组', exact: true }).click();
+      const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
+      await options.first().waitFor();
+      assert.deepEqual(await options.allTextContents(), ['测试环境', '目标环境']);
+      await shot(page, `connection-new-in-place-${heading}-${theme}`);
+      await page.keyboard.press('Escape');
+      await editor.getByRole('button', { name: /取\s*消/ }).click();
+      assert.equal(await page.locator('h1').innerText(), originalHeading);
+      await page.locator('aside').getByRole('button', { name: '新建连接', exact: true }).click();
+      await editor.waitFor();
+      await modalSettled(page);
+      await editor.getByPlaceholder('请输入连接名称，例如：开发环境').fill(`QA ${heading}`);
+      await editor.getByPlaceholder('请输入数据库用户名').fill('qa');
+      await editor.getByRole('button', { name: '保存连接', exact: true }).click();
+      await editor.waitFor({ state: 'hidden' });
+      assert.equal(await page.locator('h1').innerText(), originalHeading);
+      assert.equal(await defaultGroup.count(), 0);
+      report.browser.push({
+        check: 'new-connection-preserves-page-cancel-save-and-excludes-deleted-groups',
+        theme,
+        page: originalHeading,
+        passed: true,
+      });
+    }
     report.browser.push({
       check: 'connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete',
       theme,
@@ -1631,8 +1677,13 @@ async function browserQA() {
       await page.getByLabel('连接名称', { exact: true }).fill('QA 连接');
       await page.getByRole('textbox', { name: '用户名' }).fill('qa_user');
       await page.getByRole('button', { name: '保存连接', exact: true }).click();
-      await page.getByRole('cell', { name: 'QA 连接', exact: true }).waitFor();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
+      await page.getByRole('heading', { level: 1, name: '同步历史', exact: true }).waitFor();
+      await page
+        .locator('.sidebar-label')
+        .getByRole('button', { name: '数据库连接', exact: true })
+        .click();
+      await page.getByRole('cell', { name: 'QA 连接', exact: true }).waitFor();
       await page.getByRole('cell', { name: 'QA 连接', exact: true }).click();
       assert.equal(await page.getByRole('dialog').count(), 0);
       await page.getByRole('button', { name: '编辑连接 QA 连接', exact: true }).click();

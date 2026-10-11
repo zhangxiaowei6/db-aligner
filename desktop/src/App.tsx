@@ -245,7 +245,7 @@ function Shell() {
           const connection = connections.find((item) => item.id === node.connectionId);
           if (!connection) return;
           if (!['test', 'refresh'].includes(key)) closeMenu();
-          if (key === 'edit') c.editConnection(connection, undefined, true);
+          if (key === 'edit') c.editConnection(connection);
           if (key === 'group') c.chooseConnectionGroup(connection);
           if (key === 'test')
             void menuOperation('test', () => c.testConnection(connection, 'tree'));

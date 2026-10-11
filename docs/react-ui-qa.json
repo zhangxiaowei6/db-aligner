@@ -55,7 +55,7 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.0071411132812,
+        "x": 848.9277954101562,
         "y": 0,
         "width": 639.9999389648438,
         "height": 1056
@@ -160,9 +160,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848,
+        "x": 848.9192504882812,
         "y": 0,
-        "width": 640,
+        "width": 639.9999389648438,
         "height": 1056
       }
     },
@@ -425,8 +425,56 @@
       "passed": true
     },
     {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "差异预览",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "新建同步",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "同步历史",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "设置",
+      "passed": true
+    },
+    {
       "check": "connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete",
       "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "差异预览",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "新建同步",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "同步历史",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "设置",
       "passed": true
     },
     {
