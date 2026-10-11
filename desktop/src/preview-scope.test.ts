@@ -1,7 +1,35 @@
 import { expect, it } from 'vitest';
 import { buildPreviewPlan, previewBridge, previewPlan } from './preview';
-import type { SyncPlan, SyncRecord } from './types';
+import type { State, ConnectionGroup, SyncPlan, SyncRecord } from './types';
 import { recordScriptFiles } from './sync-scripts';
+
+it('deletes only empty preview groups and preserves connections and remaining order', async () => {
+  const before = (await previewBridge.invoke('state.load')) as State;
+  const group = (await previewBridge.invoke('connectionGroups.save', {
+    name: '删除测试空分组',
+  })) as ConnectionGroup;
+  await expect(previewBridge.invoke('connectionGroups.delete', { groupId: '' })).rejects.toThrow(
+    '请选择要删除的分组',
+  );
+  await expect(
+    previewBridge.invoke('connectionGroups.delete', { groupId: 'missing' }),
+  ).rejects.toThrow('分组不存在');
+  const occupied = before.connectionGroups.find((value) =>
+    before.connections.some((connection) => connection.group === value.name),
+  )!;
+  await expect(
+    previewBridge.invoke('connectionGroups.delete', { groupId: occupied.id }),
+  ).rejects.toThrow('该分组仍有连接');
+  expect(await previewBridge.invoke('connectionGroups.delete', { groupId: group.id })).toEqual({
+    ok: true,
+  });
+  const after = (await previewBridge.invoke('state.load')) as State;
+  expect(after.connections).toEqual(before.connections);
+  expect(after.connectionGroups.some((value) => value.id === group.id)).toBe(false);
+  expect(after.connectionGroups.map((value) => value.sortOrder)).toEqual(
+    after.connectionGroups.map((_, index) => index),
+  );
+});
 
 it('compares only the selected source, targets, tables and change types in the preview', () => {
   const source = { connectionId: 'target1', database: 'shop_b' };

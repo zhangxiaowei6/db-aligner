@@ -577,6 +577,88 @@ async function organizationQA(browser, theme) {
     await context.close();
   }
 }
+async function connectionFormQA(browser, theme) {
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page.getByRole('button', { name: '新建连接', exact: true }).first().click();
+    const editor = page.getByRole('dialog', { name: '新建连接', exact: true });
+    await editor.waitFor();
+    await modalSettled(page);
+    for (const text of [
+      '请输入连接名称，例如：开发环境',
+      '请输入 IP 或域名，例如：127.0.0.1',
+      '请输入端口，默认 3306',
+      '请输入数据库用户名',
+      '请输入连接密码',
+      '留空显示可访问数据库；多个库用英文逗号分隔',
+    ])
+      assert.equal(await editor.getByPlaceholder(text, { exact: true }).count(), 1);
+    assert(
+      (await editor.innerText()).includes('请选择至少一个工作区') ||
+        (await editor.getByRole('combobox', { name: '关联工作区' }).count()) === 1,
+    );
+    assert(
+      await editor
+        .getByPlaceholder('请输入连接名称，例如：开发环境')
+        .evaluate((element) => !element.spellcheck),
+    );
+    await shot(page, `connection-placeholders-${theme}`);
+    await editor.getByRole('button', { name: '保存连接', exact: true }).click();
+    await editor.getByText('请输入连接名称', { exact: true }).waitFor();
+    await editor.getByRole('checkbox', { name: '启用 SSL，验证证书与服务器名称' }).check();
+    await editor.getByPlaceholder('请选择 PEM 证书文件，留空使用系统信任').waitFor();
+    await editor.getByPlaceholder('请选择 PKCS#12 证书文件，可留空').fill('C:\\QA\\client.p12');
+    await editor.getByPlaceholder('请输入客户端证书密码').waitFor();
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await editor.locator('.ant-modal-body').evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    const saveBounds = await editor
+      .locator('.connection-dialog-footer button.ant-btn-primary')
+      .boundingBox();
+    assert(saveBounds && saveBounds.y + saveBounds.height <= 760);
+    await shot(page, `connection-ssl-minimum-${theme}`);
+    await editor.getByRole('button', { name: /取\s*消/ }).click();
+    const group = page.locator('.tree-label[data-node-type="group"]').first();
+    await group.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '新增分组', exact: true }).click();
+    const create = page.getByRole('dialog', { name: '新增分组', exact: true });
+    await create.getByRole('textbox', { name: '分组名称' }).fill('QA 待删除空分组');
+    await create.getByRole('button', { name: /^保\s*存$/ }).click();
+    await create.waitFor({ state: 'hidden' });
+    const empty = page
+      .locator('.tree-label[data-node-type="group"]')
+      .filter({ hasText: 'QA 待删除空分组' });
+    await empty.click();
+    await empty.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '删除分组', exact: true }).click();
+    const confirmation = page.getByRole('dialog', { name: '删除分组', exact: true });
+    await confirmation.waitFor();
+    await shot(page, `group-delete-confirmation-${theme}`);
+    await confirmation.getByRole('button', { name: /取\s*消/ }).click();
+    await confirmation.waitFor({ state: 'hidden' });
+    await empty.waitFor();
+    await empty.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: '删除分组', exact: true }).click();
+    await confirmation.getByRole('button', { name: /^删\s*除$/ }).click();
+    await empty.waitFor({ state: 'detached' });
+    report.browser.push({
+      check: 'connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete',
+      theme,
+      passed: true,
+    });
+  } finally {
+    await context.close();
+  }
+}
+
 async function connectionActionsQA(browser, theme) {
   const context = await browser.newContext({
     viewport: { width: 1488, height: 1056 },
@@ -603,14 +685,14 @@ async function connectionActionsQA(browser, theme) {
         .last();
       await menu.waitFor();
       const items = menu.locator('.ant-dropdown-menu-item:not(.ant-dropdown-menu-item-divider)');
-      await items.nth({ group: 4, connection: 5, database: 4, table: 4 }[type] - 1).waitFor();
+      await items.nth({ group: 5, connection: 5, database: 4, table: 4 }[type] - 1).waitFor();
       const icons = await items.evaluateAll((operations) =>
         operations.map((item) => ({
           name: item.textContent,
           hasIcon: !!item.querySelector('.ant-dropdown-menu-item-icon'),
         })),
       );
-      assert.equal(icons.length, { group: 4, connection: 5, database: 4, table: 4 }[type]);
+      assert.equal(icons.length, { group: 5, connection: 5, database: 4, table: 4 }[type]);
       for (const item of icons) assert(item.hasIcon, `${type}: missing menu icon on ${item.name}`);
       await shot(page, `context-${type}-${theme}`);
       await page.keyboard.press('Escape');
@@ -709,6 +791,7 @@ async function connectionActionsQA(browser, theme) {
     await row.getByRole('button', { name: '编辑连接 测试服务器', exact: true }).click();
     const editor = page.getByRole('dialog', { name: '编辑连接', exact: true });
     await modalSettled(page);
+    assert.equal(await editor.getByPlaceholder('已保存；留空保留原密码').count(), 1);
     await editor.getByLabel('密码', { exact: true }).fill('preview-fail');
     await editor.getByRole('button', { name: '保存连接', exact: true }).click();
     await editor.waitFor({ state: 'hidden' });
@@ -1205,6 +1288,10 @@ async function browserQA() {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     browser = await chromium.launch({ headless: true, executablePath });
+    if (process.argv.includes('--connection-form')) {
+      for (const theme of ['light', 'dark']) await connectionFormQA(browser, theme);
+      return;
+    }
     if (process.argv.includes('--performance')) {
       await performanceQA(browser, { repo, report, observe, shot, footerCheck });
       return;
@@ -1579,6 +1666,7 @@ async function browserQA() {
       await syncModeQA(browser, theme);
       await organizationQA(browser, theme);
     }
+    for (const theme of ['light', 'dark']) await connectionFormQA(browser, theme);
     for (const theme of ['light', 'dark']) await connectionActionsQA(browser, theme);
     for (const theme of ['light', 'dark']) await refreshAndTemplateQA(browser, theme);
     for (const theme of ['light', 'dark']) await contextFeedbackQA(browser, theme);
@@ -1621,6 +1709,27 @@ async function desktopQA() {
   }
   try {
     let page = await launch();
+    assert.equal(
+      await application.evaluate(
+        ({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].webContents.session.spellCheckerEnabled,
+      ),
+      false,
+    );
+    const deletedGroupId = await page.evaluate(async () => {
+      const group = await window.dataSync.invoke('connectionGroups.save', { name: 'QA 删除分组' });
+      const result = await window.dataSync.invoke('connectionGroups.delete', { groupId: group.id });
+      if (!result.ok) throw new Error('删除分组失败');
+      const state = await window.dataSync.invoke('state.load');
+      if (state.connectionGroups.some((value) => value.id === group.id))
+        throw new Error('分组仍存在');
+      return group.id;
+    });
+    assert(await page.locator('body').evaluate((element) => !element.spellcheck));
+    report.desktop.push({
+      check: 'global-spellcheck-disabled-and-real-group-delete-ipc',
+      passed: true,
+    });
     const overlay = await page.evaluate(() => {
       const controls = navigator.windowControlsOverlay;
       const area = controls?.getTitlebarAreaRect();
@@ -1687,6 +1796,12 @@ async function desktopQA() {
     application = undefined;
     console.log('Native QA: restart');
     page = await launch();
+    assert(
+      await page.evaluate(async (id) => {
+        const state = await window.dataSync.invoke('state.load');
+        return !state.connectionGroups.some((value) => value.id === id);
+      }, deletedGroupId),
+    );
     await page.locator('[data-theme="dark"]').waitFor();
     report.desktop.push({ check: 'theme-restart-persistence', passed: true });
     await page.evaluate(async () => {
@@ -1770,17 +1885,19 @@ try {
       'docs',
       native
         ? 'react-desktop-qa.json'
-        : process.argv.includes('--performance')
-          ? 'performance-ui-qa.json'
-          : process.argv.includes('--tree-organization')
-            ? 'tree-organization-qa.json'
-            : process.argv.includes('--context-feedback')
-              ? 'context-feedback-qa.json'
-              : process.argv.includes('--sync-modes')
-                ? 'sync-mode-ui-qa.json'
-                : process.argv.includes('--diff-scroll')
-                  ? 'diff-scroll-ui-qa.json'
-                  : 'react-ui-qa.json',
+        : process.argv.includes('--connection-form')
+          ? 'connection-form-ui-qa.json'
+          : process.argv.includes('--performance')
+            ? 'performance-ui-qa.json'
+            : process.argv.includes('--tree-organization')
+              ? 'tree-organization-qa.json'
+              : process.argv.includes('--context-feedback')
+                ? 'context-feedback-qa.json'
+                : process.argv.includes('--sync-modes')
+                  ? 'sync-mode-ui-qa.json'
+                  : process.argv.includes('--diff-scroll')
+                    ? 'diff-scroll-ui-qa.json'
+                    : 'react-ui-qa.json',
     ),
     JSON.stringify(report, null, 2) + '\n',
   );

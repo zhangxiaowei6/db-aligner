@@ -94,6 +94,7 @@ export function ConnectionGroupSelect() {
   return (
     <Select
       aria-label="连接分组"
+      placeholder="请选择连接分组"
       showSearch
       optionFilterProp="label"
       style={{ width: '100%' }}

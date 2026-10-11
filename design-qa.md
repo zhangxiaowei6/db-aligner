@@ -1,5 +1,21 @@
 # 设计 QA 记录
 
+## 2026-10-12：连接填写提示与空分组删除
+
+新建与编辑共用表单补齐全部输入和选择提示，SSL 证书项同样覆盖；已有默认值保留。
+已查看浅色／深色新建连接、1180 × 760 SSL 表单及删除确认截图，底部保存和取消可达。
+应用关闭拼写检查，表单必填校验继续显示。分组右键新增危险色“删除分组”，空分组确认后删除，
+取消保留；其他工作区有连接时阻止，失败允许重试。真实桌面使用隔离资料验证删除 IPC 和重启持久性。
+
+截图：[连接提示浅色](docs/screenshots/react-ant-design/connection-placeholders-light.png)、
+[连接提示深色](docs/screenshots/react-ant-design/connection-placeholders-dark.png)、
+[SSL 最小窗口浅色](docs/screenshots/react-ant-design/connection-ssl-minimum-light.png)、
+[SSL 最小窗口深色](docs/screenshots/react-ant-design/connection-ssl-minimum-dark.png)、
+[删除确认浅色](docs/screenshots/react-ant-design/group-delete-confirmation-light.png)、
+[删除确认深色](docs/screenshots/react-ant-design/group-delete-confirmation-dark.png)。
+实际命令与验证边界见[验证记录](docs/validation.md)。
+
+
 ## 2026-10-11：SQL 大脚本与虚拟列表性能
 
 本次使用最终生产前端资源和虚构压力数据完成浅色／深色验收。

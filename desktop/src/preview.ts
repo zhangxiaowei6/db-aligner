@@ -753,6 +753,19 @@ export const previewBridge: DesktopBridge = {
         }
         break;
       }
+      case 'connectionGroups.delete': {
+        if (!String(p.groupId || '').trim()) throw new Error('请选择要删除的分组');
+        const group = state.connectionGroups.find((value) => value.id === p.groupId);
+        if (!group) throw new Error('分组不存在');
+        if (state.connections.some((connection) => connectionGroupName(connection) === group.name))
+          throw new Error('该分组仍有连接，请先将连接移到其他分组');
+        state.connectionGroups = state.connectionGroups
+          .filter((value) => value.id !== group.id)
+          .sort((first, second) => first.sortOrder - second.sortOrder)
+          .map((value, sortOrder) => ({ ...value, sortOrder }));
+        result = { ok: true };
+        break;
+      }
       case 'connectionGroups.move': {
         if (!['before', 'after'].includes(String(p.placement))) throw new Error('无效投放位置');
         const group = state.connectionGroups.find((g) => g.id === p.groupId);

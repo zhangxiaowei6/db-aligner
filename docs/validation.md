@@ -1,5 +1,32 @@
 # 0.1.0 验证记录
 
+## 2026-10-12：连接提示、拼写检查与空分组删除
+
+实际环境：Windows x64、Node.js 22.22.2、npm 10.9.7、项目 Java 21 与 Google Java Format 1.28.0。
+
+- `npm run typecheck`、`npm run build`、`npm run engine:build`：通过。构建保留主包体积提示。
+- `npm test`：前端 15 文件、171 项通过；引擎 25 项中 23 通过、2 个真库入口跳过，0 失败／错误。
+  日志位于忽略目录 `.local-data/connection-form-default-test.log`，jsdom 保留既有 CSS 解析提示。
+- `./scripts/mvn.ps1 test '-Dtest=ConnectionGroupsTest'`：4 项通过。覆盖全局非空保护、无效 ID、
+  确认后新增连接拒绝、空默认分组删除与自动创建、剩余顺序及重启持久性。
+- 删除控制器专项测试：2 项通过，其他 101 项按名称筛选跳过。验证取消不提交、其他工作区连接阻止、
+  请求期间重复保护、失败保留及成功重试；日志 `.local-data/connection-form-delete-test.log`。
+- `node desktop/scripts/ui-qa.mjs --connection-form`：浅色／深色专项通过，0 控制台错误；
+  覆盖提示、SSL 条件项、最小窗口按钮布局、必填校验、拼写检查属性及删除取消／确认。
+- 完整浏览器回归曾因 Windows 替换 `compare-confirmation-dark.png` 时出现文件占用 `EPERM` 中断，
+  该次结果未记为通过；随后同端口并行验收出现连接拒绝，改为串行重跑。
+- 最终 `npm run qa:ui -w desktop` 串行回归：103 项通过、0 控制台错误，见
+  [完整 UI 报告](react-ui-qa.json)。覆盖编辑已存密码提示及原有交互；最终会话保护补充后重新构建，
+  类型检查与删除控制器专项再次通过，没有重复整个默认测试套件。
+- `npm run qa:desktop -w desktop`：通过，报告 [桌面验收](react-desktop-qa.json)。隔离资料目录验证
+  会话拼写检查关闭、真实新增／删除分组 IPC、删除重启持久性及既有原生窗口回归。
+- 首次受限 Vitest 启动被 `spawn EPERM` 阻止，允许子进程后完成测试；初版桌面断言读取不到窗口
+  拼写字段，改查会话实际开关并显式关闭会话。最小窗口浏览器断言改为核对按钮实际布局后专项通过。
+  并行工作期间出现过其他修改缺少 `selectRecordScript` 导出导致的构建失败，随后最终类型检查与构建通过。
+
+本次不涉及 MySQL 比较、执行或恢复逻辑；没有连接真实数据库，也未进行安装包发布或干净安装验收。
+
+
 ## 2026-10-11：SQL 分页与界面性能修复
 
 实际环境：Windows x64、Node.js 22.22.2、npm 10.9.7、项目 Java 21 工具链、

@@ -104,6 +104,12 @@ function Shell() {
     setSidebarWidth(Math.max(240, Math.min(640, window.innerWidth * 0.45, width)));
   const c = useController();
   const { m } = c;
+  useEffect(() => {
+    const existing = new Set(m.state.connectionGroups.map((group) => `group:${group.id}`));
+    const retained = (key: Key) => !String(key).startsWith('group:') || existing.has(String(key));
+    setSelectedTreeKeys((keys) => keys.filter(retained));
+    setExpandedTreeKeys((keys) => keys.filter(retained));
+  }, [m.state.connectionGroups]);
   const treeGesture = useTreeDragGesture(m.organizationSaving, m.workspaceId);
   const treeViewport = useTreeViewport();
   // 拖拽状态完全由 antd/rc-tree 内部管理：不在 capture 层拦截或 preventDefault，
@@ -175,12 +181,20 @@ function Shell() {
           { key: 'import', label: '导入连接', icon: <FileOutlined aria-hidden /> },
           { key: 'group-edit', label: '编辑分组', icon: <EditOutlined aria-hidden /> },
           { key: 'group-new', label: '新增分组', icon: <PlusOutlined aria-hidden /> },
+          {
+            key: 'group-delete',
+            label: '删除分组',
+            icon: <DeleteOutlined aria-hidden />,
+            danger: true,
+            disabled: m.organizationSaving,
+          },
         ],
         onClick: ({ key }: { key: string }) => {
           closeMenu();
           if (key === 'group-edit')
             c.editGroup(m.state.connectionGroups.find((group) => group.id === node.groupId));
           else if (key === 'group-new') c.editGroup();
+          else if (key === 'group-delete') void c.removeGroup(node.groupId!);
           else if (key === 'new') c.editConnection(undefined, node.title);
           else {
             c.set('importGroup', node.title);

@@ -13,7 +13,11 @@ import { api, onEvent, preview, windowAction } from './api';
 import { previewPlan } from './preview';
 import { copyModel } from './copy';
 import { connectionTestError } from './connection-validation';
-import { connectionSignature, normalizeOrganization } from './connection-organization';
+import {
+  connectionGroupName,
+  connectionSignature,
+  normalizeOrganization,
+} from './connection-organization';
 import { SyncExecutionConfirmation } from './components/SyncExecutionConfirmation';
 import { effectiveOptions } from './structure-options';
 import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
@@ -96,6 +100,7 @@ function useBusinessController() {
   const targetTableLoads = useRef(new Map<string, { signature: string; promise: Promise<void> }>());
   const connectionEditorGeneration = useRef(0);
   const groupSaving = useRef(false);
+  const groupDeleting = useRef(false);
   const groupEditorGeneration = useRef(0);
   const workspaceEditorGeneration = useRef(0);
   const workspaceSaving = useRef(false);
@@ -1399,6 +1404,57 @@ function useBusinessController() {
       groupSaving.current = false;
     }
   }
+  async function removeGroup(groupId: string) {
+    if (groupDeleting.current || latest.current.organizationSaving) return;
+    const group = latest.current.state.connectionGroups.find((value) => value.id === groupId);
+    if (!group) return;
+    if (
+      latest.current.state.connections.some((value) => connectionGroupName(value) === group.name)
+    ) {
+      void message.error('该分组仍有连接，请先将连接移到其他分组');
+      return;
+    }
+    groupDeleting.current = true;
+    try {
+      return await modal.confirm({
+        title: '删除分组',
+        content: `确认删除空分组“${group.name}”？此操作仅删除分组配置。`,
+        okText: '删除',
+        cancelText: '取消',
+        okButtonProps: { danger: true },
+        onOk: async () => {
+          const connectionGeneration = connectionEditorGeneration.current;
+          const workspaceId = latest.current.workspaceId;
+          set('organizationSaving', true);
+          try {
+            await api('connectionGroups.delete', { groupId });
+            await loadState();
+            commit((value) => ({
+              ...value,
+              moveGroupId: value.moveGroupId === groupId ? '' : value.moveGroupId,
+              importGroup:
+                value.workspaceId === workspaceId && value.importGroup === group.name
+                  ? ''
+                  : value.importGroup,
+              connectionForm:
+                connectionEditorGeneration.current === connectionGeneration &&
+                value.connectionForm.group === group.name
+                  ? { ...value.connectionForm, group: '' }
+                  : value.connectionForm,
+            }));
+            void message.success('分组已删除');
+          } catch (error) {
+            void message.error(error instanceof Error ? error.message : String(error));
+            throw error;
+          } finally {
+            set('organizationSaving', false);
+          }
+        },
+      });
+    } finally {
+      groupDeleting.current = false;
+    }
+  }
   function chooseConnectionGroup(connection: ConnectionInfo) {
     const group = latest.current.state.connectionGroups.find((g) => g.name === connection.group);
     commit((s) => ({ ...s, moveConnectionId: connection.id, moveGroupId: group?.id || '' }));
@@ -2697,6 +2753,7 @@ function useBusinessController() {
     editGroup,
     closeGroup,
     saveGroup,
+    removeGroup,
     addConnectionGroup,
     chooseConnectionGroup,
     moveConnection,

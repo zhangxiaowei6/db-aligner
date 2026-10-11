@@ -172,6 +172,25 @@ final class ConnectionGroups {
         });
   }
 
+  Object delete(String id) throws Exception {
+    if (id.isBlank()) throw new IllegalArgumentException("请选择要删除的分组");
+    return store.transaction(
+        () -> {
+          var group = store.get("connectionGroup", id);
+          if (group == null) throw new IllegalArgumentException("分组不存在");
+          if (!members(group.path("name").asText()).isEmpty())
+            throw new IllegalArgumentException("该分组仍有连接，请先将连接移到其他分组");
+          store.delete("connectionGroup", id);
+          var remaining = groups();
+          for (int index = 0; index < remaining.size(); index++) {
+            var copy = (ObjectNode) remaining.get(index).deepCopy();
+            copy.put("sortOrder", index);
+            store.put("connectionGroup", copy.path("id").asText(), copy);
+          }
+          return Map.of("ok", true);
+        });
+  }
+
   private void writeOrder(List<JsonNode> connections) throws Exception {
     for (int i = 0; i < connections.size(); i++) {
       var copy = (ObjectNode) connections.get(i).deepCopy();

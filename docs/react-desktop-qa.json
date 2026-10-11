@@ -2,6 +2,10 @@
   "browser": [],
   "desktop": [
     {
+      "check": "global-spellcheck-disabled-and-real-group-delete-ipc",
+      "passed": true
+    },
+    {
       "check": "native-controls",
       "visible": true,
       "area": {

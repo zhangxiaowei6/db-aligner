@@ -294,6 +294,7 @@ export function ConnectionEditor() {
         >
           <Input
             value={f.name}
+            placeholder="请输入连接名称，例如：开发环境"
             onChange={(e) => c.patch('connectionForm', { name: e.target.value })}
           />
         </Form.Item>
@@ -308,6 +309,7 @@ export function ConnectionEditor() {
           >
             <Input
               value={f.host}
+              placeholder="请输入 IP 或域名，例如：127.0.0.1"
               onChange={(e) => c.patch('connectionForm', { host: e.target.value })}
             />
           </Form.Item>
@@ -323,7 +325,7 @@ export function ConnectionEditor() {
               },
             ]}
           >
-            <Input inputMode="numeric" autoComplete="off" />
+            <Input inputMode="numeric" autoComplete="off" placeholder="请输入端口，默认 3306" />
           </Form.Item>
         </div>
         <div className="form-pair">
@@ -334,13 +336,14 @@ export function ConnectionEditor() {
           >
             <Input
               value={f.user}
+              placeholder="请输入数据库用户名"
               onChange={(e) => c.patch('connectionForm', { user: e.target.value })}
             />
           </Form.Item>
           <Field label="密码">
             <Input.Password
               value={f.password}
-              placeholder={f.hasPassword ? '已保存；留空保留原密码' : '填写连接密码'}
+              placeholder={f.hasPassword ? '已保存；留空保留原密码' : '请输入连接密码'}
               onChange={(e) => c.patch('connectionForm', { password: e.target.value })}
             />
           </Field>
@@ -348,7 +351,7 @@ export function ConnectionEditor() {
         <Field label="指定数据库（可选）">
           <Input
             value={m.databasesText}
-            placeholder="shop_test, shop_a"
+            placeholder="留空显示可访问数据库；多个库用英文逗号分隔"
             onChange={(e) => c.set('databasesText', e.target.value)}
           />
         </Field>
@@ -363,6 +366,7 @@ export function ConnectionEditor() {
           <Select
             mode="multiple"
             value={f.workspaceIds}
+            placeholder="请选择至少一个工作区"
             options={workspaces}
             onChange={(workspaceIds) => c.patch('connectionForm', { workspaceIds })}
           />
@@ -381,6 +385,7 @@ export function ConnectionEditor() {
               <Space.Compact block>
                 <Input
                   value={f.ca}
+                  placeholder="请选择 PEM 证书文件，留空使用系统信任"
                   onChange={(e) => c.patch('connectionForm', { ca: e.target.value })}
                 />
                 <Button onClick={() => c.chooseCertificate('ca')}>选择</Button>
@@ -390,6 +395,7 @@ export function ConnectionEditor() {
               <Space.Compact block>
                 <Input
                   value={f.clientCert}
+                  placeholder="请选择 PKCS#12 证书文件，可留空"
                   onChange={(e) => c.patch('connectionForm', { clientCert: e.target.value })}
                 />
                 <Button onClick={() => c.chooseCertificate('clientCert')}>选择</Button>
@@ -399,6 +405,7 @@ export function ConnectionEditor() {
               <Field label="证书密码">
                 <Input.Password
                   value={f.certificatePassword}
+                  placeholder="请输入客户端证书密码"
                   onChange={(e) =>
                     c.patch('connectionForm', { certificatePassword: e.target.value })
                   }

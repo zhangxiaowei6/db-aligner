@@ -1,0 +1,16 @@
+{
+  "browser": [
+    {
+      "check": "connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete",
+      "theme": "dark",
+      "passed": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

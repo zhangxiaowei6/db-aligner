@@ -11,6 +11,52 @@ import org.junit.jupiter.api.io.TempDir;
 class ConnectionGroupsTest {
   @TempDir Path root;
 
+  @Test
+  void deletesOnlyEmptyGroupsAndPersistsRemainingOrder() throws Exception {
+    String deleted;
+    try (var service = new Service(root, ignored -> {})) {
+      var groups = new ConnectionGroups(service.store);
+      String first = groups.save("", "数据库连接").path("id").asText();
+      deleted = groups.save("", "空分组").path("id").asText();
+      String last = groups.save("", "其他工作区").path("id").asText();
+      var hidden = connection("hidden", "其他工作区");
+      hidden.put("workspaceIds", List.of("second"));
+      service.store.put("connection", "hidden", hidden);
+      String before = Json.write(service.store.list("connection"));
+      for (String invalid : List.of("", "missing", last))
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> service.handle("connectionGroups.delete", Json.node(Map.of("groupId", invalid))));
+      assertEquals(3, groups.groups().size());
+      assertEquals(
+          Json.node(Map.of("ok", true)),
+          Json.node(
+              service.handle("connectionGroups.delete", Json.node(Map.of("groupId", deleted)))));
+      assertEquals(
+          List.of(0, 1),
+          groups.groups().stream().map(value -> value.path("sortOrder").asInt()).toList());
+      assertEquals(before, Json.write(service.store.list("connection")));
+      groups.delete(first);
+      groups.save("", "待确认");
+      String pending = groups.groups().get(1).path("id").asText();
+      service.store.put("connection", "late", connection("late", "待确认"));
+      assertThrows(IllegalArgumentException.class, () -> groups.delete(pending));
+      assertNotNull(service.store.get("connectionGroup", pending));
+      groups.saveConnection(
+          (com.fasterxml.jackson.databind.node.ObjectNode) Json.node(connection("default", "")));
+      assertTrue(
+          groups.groups().stream().anyMatch(value -> value.path("name").asText().equals("数据库连接")));
+    }
+    try (var store = new Store(root)) {
+      var groups = new ConnectionGroups(store);
+      groups.migrate();
+      assertNull(store.get("connectionGroup", deleted));
+      assertEquals(
+          List.of("其他工作区", "待确认", "数据库连接"),
+          groups.groups().stream().map(value -> value.path("name").asText()).toList());
+    }
+  }
+
   private Map<String, Object> connection(String id, String group) {
     return new LinkedHashMap<>(
         Map.of(

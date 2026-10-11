@@ -78,10 +78,12 @@ function emit(event: Record<string, unknown>) {
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
@@ -165,6 +167,69 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it('blocks deletion of a group occupied only in another workspace', async () => {
+  state.connections[0].workspaceIds = ['second'];
+  await ready();
+  const group = controller.m.state.connectionGroups.find((value) => value.name === '测试')!;
+  await act(async () => controller.removeGroup(group.id));
+  expect(screen.queryByRole('dialog', { name: '删除分组' })).toBeNull();
+  expect(bridge.invoke.mock.calls.some(([method]) => method === 'connectionGroups.delete')).toBe(
+    false,
+  );
+  expect(await screen.findByText('该分组仍有连接，请先将连接移到其他分组')).toBeTruthy();
+});
+
+it('cancels empty group deletion and tracks a failed request until successful retry', async () => {
+  state.connectionGroups = [{ id: 'empty', name: '空分组', sortOrder: 0 }];
+  await ready();
+  let removal!: ReturnType<Controller['removeGroup']>;
+  act(() => {
+    removal = controller.removeGroup('empty');
+  });
+  await userEvent.click(
+    within(await screen.findByRole('dialog', { name: '删除分组' })).getByRole('button', {
+      name: /取\s*消/,
+    }),
+  );
+  await act(async () => {
+    await removal;
+  });
+  expect(bridge.invoke.mock.calls.some(([method]) => method === 'connectionGroups.delete')).toBe(
+    false,
+  );
+  const normal = bridge.invoke.getMockImplementation()!;
+  const pending = deferred<unknown>();
+  let attempts = 0;
+  bridge.invoke.mockImplementation(async (method, params) => {
+    if (method !== 'connectionGroups.delete') return normal(method, params);
+    attempts++;
+    if (attempts === 1) return pending.promise;
+    state.connectionGroups = [];
+    return { ok: true };
+  });
+  act(() => {
+    removal = controller.removeGroup('empty');
+  });
+  const dialog = await screen.findByRole('dialog', { name: '删除分组' });
+  const button = within(dialog).getByRole('button', { name: /^删\s*除$/ });
+  await userEvent.click(button);
+  expect(controller.m.organizationSaving).toBe(true);
+  await act(async () => controller.removeGroup('empty'));
+  expect(attempts).toBe(1);
+  await act(async () => {
+    pending.reject(new Error('该分组仍有连接，请先将连接移到其他分组'));
+  });
+  await waitFor(() => expect(controller.m.organizationSaving).toBe(false));
+  expect(controller.m.state.connectionGroups.some((value) => value.id === 'empty')).toBe(true);
+  expect(screen.getByRole('dialog', { name: '删除分组' })).toBeTruthy();
+  await userEvent.click(button);
+  await act(async () => {
+    await removal;
+  });
+  expect(controller.m.state.connectionGroups.some((value) => value.id === 'empty')).toBe(false);
+  expect(attempts).toBe(2);
 });
 
 it('shows refresh progress, prevents duplicate requests, reports completion and allows failed retries', async () => {

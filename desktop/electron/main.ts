@@ -57,6 +57,7 @@ const methods = new Set([
   'state.load',
   'entity.save',
   'connectionGroups.save',
+  'connectionGroups.delete',
   'connectionGroups.move',
   'connections.move',
   'entity.delete',
@@ -408,9 +409,11 @@ app.whenReady().then(async () => {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      spellcheck: false,
     },
   });
   win.setMenuBarVisibility(false);
+  win.webContents.session.spellCheckerEnabled = false;
   nativeTheme.on('updated', updateAppearance);
   win.on('close', (event) => {
     if (closeApproved || stopping || smokeMode) return;
