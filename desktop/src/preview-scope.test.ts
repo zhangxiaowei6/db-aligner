@@ -20,20 +20,15 @@ it('compares only the selected source, targets, tables and change types in the p
   expect(Object.keys(result.sourceSnapshot)).toEqual(['sys_dict']);
 });
 
-it('shows a missing table as blocked for data only and creates it when structure is selected', () => {
+it('skips missing data tables and creates them only in a separate structure comparison', () => {
   const target = previewPlan.targets[2].ref;
   const dataOnly = buildPreviewPlan(
     previewPlan.source,
     [target],
     [{ name: 'sys_user', structure: false, data: true, keyColumns: [] }],
   );
-  expect(dataOnly.targets[0].changes).toEqual([
-    expect.objectContaining({
-      kind: 'BLOCKED',
-      blocked: true,
-      reason: '请启用表结构同步或先创建目标表',
-    }),
-  ]);
+  expect(dataOnly.targets[0].changes).toEqual([]);
+  expect(dataOnly.targets[0].skippedTables).toEqual(['sys_user']);
   const withStructure = buildPreviewPlan(
     previewPlan.source,
     [target],
@@ -44,26 +39,32 @@ it('shows a missing table as blocked for data only and creates it when structure
   ]);
 });
 
-it('requires a separate data comparison after changing existing fields, without blocking other tables', () => {
+it('rejects mixing structure and data across the selected tables', () => {
+  for (const tables of [
+    [{ name: 'sys_dict', structure: true, data: true, keyColumns: [] }],
+    [
+      { name: 'sys_dict', structure: true, data: false, keyColumns: [] },
+      { name: 'sys_menu', structure: false, data: true, keyColumns: [] },
+    ],
+  ])
+    expect(() =>
+      buildPreviewPlan(previewPlan.source, [previewPlan.targets[0].ref], tables),
+    ).toThrow('每次只能同步结构或数据');
+});
+
+it('compares structure and data in separate plans', () => {
   const result = buildPreviewPlan(
     previewPlan.source,
     [previewPlan.targets[0].ref],
     [
-      { name: 'sys_dict', structure: true, data: true, keyColumns: ['code'] },
+      { name: 'sys_dict', structure: true, data: false, keyColumns: ['code'] },
       { name: 'sys_menu', structure: true, data: false, keyColumns: [] },
     ],
   );
   const changes = result.targets[0].changes;
   expect(changes.some((item) => item.kind === 'ADD_COLUMN')).toBe(true);
   expect(changes.some((item) => item.kind.endsWith('_ROW'))).toBe(false);
-  expect(changes.filter((item) => item.blocked)).toEqual([
-    expect.objectContaining({
-      table: 'sys_dict',
-      kind: 'BLOCKED',
-      selected: false,
-      reason: '该表字段定义发生变化，请先同步结构，再重新比较基础数据',
-    }),
-  ]);
+  expect(changes.filter((item) => item.blocked)).toEqual([]);
   expect(
     changes.some((item) => item.table === 'sys_menu' && item.kind === 'ADD_INDEX' && !item.blocked),
   ).toBe(true);

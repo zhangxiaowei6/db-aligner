@@ -1,0 +1,4 @@
+interface:
+  display_name: '本地协议与进程边界'
+  short_description: '联动核对桌面桥接与引擎契约，保留凭据隔离、精确数值和旧接口兼容'
+  default_prompt: '使用 $protocol-change 完成本项目的协议变更，核对各层契约与兼容行为并更新协议文档。'

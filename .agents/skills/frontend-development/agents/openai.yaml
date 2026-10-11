@@ -1,0 +1,4 @@
+interface:
+  display_name: '前端开发与交互规范'
+  short_description: '维护页面、草稿隔离、异步反馈和主题行为，完成对应界面验收与证据记录'
+  default_prompt: '使用 $frontend-development 修改本项目的前端交互，复用现有组件并验证受影响流程。'

@@ -9,6 +9,28 @@ import java.util.concurrent.atomic.*;
 import org.junit.jupiter.api.Test;
 
 class ComparisonTest {
+  @Test
+  void rejectsMixedModesBeforeOpeningAnyDatabase() {
+    var planner = new Planner(null);
+    for (var choices :
+        List.of(
+            List.of(new TableChoice("dict", true, true, List.of())),
+            List.of(
+                new TableChoice("dict", true, false, List.of()),
+                new TableChoice("menu", false, true, List.of())))) {
+      var error =
+          assertThrows(
+              IllegalArgumentException.class,
+              () ->
+                  planner.compare(
+                      "default",
+                      new DbRef("test", "source"),
+                      List.of(new DbRef("test", "target")),
+                      choices));
+      assertTrue(error.getMessage().contains("每次只能同步结构或数据"));
+    }
+  }
+
   static Column column(String name, String type, String comment, int ordinal) {
     return new Column(
         name,

@@ -349,6 +349,8 @@ for (const target of previewPlan.targets) {
   }
 }
 export function buildPreviewPlan(source: DbRef, targets: DbRef[], tables: TableChoice[]): SyncPlan {
+  if (tables.some((table) => table.structure) && tables.some((table) => table.data))
+    throw new Error('每次只能同步结构或数据，请选择一种同步类型');
   const plan = structuredClone(previewPlan);
   plan.id = 'PREVIEW-PLAN-' + crypto.randomUUID();
   plan.source = source;
@@ -401,7 +403,13 @@ export function buildPreviewPlan(source: DbRef, targets: DbRef[], tables: TableC
           sql.replaceAll('`' + originalDatabase + '`', '`' + ref.database + '`'),
         ),
       }));
+    fixture.skippedTables = [];
     for (const choice of tables) {
+      if (choice.data && !fixture.before[choice.name].exists) {
+        fixture.changes = fixture.changes.filter((item) => item.table !== choice.name);
+        fixture.skippedTables.push(choice.name);
+        continue;
+      }
       if (
         choice.data &&
         choice.structure &&
@@ -475,7 +483,7 @@ const state: State = {
       description: '同步系统字典、菜单与用户表结构',
       source: previewPlan.source,
       targets: previewPlan.targets.map((t) => t.ref),
-      tables: previewPlan.tables,
+      tables: previewPlan.tables.map((table) => ({ ...table, structure: true, data: false })),
     },
   ],
   records: [
@@ -603,7 +611,7 @@ export const previewBridge: DesktopBridge = {
           { name: 'order_items', comment: '订单明细表' },
           { name: 'order_refund_schedule_with_a_long_table_name', comment: '长表名截断示例' },
         ];
-        // 示例目标库 shop_b 缺少部分表，用于演示“目标缺失”标注与自动勾选结构。
+        // 示例目标库 shop_b 缺少部分表，用于演示缺表标注与数据同步自动跳过。
         result =
           database === 'shop_b' ? all.filter((t) => !['orders', 'sys_menu'].includes(t.name)) : all;
         break;

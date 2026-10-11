@@ -115,6 +115,7 @@ public final class Model {
     public Map<String, Object> connectionIdentity = new LinkedHashMap<>();
     public Map<String, Table> before = new LinkedHashMap<>();
     public List<Change> changes = new ArrayList<>();
+    public List<String> skippedTables = new ArrayList<>();
   }
 
   public static class SyncPlan {

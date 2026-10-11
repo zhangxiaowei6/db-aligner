@@ -4,10 +4,24 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppearanceProvider, useAppearance } from './appearance';
 import { BusinessProvider, useController, type Controller } from './controller';
-import { dbOptions, initialModel, selection, type TreeNode } from './model';
+import {
+  recordRefreshKey,
+  rollbackRefreshKey,
+  tableRefreshKey,
+  dbOptions,
+  initialModel,
+  selection,
+  type TreeNode,
+} from './model';
 import { previewPlan, previewTable } from './preview';
 import { DiffPage, ScopePage } from './pages/Sync';
-import { ConnectionsPage, ImportPage, WorkspacesPage, TemplatesPage } from './pages/Management';
+import {
+  ConnectionEditor,
+  ConnectionsPage,
+  ImportPage,
+  WorkspacesPage,
+  TemplatesPage,
+} from './pages/Management';
 import { HistoryPage, RecordPage } from './pages/Records';
 import type { Appearance, State, SyncTemplate } from './types';
 import { CompareConfirmation } from './components/CompareConfirmation';
@@ -48,6 +62,7 @@ function mount(children?: React.ReactNode) {
       <BusinessProvider>
         <Probe />
         {children}
+        <ConnectionEditor />
       </BusinessProvider>
     </AppearanceProvider>,
   );
@@ -126,7 +141,7 @@ beforeEach(() => {
       description: '',
       source: { connectionId: 'source', database: 'a' },
       targets: [{ connectionId: 'source', database: 'b' }],
-      tables: [{ name: 'dict', structure: true, data: true, keyColumns: ['code'] }],
+      tables: [{ name: 'dict', structure: true, data: false, keyColumns: ['code'] }],
     },
   ];
   bridge.invoke.mockImplementation(async (method: string, params: Record<string, unknown> = {}) => {
@@ -153,20 +168,30 @@ afterEach(() => {
 });
 
 it('shows refresh progress, prevents duplicate requests, reports completion and allows failed retries', async () => {
-  await ready(<DatabaseOptionsStatus />);
+  await ready(<DatabaseOptionsStatus scope="test" />);
   const normal = bridge.invoke.getMockImplementation()!;
   const pending = deferred<string[]>();
   bridge.invoke.mockImplementation((method, params) =>
     method === 'databases.list' ? pending.promise : normal(method, params),
   );
   bridge.invoke.mockClear();
-  let refresh!: Promise<void>;
+  let refresh!: ReturnType<Controller['refreshDatabaseOptions']>;
   act(() => {
-    refresh = controller.refreshDatabaseOptions();
+    refresh = controller.refreshDatabaseOptions(
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!,
+    );
   });
-  expect(controller.m.refreshing.databases).toBe(true);
+  expect(
+    controller.m.refreshing[
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!
+    ],
+  ).toBe(true);
   expect(screen.getByRole('button', { name: /刷新数据库/ }).className).toContain('ant-btn-loading');
-  await act(async () => controller.refreshDatabaseOptions());
+  await act(async () =>
+    controller.refreshDatabaseOptions(
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!,
+    ),
+  );
   expect(bridge.invoke.mock.calls.filter(([method]) => method === 'databases.list')).toHaveLength(
     1,
   );
@@ -174,8 +199,16 @@ it('shows refresh progress, prevents duplicate requests, reports completion and 
     pending.resolve(['fresh']);
     await refresh;
   });
-  expect(controller.m.refreshing.databases).toBe(false);
-  expect(controller.m.refreshResults.databases).toEqual({
+  expect(
+    controller.m.refreshing[
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!
+    ],
+  ).toBe(false);
+  expect(
+    controller.m.refreshResults[
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!
+    ],
+  ).toEqual({
     status: 'success',
     message: '刷新数据库成功',
   });
@@ -191,26 +224,48 @@ it('shows refresh progress, prevents duplicate requests, reports completion and 
   bridge.invoke.mockImplementation((method, params) =>
     method === 'databases.list' ? Promise.reject(new Error('denied')) : normal(method, params),
   );
-  await act(async () => controller.refreshDatabaseOptions());
-  expect(controller.m.refreshing.databases).toBe(false);
+  await act(async () =>
+    controller.refreshDatabaseOptions(
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!,
+    ),
+  );
+  expect(
+    controller.m.refreshing[
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!
+    ],
+  ).toBe(false);
   expect(controller.m.dbErrors.source).toBe('denied');
-  expect(controller.m.refreshResults.databases.status).toBe('error');
+  expect(
+    controller.m.refreshResults[
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!
+    ].status,
+  ).toBe('error');
   expect(
     screen.getByRole('button', { name: /刷新数据库/ }).querySelector('.anticon-close'),
   ).toBeTruthy();
   bridge.invoke.mockImplementation(normal);
-  await act(async () => controller.refreshDatabaseOptions());
+  await act(async () =>
+    controller.refreshDatabaseOptions(
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!,
+    ),
+  );
   expect(controller.m.dbErrors.source).toBe('');
-  expect(controller.m.refreshResults.databases.status).toBe('success');
+  expect(
+    controller.m.refreshResults[
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!
+    ].status,
+  ).toBe('success');
 });
 
 it('clears refresh progress on workspace change and discards late completion', async () => {
-  await ready(<DatabaseOptionsStatus />);
+  await ready(<DatabaseOptionsStatus scope="test" />);
   const pending = deferred<string[]>();
   bridge.invoke.mockImplementationOnce(() => pending.promise);
-  let refresh!: Promise<void>;
+  let refresh!: ReturnType<Controller['refreshDatabaseOptions']>;
   act(() => {
-    refresh = controller.refreshDatabaseOptions();
+    refresh = controller.refreshDatabaseOptions(
+      document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!,
+    );
   });
   act(() => controller.switchWorkspace('second'));
   await act(async () => {
@@ -220,6 +275,219 @@ it('clears refresh progress on workspace change and discards late completion', a
   expect(controller.m.refreshing).toEqual({});
   expect(controller.m.dbCache).toEqual({});
   expect(screen.queryByText('刷新数据库成功')).toBeNull();
+});
+
+describe('fresh connection tree metadata', () => {
+  const connection: TreeNode = {
+    key: 'source',
+    title: '来源',
+    type: 'connection',
+    connectionId: 'source',
+  };
+  const database: TreeNode = {
+    key: 'source/a',
+    title: 'a',
+    type: 'database',
+    ref: { connectionId: 'source', database: 'a' },
+  };
+
+  it('does not overwrite a newer opened model with a late manual refresh', async () => {
+    await ready();
+    const table: TreeNode = { ...database, type: 'table', table: 'dict' };
+    await act(async () => controller.openTable(table));
+    const normal = bridge.invoke.getMockImplementation()!;
+    const old = deferred<typeof previewTable>();
+    let reads = 0;
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'table.get'
+        ? ++reads === 1
+          ? old.promise
+          : Promise.resolve({ ...previewTable, comment: '最新结构' })
+        : normal(method, params),
+    );
+    let refresh!: ReturnType<Controller['refreshDatabaseOptions']>;
+    act(() => {
+      refresh = controller.refreshDatabase(database);
+    });
+    await waitFor(() => expect(reads).toBe(1));
+    await act(async () => controller.openTable(table));
+    await act(async () => {
+      old.resolve({ ...previewTable, comment: '旧结构' });
+      await refresh;
+    });
+    expect(controller.m.currentTable?.model.comment).toBe('最新结构');
+  });
+
+  it('discards database refresh data after the connection configuration changes', async () => {
+    await ready();
+    await act(async () => controller.loadTree(database));
+    const normal = bridge.invoke.getMockImplementation()!;
+    const pending = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'tables.list' ? pending.promise : normal(method, params),
+    );
+    let refresh!: ReturnType<Controller['refreshDatabaseOptions']>;
+    act(() => {
+      refresh = controller.refreshDatabase(database);
+      controller.commit((s) => ({
+        ...s,
+        state: {
+          ...s.state,
+          connections: s.state.connections.map((connection) => ({
+            ...connection,
+            host: '192.0.2.99',
+          })),
+        },
+      }));
+    });
+    await act(async () => {
+      pending.resolve([{ name: 'stale', comment: '' }]);
+      await refresh;
+    });
+    expect(controller.m.treeChildren['source/a'][0].table).toBe('dict');
+    expect(controller.m.refreshResults['database:source/a']).toBeUndefined();
+  });
+
+  it('queries again on every forced expansion and clears old descendants while loading', async () => {
+    await ready();
+    const normal = bridge.invoke.getMockImplementation()!;
+    let databases = ['a'];
+    let tables = [{ name: 'old', comment: '' }];
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'databases.list'
+        ? Promise.resolve(databases)
+        : method === 'tables.list'
+          ? Promise.resolve(tables)
+          : normal(method, params),
+    );
+    bridge.invoke.mockClear();
+    await act(async () => {
+      await controller.loadTree(connection, true);
+      await controller.loadTree(database, true);
+    });
+    tables = [{ name: 'new', comment: '' }];
+    await act(async () => controller.loadTree(database, true));
+    expect(controller.m.treeChildren['source/a'].map((node) => node.table)).toEqual(['new']);
+    databases = ['a', 'new_database'];
+    await act(async () => controller.loadTree(connection, true));
+    expect(controller.m.treeChildren.source.map((node) => node.title)).toEqual([
+      'a',
+      'new_database',
+    ]);
+    expect(controller.m.treeChildren['source/a']).toBeUndefined();
+    expect(bridge.invoke.mock.calls.filter(([method]) => method === 'databases.list')).toHaveLength(
+      2,
+    );
+    expect(bridge.invoke.mock.calls.filter(([method]) => method === 'tables.list')).toHaveLength(2);
+    const pending = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'tables.list' ? pending.promise : normal(method, params),
+    );
+    let loading!: Promise<void>;
+    act(() => {
+      loading = controller.loadTree(database, true);
+    });
+    expect(controller.m.treeChildren['source/a']).toBeUndefined();
+    await act(async () => {
+      pending.resolve([{ name: 'latest', comment: '' }]);
+      await loading;
+    });
+    expect(controller.m.treeChildren['source/a'][0].table).toBe('latest');
+  });
+
+  it('refreshes the table list and open structure once, then closes a deleted table', async () => {
+    await ready();
+    await act(async () => controller.openTable({ ...database, type: 'table', table: 'dict' }));
+    const normal = bridge.invoke.getMockImplementation()!;
+    const pending = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'tables.list'
+        ? pending.promise
+        : method === 'table.get'
+          ? Promise.resolve({ ...previewTable, comment: '新结构' })
+          : normal(method, params),
+    );
+    bridge.invoke.mockClear();
+    let refresh!: ReturnType<Controller['refreshDatabaseOptions']>;
+    act(() => {
+      refresh = controller.refreshDatabase(database);
+    });
+    await act(async () => controller.refreshDatabase(database));
+    expect(controller.m.refreshing['database:source/a']).toBe(true);
+    expect(bridge.invoke.mock.calls.filter(([method]) => method === 'tables.list')).toHaveLength(1);
+    await act(async () => {
+      pending.resolve([
+        { name: 'dict', comment: '' },
+        { name: 'added', comment: '' },
+      ]);
+      await refresh;
+    });
+    expect(controller.m.currentTable?.model.comment).toBe('新结构');
+    expect(controller.m.treeChildren['source/a'].map((node) => node.table)).toEqual([
+      'dict',
+      'added',
+    ]);
+    expect(controller.m.refreshResults['database:source/a'].status).toBe('success');
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'tables.list'
+        ? Promise.resolve([{ name: 'added', comment: '' }])
+        : normal(method, params),
+    );
+    await act(async () => controller.refreshDatabase(database));
+    expect(controller.m.currentTable).toBeUndefined();
+    expect(controller.m.page).toBe('connections');
+  });
+
+  it('preserves the last successful list on manual refresh failure and allows retry', async () => {
+    await ready();
+    await act(async () => controller.loadTree(database));
+    const prior = controller.m.treeChildren['source/a'];
+    const normal = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'tables.list' ? Promise.reject(new Error('denied')) : normal(method, params),
+    );
+    await act(async () => controller.refreshDatabase(database));
+    expect(controller.m.treeChildren['source/a']).toEqual(prior);
+    expect(controller.m.refreshResults['database:source/a']).toMatchObject({
+      status: 'error',
+      message: '刷新 a 数据表失败：denied',
+    });
+    bridge.invoke.mockImplementation(normal);
+    await act(async () => controller.refreshDatabase(database));
+    expect(controller.m.refreshResults['database:source/a'].status).toBe('success');
+  });
+
+  it('discards an older expansion after refresh, and refresh results after a workspace change', async () => {
+    await ready();
+    const normal = bridge.invoke.getMockImplementation()!;
+    const pending = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockImplementationOnce(() => pending.promise);
+    let loading!: Promise<void>;
+    act(() => {
+      loading = controller.loadTree(database, true);
+    });
+    await act(async () => controller.refreshDatabase(database));
+    await act(async () => {
+      pending.resolve([{ name: 'stale', comment: '' }]);
+      await loading;
+    });
+    expect(controller.m.treeChildren['source/a'][0].table).toBe('dict');
+    const late = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'tables.list' ? late.promise : normal(method, params),
+    );
+    let refresh!: ReturnType<Controller['refreshDatabaseOptions']>;
+    act(() => {
+      refresh = controller.refreshDatabase(database);
+      controller.switchWorkspace('second');
+    });
+    await act(async () => {
+      late.resolve([{ name: 'stale', comment: '' }]);
+      await refresh;
+    });
+    expect(controller.m.treeChildren).toEqual({});
+    expect(controller.m.refreshResults).toEqual({});
+  });
 });
 
 it('submits a group move once and reloads the saved order without changing member discovery', async () => {
@@ -306,10 +574,11 @@ describe('comparison confirmation and cancellation', () => {
         sourceKey: 'source/a',
         targetKeys: ['source/b'],
         tableSearch: 'dict',
+        scopeMode: data ? 'data' : 'structure',
         scopeTables: ['dict', 'hidden'].map((name) => ({
           name,
           comment: '',
-          structure: true,
+          structure: !data,
           data,
           keyColumns: [],
           keyText: '',
@@ -354,6 +623,7 @@ describe('comparison confirmation and cancellation', () => {
     );
     act(() =>
       controller.updateScope('dict', {
+        structure: true,
         structureOptions: {
           columns: false,
           columnOrder: false,
@@ -454,7 +724,7 @@ describe('comparison confirmation and cancellation', () => {
       await screen.findByText('有比较任务正在运行，关闭客户端会中断比较并丢弃本次结果。'),
     ).toBeTruthy();
     expect(screen.queryByRole('region', { name: '比较进度' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: /取\s*消/ }));
+    await userEvent.click(screen.getByRole('button', { name: /^取\s*消$/ }));
     await waitFor(() => expect(controller.m.compareTask?.status).toBe('COMPLETED'), {
       timeout: 4000,
     });
@@ -539,7 +809,7 @@ describe('comparison confirmation and cancellation', () => {
 });
 
 describe('React business state and protocol', () => {
-  it('toggles structure and data independently and only changes the current filtered tables', async () => {
+  it('toggles only filtered tables and keeps the other mode selection independent', async () => {
     await ready(<ScopePage />);
     act(() =>
       controller.commit((s) => ({
@@ -565,15 +835,19 @@ describe('React business state and protocol', () => {
         ],
       })),
     );
-    await userEvent.click(screen.getByRole('button', { name: /结\s*构$/ }));
+    await userEvent.click(screen.getByRole('button', { name: '全选搜索结果' }));
     expect(controller.m.scopeTables.map((table) => table.structure)).toEqual([true, true]);
     expect(controller.m.scopeTables.map((table) => table.data)).toEqual([false, false]);
-    expect(screen.getByRole('button', { name: /结\s*构$/ }).getAttribute('aria-pressed')).toBe(
-      'true',
-    );
-    await userEvent.click(screen.getByRole('button', { name: /结\s*构$/ }));
+    expect(
+      screen.getByRole('button', { name: '取消选择搜索结果' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    await userEvent.click(screen.getByRole('button', { name: '取消选择搜索结果' }));
     expect(controller.m.scopeTables.map((table) => table.structure)).toEqual([false, true]);
-    await userEvent.click(screen.getByRole('button', { name: /数\s*据$/ }));
+    await userEvent.click(screen.getByRole('tab', { name: '同步数据' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索表' }), {
+      target: { value: 'visible' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: '全选搜索结果' }));
     expect(controller.m.scopeTables.map((table) => table.data)).toEqual([true, false]);
   });
   it('assigns a stable id to a connection saved directly from the empty management page and invalidates old tree responses', async () => {
@@ -789,6 +1063,8 @@ describe('React business state and protocol', () => {
     await ready(<ConnectionsPage />);
     expect(screen.queryByRole('dialog')).toBeNull();
     await userEvent.click(screen.getByRole('cell', { name: '来源' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '编辑连接 来源' }));
     const dialog = await screen.findByRole('dialog', { name: '编辑连接' });
     expect(dialog.textContent).not.toContain('删除');
     await userEvent.clear(screen.getByLabelText('连接名称', { exact: true }));
@@ -796,7 +1072,7 @@ describe('React business state and protocol', () => {
     await userEvent.click(screen.getByRole('button', { name: /^取\s*消$/ }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(controller.m.connectionForm.password).toBe('');
-    await userEvent.click(screen.getByRole('cell', { name: '来源' }));
+    await userEvent.click(screen.getByRole('button', { name: '编辑连接 来源' }));
     expect(screen.getByLabelText('连接名称', { exact: true }).getAttribute('value')).toBe('来源');
     bridge.invoke.mockRejectedValueOnce(new Error('save failed'));
     await userEvent.click(screen.getByRole('button', { name: '保存连接' }));
@@ -1035,7 +1311,7 @@ describe('React business state and protocol', () => {
     act(() => controller.editConnection(state.connections[0]));
     const pending = deferred<{ serverVersion: string }>();
     bridge.invoke.mockImplementationOnce(() => pending.promise);
-    let testing: Promise<void>;
+    let testing: ReturnType<Controller['testConnection']>;
     act(() => {
       testing = controller.testConnection();
     });
@@ -1046,6 +1322,65 @@ describe('React business state and protocol', () => {
     });
     expect(controller.m.connectionTest).toBeUndefined();
   });
+  it.each(['structure', 'data'] as const)(
+    'shows only the %s diff tab and falls back from an unavailable active tab',
+    async (mode) => {
+      await ready(<DiffPage />);
+      const plan = structuredClone(previewPlan);
+      plan.targets.forEach((target) => {
+        target.changes = target.changes.filter(
+          (change) => (mode === 'data') === change.kind.endsWith('_ROW'),
+        );
+      });
+      act(() =>
+        controller.commit((s) => ({
+          ...s,
+          plan,
+          diffTab: mode === 'data' ? 'structure' : 'data',
+        })),
+      );
+      const label = mode === 'data' ? '基础数据' : '表结构';
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([label]);
+      expect(screen.getByRole('tab', { name: label }).getAttribute('aria-selected')).toBe('true');
+      expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0);
+      fireEvent.change(screen.getByPlaceholderText('筛选表或变更项'), {
+        target: { value: 'no-matching-change' },
+      });
+      expect(screen.getByRole('tab', { name: label })).toBeTruthy();
+      act(() => {
+        plan.targets.forEach((target) => {
+          target.changes = [];
+        });
+        controller.set('plan', { ...plan });
+      });
+      expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    },
+  );
+  it.each(['structure', 'data'] as const)(
+    'keeps a blocked-only %s plan on its corresponding tab',
+    async (mode) => {
+      await ready(<DiffPage />);
+      const plan = structuredClone(previewPlan);
+      plan.tables.forEach((table) => {
+        table.structure = mode === 'structure';
+        table.data = mode === 'data';
+      });
+      plan.targets = [plan.targets[0]];
+      plan.targets[0].changes = [
+        {
+          ...plan.targets[0].changes[0],
+          kind: 'BLOCKED',
+          blocked: true,
+          reason: '测试阻止原因',
+        },
+      ];
+      act(() => controller.set('plan', plan));
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+        mode === 'data' ? '基础数据' : '表结构',
+      ]);
+      expect(screen.getByText('测试阻止原因')).toBeTruthy();
+    },
+  );
   it('renders half selection and disables blocked changes using the real Ant Design checkbox', async () => {
     await ready(<DiffPage />);
     const plan = structuredClone(previewPlan);
@@ -1603,7 +1938,7 @@ describe('new sync sessions and progress summaries', () => {
 describe('connection port input', () => {
   it('preserves out-of-range raw text on blur and Enter and prevents testing and saving', async () => {
     await ready(<ConnectionsPage />);
-    await userEvent.click(screen.getByRole('cell', { name: '来源' }));
+    await userEvent.click(screen.getByRole('button', { name: '编辑连接 来源' }));
     const port = screen.getByLabelText('端口') as HTMLInputElement;
     expect(port.value).toBe('3306');
     await userEvent.clear(port);
@@ -1677,6 +2012,28 @@ describe('export preview retention', () => {
     ref: { connectionId: 'source', database: 'a' },
     table: 'dict',
   };
+  it('generates and saves SQL while an unrelated request remains pending', async () => {
+    await ready();
+    await act(async () => controller.beginExport(exportNode));
+    const pending = deferred<void>();
+    let unrelated!: Promise<void | undefined>;
+    act(() => {
+      unrelated = controller.action(() => pending.promise);
+    });
+    bridge.invoke.mockResolvedValueOnce({ sql: 'CREATE TABLE `dict` (`id` int);' });
+    await act(async () => controller.updateExport());
+    expect(controller.m.exportSql).toContain('CREATE TABLE');
+    bridge.invoke.mockResolvedValueOnce(true);
+    await act(async () => controller.saveSql());
+    expect(bridge.invoke).toHaveBeenCalledWith('files.save', {
+      name: controller.m.exportFilename,
+      content: controller.m.exportSql,
+    });
+    await act(async () => {
+      pending.resolve();
+      await unrelated;
+    });
+  });
   it('clears generated SQL when options, selection or source change, and replaces it after regeneration', async () => {
     await ready();
     await act(async () => controller.beginExport(exportNode));
@@ -1733,6 +2090,49 @@ describe('export preview retention', () => {
 });
 
 describe('missing target tables in the sync scope', () => {
+  it('keeps separate selections, search, keys and refresh feedback for each scope tab', async () => {
+    await scope();
+    act(() => {
+      controller.updateScope('dict', { structure: true, keyText: 'code' });
+      controller.updateScope('orders', { structure: true });
+      controller.set('tableSearch', 'dict');
+    });
+    expect(screen.queryByRole('radio', { name: '同步数据' })).toBeNull();
+    expect(screen.getByText('删除与高风险结构变更默认不选中，在差异预览中逐项确认。')).toBeTruthy();
+    expect(screen.queryByText(/数据同步仅处理源库/)).toBeNull();
+    await userEvent.click(screen.getByRole('tab', { name: '同步数据' }));
+    expect(screen.getByText(/数据同步仅处理源库/)).toBeTruthy();
+    expect(screen.queryByText('删除与高风险结构变更默认不选中，在差异预览中逐项确认。')).toBeNull();
+    expect(controller.m.scopeMode).toBe('data');
+    expect(controller.m.scopeTables.every((table) => !table.data && !table.structure)).toBe(true);
+    expect(controller.m.tableSearch).toBe('');
+    expect(controller.m.scopeTables[0].keyText).toBe('');
+    act(() => {
+      controller.updateScope('orders', { data: true, keyText: 'id' });
+      controller.set('tableSearch', 'orders');
+    });
+    await act(async () => controller.setTargets(['source/b']));
+    await act(async () => controller.refreshTargetTables());
+    expect(
+      Object.entries(controller.m.refreshResults).find(([key]) =>
+        key.startsWith('targetTables:data:'),
+      )?.[1].status,
+    ).toBe('success');
+    expect(screen.queryByRole('checkbox', { name: 'orders 表结构' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: /结构细项/ })).toBeNull();
+    await userEvent.click(screen.getByRole('tab', { name: '同步结构' }));
+    expect(controller.m.tableSearch).toBe('dict');
+    expect(controller.m.refreshResults['targetTables:structure']).toBeUndefined();
+    expect(controller.m.scopeTables.every((table) => table.structure && !table.data)).toBe(true);
+    expect(screen.queryByRole('checkbox', { name: 'dict 基础数据' })).toBeNull();
+    expect(screen.queryByRole('columnheader', { name: /匹配键/ })).toBeNull();
+    expect(controller.m.scopeTables[0].keyText).toBe('code');
+    await userEvent.click(screen.getByRole('tab', { name: '同步数据' }));
+    expect(controller.m.tableSearch).toBe('orders');
+    expect(controller.m.scopeTables.map((table) => table.data)).toEqual([false, true]);
+    expect(controller.m.scopeTables[1].keyText).toBe('id');
+  });
+
   async function scope() {
     await ready(
       <>
@@ -1757,7 +2157,81 @@ describe('missing target tables in the sync scope', () => {
     );
   }
 
-  it('completes partial structure only for newly enabled data and preserves later overrides', async () => {
+  it('selects all pages through the toolbar and header, while search selection leaves other rows alone', async () => {
+    await scope();
+    act(() =>
+      controller.set(
+        'scopeTables',
+        Array.from({ length: 32 }, (_, index) => ({
+          name: `table_${index}`,
+          comment: '',
+          structure: false,
+          data: false,
+          keyColumns: [],
+          keyText: '',
+        })),
+      ),
+    );
+    fireEvent.click(screen.getByText('全选所有表', { exact: true }));
+    expect(controller.m.scopeTables.every((table) => table.structure)).toBe(true);
+    expect(screen.getByText('取消全选', { exact: true })).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('table_0 表结构'));
+    expect(screen.getByText('全选所有表', { exact: true })).toBeTruthy();
+    expect(document.querySelector('.ant-checkbox-indeterminate')).not.toBeNull();
+    fireEvent.click(screen.getAllByLabelText('选择当前列表全部表')[0]);
+    expect(controller.m.scopeTables.every((table) => table.structure)).toBe(true);
+    fireEvent.change(screen.getByLabelText('搜索表'), {
+      target: { value: 'table_0' },
+    });
+    fireEvent.click(screen.getByText('取消选择搜索结果', { exact: true }));
+    expect(controller.m.scopeTables[0].structure).toBe(false);
+    expect(controller.m.scopeTables.slice(1).every((table) => table.structure)).toBe(true);
+    fireEvent.change(screen.getByLabelText('搜索表'), {
+      target: { value: 'no-match' },
+    });
+    expect(
+      (screen.getByRole('button', { name: '全选搜索结果' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText('没有匹配的表，请调整搜索内容')).toBeTruthy();
+  });
+
+  it('resets both drafts on source change and populates the current tab after a late table list', async () => {
+    await scope();
+    act(() => {
+      controller.updateScope('dict', { structure: true });
+      controller.set('tableSearch', 'dict');
+      controller.setScopeMode('data');
+      controller.updateScope('orders', { data: true });
+      controller.set('tableSearch', 'orders');
+    });
+    const pending = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockReturnValueOnce(pending.promise);
+    let loading!: Promise<boolean | void>;
+    act(() => {
+      loading = controller.loadScope('source/b');
+    });
+    act(() => {
+      controller.setScopeMode('structure');
+      controller.setScopeMode('data');
+      controller.setScopeMode('structure');
+    });
+    await act(async () => {
+      pending.resolve([{ name: 'new_table', comment: '' }]);
+      await loading;
+    });
+    expect(controller.m.scopeTables.map((table) => table.name)).toEqual(['new_table']);
+    expect(controller.m.tableSearch).toBe('');
+    act(() => controller.setScopeMode('data'));
+    expect(controller.m.scopeTables.map((table) => table.name)).toEqual(['new_table']);
+    expect(controller.m.scopeTables.every((table) => !table.structure && !table.data)).toBe(true);
+    expect(controller.m.tableSearch).toBe('');
+    await act(async () => controller.switchWorkspace('second'));
+    expect(controller.m.scopeDrafts).toEqual({});
+    act(() => controller.setScopeMode('structure'));
+    expect(controller.m.scopeTables).toEqual([]);
+  });
+
+  it('keeps structure options without auto-enabling structure for missing data tables', async () => {
     await scope();
     await act(async () => controller.setTargets(['source/b']));
     act(() =>
@@ -1768,12 +2242,18 @@ describe('missing target tables in the sync scope', () => {
     );
     act(() => controller.updateScope('orders', { data: true }));
     expect(controller.m.scopeTables[1].structureOptions).toEqual(allStructureOptions);
+    act(() => controller.setScopeMode('structure'));
+    expect(controller.m.scopeTables[1].structureOptions).toEqual({
+      ...allStructureOptions,
+      indexes: false,
+    });
+    act(() => controller.setScopeMode('data'));
     act(() => controller.updateScope('orders', { structure: false }));
     act(() => controller.updateScope('dict', { data: true }));
     await act(async () => controller.loadTargetTables(true));
     expect(controller.m.scopeTables[1].structure).toBe(false);
     await act(async () => controller.compare());
-    expect(screen.getByText(/仅数据同步无法写入/)).toBeTruthy();
+    expect(screen.getByText(/将在上述目标库自动跳过/)).toBeTruthy();
   });
 
   it('deduplicates target reads and ignores completion after scope reset', async () => {
@@ -1850,41 +2330,44 @@ describe('missing target tables in the sync scope', () => {
     expect(controller.m.targetTablesLoading['source/b']).toBe(false);
   });
 
-  it('normalizes missing data tables from templates and distinguishes structure-only and partial selections', async () => {
+  it('requires a mode for mixed legacy templates and preserves partial structure settings', async () => {
     await scope();
-    await act(async () =>
-      controller.applyTemplate({
-        ...state.templates[0],
-        tables: [
-          {
-            name: 'dict',
-            data: true,
-            structure: true,
-            keyColumns: [],
-            structureOptions: { ...allStructureOptions, columns: false },
-          },
-        ],
-      }),
-    );
-    expect(controller.m.scopeTables[0].structureOptions?.columns).toBe(false); // Existing target table.
+    const template = {
+      ...state.templates[0],
+      tables: [
+        {
+          name: 'dict',
+          data: true,
+          structure: true,
+          keyColumns: [],
+          structureOptions: { ...allStructureOptions, columns: false },
+        },
+      ],
+    };
+    await act(async () => controller.applyTemplate(template));
+    const dialog = screen.getByRole('dialog', { name: '请选择旧模板的同步类型' });
+    expect(controller.m.scopeTables.every((table) => !table.data && !table.structure)).toBe(true);
+    await userEvent.click(within(dialog).getByRole('radio', { name: '同步数据' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '应用所选类型' }));
+    await waitFor(() => expect(controller.m.appliedTemplate?.id).toBe(template.id));
+    expect(controller.m.scopeMode).toBe('data');
+    expect(controller.m.scopeTables[0].structure).toBe(false);
+    expect(controller.m.scopeTables[0].data).toBe(true);
+    expect(controller.m.scopeTables[0].structureOptions?.columns).toBe(false);
     bridge.invoke.mockResolvedValueOnce([]);
     await act(async () => controller.loadTargetTables(true));
-    expect(controller.m.scopeTables[0].structureOptions).toEqual(allStructureOptions);
-    act(() => {
-      controller.updateScope('dict', { data: false });
-      controller.compare();
-    });
-    expect(screen.getByText(/将创建表$/)).toBeTruthy();
-    act(() => {
-      controller.dismissCompareConfirmation();
+    expect(controller.m.scopeTables[0].structureOptions?.columns).toBe(false);
+    act(() => controller.setScopeMode('structure'));
+    act(() =>
       controller.updateScope('dict', {
+        structure: true,
         structureOptions: { ...allStructureOptions, columns: false },
-      });
-      controller.compare();
-    });
+      }),
+    );
+    await act(async () => controller.compare());
     expect(screen.getByText(/结构细项不足/)).toBeTruthy();
   });
-  it('flags tables missing in targets, auto-enables full structure for data sync, and annotates the confirmation', async () => {
+  it('flags missing targets, keeps data mode exclusive, and explains skipping in the confirmation', async () => {
     const original = bridge.invoke.getMockImplementation()!;
     bridge.invoke.mockImplementation(async (method, params) => {
       if (method === 'tables.list') {
@@ -1928,7 +2411,7 @@ describe('missing target tables in the sync scope', () => {
       controller.updateScope('orders', { data: true });
     });
     const orders = controller.m.scopeTables.find((t) => t.name === 'orders')!;
-    expect(orders.structure).toBe(true);
+    expect(orders.structure).toBe(false);
     expect(orders.structureOptions).toEqual(allStructureOptions);
     // 目标库存在该表时不自动扩展范围。
     await act(async () => {
@@ -1941,13 +2424,12 @@ describe('missing target tables in the sync scope', () => {
     });
     expect(controller.m.scopeTables.find((t) => t.name === 'orders')!.structure).toBe(false);
     await act(async () => {
-      controller.updateScope('orders', { structure: true });
       controller.compare();
     });
     const pending = controller.m.compareConfirmation!;
     expect(pending.tables.find((t) => t.name === 'orders')?.missingTargets).toEqual(['source/b']);
     expect(pending.tables.find((t) => t.name === 'dict')?.missingTargets).toEqual([]);
-    expect(await screen.findByText(/将创建表并复制全部数据/)).toBeTruthy();
+    expect(await screen.findByText(/将在上述目标库自动跳过/)).toBeTruthy();
     expect(screen.queryByText(/仅数据同步无法写入/)).toBeNull();
   });
 });
@@ -2056,7 +2538,7 @@ describe('group editing and creation', () => {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '连接分组' }));
     await userEvent.type(await screen.findByLabelText('新增连接分组名称'), '新测试组');
     await userEvent.click(screen.getByRole('button', { name: /^新增$/ }));
-    await screen.findByText('分组保存失败');
+    await screen.findByText('分组保存失败', {}, { timeout: 5000 });
     expect((screen.getByLabelText('新增连接分组名称') as HTMLInputElement).value).toBe('新测试组');
     await userEvent.click(screen.getByRole('button', { name: /^新增$/ }));
     await waitFor(() => expect(controller.m.connectionForm.group).toBe('新测试组'));
@@ -2095,6 +2577,9 @@ describe('group editing and creation', () => {
 describe('compact connection row actions', () => {
   it('opens the selected connection with edit and keeps test details accessible without visible success feedback', async () => {
     await ready(<ConnectionsPage />);
+    await userEvent.click(screen.getByRole('cell', { name: '来源' }));
+    await userEvent.dblClick(screen.getByRole('cell', { name: '来源' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('button', { name: '编辑分组' })).toBeNull();
     expect(screen.queryByRole('button', { name: '更换分组 来源' })).toBeNull();
     const edit = screen.getByRole('button', { name: '编辑连接 来源' });
@@ -2130,7 +2615,7 @@ describe('compact connection row actions', () => {
 });
 
 describe('workspace table editing', () => {
-  it('opens editing by button or double click, discards canceled drafts and creates through the same dialog', async () => {
+  it('opens editing only by button, discards canceled drafts and creates through the same dialog', async () => {
     await ready(<WorkspacesPage />);
     expect(screen.queryByRole('dialog')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: '编辑工作区 测试项目' }));
@@ -2143,7 +2628,10 @@ describe('workspace table editing', () => {
     await userEvent.type(screen.getByLabelText('工作区名称'), '未保存');
     expect(state.workspaces[0].name).toBe('测试项目');
     act(() => controller.closeWorkspace());
+    await userEvent.click(screen.getByText('第二项目', { exact: true }));
     await userEvent.dblClick(screen.getByText('第二项目', { exact: true }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '编辑工作区 第二项目' }));
     expect(controller.m.workspaceForm.id).toBe('second');
     expect((screen.getByLabelText('工作区名称') as HTMLInputElement).value).toBe('第二项目');
     act(() => controller.closeWorkspace());
@@ -2247,7 +2735,10 @@ describe('template table editing', () => {
     expect(screen.getByRole('button', { name: '删除模板 模板' })).toBeTruthy();
     act(() => controller.updateTemplateTable('dict', { keyText: '草稿键' }));
     act(() => controller.closeTemplate());
+    await userEvent.click(screen.getByText('模板', { exact: true }));
     await userEvent.dblClick(screen.getByText('模板', { exact: true }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '编辑模板 模板' }));
     expect(controller.m.templateForm.tables[0].keyText).toBe('code');
     act(() => controller.closeTemplate());
     await userEvent.click(screen.getByRole('button', { name: /新建模板/ }));
@@ -2308,4 +2799,284 @@ it('prefers local rollback scripts independently for each target and retains leg
       'rollbackScripts',
     ),
   ).toEqual(['a/05_rollback_local.sql', 'b/04_rollback.sql']);
+});
+
+describe('module-owned operation feedback', () => {
+  it('does not keep a clicked refresh button spinning in a different workspace', async () => {
+    await ready(<DatabaseOptionsStatus scope="sync" />);
+    const pending = deferred<string[]>();
+    const normal = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'databases.list' ? pending.promise : normal(method, params),
+    );
+    await userEvent.click(screen.getByRole('button', { name: '刷新数据库' }));
+    expect(screen.getByRole('button', { name: /刷新数据库/ }).className).toContain(
+      'ant-btn-loading',
+    );
+    act(() => controller.switchWorkspace('other'));
+    expect(screen.getByRole('button', { name: /刷新数据库/ }).className).not.toContain(
+      'ant-btn-loading',
+    );
+    await act(async () => {
+      pending.resolve(['late']);
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+  });
+  it('preserves tree request protection across a workspace round trip without restoring results', async () => {
+    await ready();
+    const pendingDatabase = deferred<string[]>();
+    const pendingTest = deferred<{ serverVersion: string }>();
+    const normal = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((method, params) => {
+      if (method === 'databases.list') return pendingDatabase.promise;
+      if (method === 'connections.test') return pendingTest.promise;
+      return normal(method, params);
+    });
+    let refresh!: ReturnType<Controller['refreshConnection']>;
+    let test!: ReturnType<Controller['testConnection']>;
+    act(() => {
+      refresh = controller.refreshConnection('source');
+      test = controller.testConnection(state.connections[0], 'tree');
+      controller.switchWorkspace('other');
+      controller.switchWorkspace('default');
+    });
+    expect(controller.m.refreshing['connection:source']).toBe(true);
+    expect(controller.m.connectionTests['tree:source']?.status).toBe('testing');
+    await act(async () => {
+      await controller.refreshConnection('source');
+      await controller.testConnection(state.connections[0], 'tree');
+      pendingDatabase.resolve(['late']);
+      pendingTest.resolve({ serverVersion: 'late' });
+      await Promise.all([refresh, test]);
+    });
+    expect(controller.m.refreshing['connection:source']).toBe(false);
+    expect(controller.m.connectionTests['tree:source']).toBeUndefined();
+    expect(controller.m.refreshResults['connection:source']).toBeUndefined();
+    expect(
+      bridge.invoke.mock.calls.filter(([method]) => method === 'connections.test'),
+    ).toHaveLength(1);
+  });
+  it('keeps database refresh feedback independent while sharing the database cache', async () => {
+    await ready(
+      <>
+        <DatabaseOptionsStatus scope="sync" />
+        <DatabaseOptionsStatus scope="template" />
+        <DatabaseOptionsStatus scope="export" />
+      </>,
+    );
+    const areas = Array.from(document.querySelectorAll('[data-feedback-key]'));
+    const keys = areas.map((area) => area.getAttribute('data-feedback-key')!);
+    const pending = deferred<string[]>();
+    const normal = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'databases.list' ? pending.promise : normal(method, params),
+    );
+    await userEvent.click(
+      within(areas[0] as HTMLElement).getByRole('button', { name: '刷新数据库' }),
+    );
+    for (const area of areas.slice(1)) {
+      const button = within(area as HTMLElement).getByRole('button', { name: '刷新数据库' });
+      expect(button.className).not.toContain('ant-btn-loading');
+      expect(button.hasAttribute('disabled')).toBe(false);
+    }
+    await act(async () => {
+      pending.resolve(['shared-fresh']);
+      await new Promise((resolve) => setTimeout(resolve, 320));
+    });
+    expect(controller.m.dbCache.source).toEqual(['shared-fresh']);
+    expect(controller.m.refreshResults[keys[0]]?.status).toBe('success');
+    expect(controller.m.refreshResults[keys[1]]).toBeUndefined();
+    expect(controller.m.refreshResults[keys[2]]).toBeUndefined();
+  });
+
+  it('does not turn an untouched sync refresh button into a tree refresh indicator', async () => {
+    await ready(<DatabaseOptionsStatus scope="sync" />);
+    const pending = deferred<string[]>();
+    bridge.invoke.mockImplementationOnce(() => pending.promise);
+    let refresh!: ReturnType<Controller['refreshConnection']>;
+    act(() => {
+      refresh = controller.refreshConnection('source');
+    });
+    const button = screen.getByRole('button', { name: '刷新数据库' });
+    expect(controller.m.dbLoading.source).toBe(true);
+    expect(button.className).not.toContain('ant-btn-loading');
+    await act(async () => {
+      pending.resolve(['fresh']);
+      await refresh;
+    });
+    expect(button.querySelector('.anticon-check')).toBeNull();
+    expect(controller.m.dbCache.source).toEqual(['fresh']);
+  });
+
+  it('isolates tree tests from list tests and rejects duplicate tree calls', async () => {
+    await ready(<ConnectionsPage />);
+    const pending = deferred<{ serverVersion: string }>();
+    bridge.invoke.mockImplementationOnce(() => pending.promise);
+    let test!: ReturnType<Controller['testConnection']>;
+    act(() => {
+      test = controller.testConnection(state.connections[0], 'tree');
+    });
+    await act(async () => {
+      await controller.testConnection(state.connections[0], 'tree');
+    });
+    const button = screen.getByRole('button', { name: '测试连接 来源' });
+    expect(button.className).not.toContain('ant-btn-loading');
+    await act(async () => {
+      pending.resolve({ serverVersion: 'isolated' });
+      await test;
+    });
+    expect(controller.m.connectionTests['tree:source']?.status).toBe('success');
+    expect(controller.m.connectionTests.source).toBeUndefined();
+    expect(button.querySelector('.anticon-check')).toBeNull();
+    expect(
+      bridge.invoke.mock.calls.filter(([method]) => method === 'connections.test'),
+    ).toHaveLength(1);
+    expect(document.querySelector('.ant-message-notice')).toBeNull();
+  });
+
+  it('keeps connection editing on the current page and leaves unrelated buttons available', async () => {
+    await ready(<ConnectionsPage />);
+    act(() => {
+      controller.set('page', 'diff');
+      controller.set('sourceKey', 'source/a');
+      controller.set('scopeRemark', 'keep draft');
+      controller.editConnection(state.connections[0], undefined, true);
+    });
+    expect(controller.m.page).toBe('diff');
+    const dialog = screen.getByRole('dialog', { name: '编辑连接' });
+    const pending = deferred<void>();
+    let other!: Promise<void | undefined>;
+    act(() => {
+      other = controller.action(() => pending.promise);
+    });
+    expect(controller.m.busy).toBe(1);
+    const save = within(dialog).getByRole('button', { name: '保存连接' });
+    expect(save.className).not.toContain('ant-btn-loading');
+    expect(save.hasAttribute('disabled')).toBe(false);
+    await userEvent.click(within(dialog).getByRole('button', { name: /^取\s*消$/ }));
+    expect(controller.m.page).toBe('diff');
+    expect(controller.m.scopeRemark).toBe('keep draft');
+    act(() => controller.editConnection(state.connections[0], undefined, true));
+    await act(async () => {
+      await controller.saveConnection();
+      pending.resolve();
+      await other;
+    });
+    expect(controller.m.page).toBe('diff');
+    expect(controller.m.sourceKey).toBe('source/a');
+    expect(controller.m.connectionDialog).toBe(false);
+  });
+});
+
+it('binds script reload feedback to the record view and script tab, rejecting late results', async () => {
+  await ready();
+  const normal = bridge.invoke.getMockImplementation()!;
+  const detail = (id: string) => ({
+    record: {
+      id,
+      workspaceId: 'default',
+      createdAt: '',
+      mode: 'SAVE_ONLY',
+      status: 'UNEXECUTED',
+      remark: '',
+      parentId: '',
+      archivePath: '',
+      selectedIds: [],
+      results: [],
+    },
+    files: ['hash/02_sync.sql', 'hash/04_rollback.sql'],
+    events: [],
+    external: {},
+  });
+  bridge.invoke.mockImplementation(async (method, params) => {
+    if (method === 'record.get') return detail(String(params.id));
+    if (method === 'record.file') return 'fixture SQL';
+    return normal(method, params);
+  });
+  await act(async () => controller.openRecord('first'));
+  await act(async () => controller.refreshRecordScripts());
+  const originalKey = recordRefreshKey(controller.m);
+  expect(controller.m.refreshResults[originalKey]?.status).toBe('success');
+  await act(async () => controller.changeRecordTab('rollbackScripts'));
+  expect(controller.m.refreshResults[recordRefreshKey(controller.m)]).toBeUndefined();
+  await act(async () => controller.changeRecordTab('scripts'));
+  expect(controller.m.refreshResults[recordRefreshKey(controller.m)]).toBeUndefined();
+  // Missing SQL exercises the real asynchronous reload path.
+  act(() => controller.set('recordScripts', {}));
+  const pending = deferred<string>();
+  bridge.invoke.mockImplementation((method, params) => {
+    if (method === 'record.file' && params.id === 'first') return pending.promise;
+    if (method === 'record.get') return Promise.resolve(detail(String(params.id)));
+    if (method === 'record.file') return Promise.resolve('fixture SQL');
+    return normal(method, params);
+  });
+  let reload!: Promise<void>;
+  act(() => {
+    reload = controller.refreshRecordScripts();
+  });
+  await act(async () => controller.openRecord('second'));
+  const currentKey = recordRefreshKey(controller.m);
+  await act(async () => {
+    pending.resolve('late SQL');
+    await reload;
+  });
+  expect(controller.m.detail?.record.id).toBe('second');
+  expect(controller.m.refreshResults[currentKey]).toBeUndefined();
+  expect(controller.m.recordScripts['hash/02_sync.sql']).toBe('fixture SQL');
+  await act(async () => controller.openRecord('first'));
+  expect(recordRefreshKey(controller.m)).not.toBe(originalKey);
+  expect(controller.m.refreshResults[recordRefreshKey(controller.m)]).toBeUndefined();
+});
+
+it('does not inherit refresh results when reopening a table or a rollback preview', async () => {
+  await ready();
+  const node: TreeNode = {
+    key: 'source/a/dict',
+    title: 'dict',
+    type: 'table',
+    table: 'dict',
+    ref: { connectionId: 'source', database: 'a' },
+  };
+  await act(async () => controller.openTable(node));
+  await act(async () => controller.refreshTable());
+  const first = tableRefreshKey(controller.m);
+  expect(controller.m.refreshResults[first]?.status).toBe('success');
+  await act(async () => controller.openTable(node));
+  expect(tableRefreshKey(controller.m)).not.toBe(first);
+  expect(controller.m.refreshResults[tableRefreshKey(controller.m)]).toBeUndefined();
+  const normal = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async (method, params) =>
+    method === 'rollback.preview' ? { recordId: params.id, items: [] } : normal(method, params),
+  );
+  await act(async () => controller.beginRollback('first'));
+  await act(async () => controller.beginRollback('first', true));
+  const rollback = rollbackRefreshKey(controller.m);
+  expect(controller.m.refreshResults[rollback]?.status).toBe('success');
+  await act(async () => controller.beginRollback('second'));
+  expect(controller.m.refreshResults[rollbackRefreshKey(controller.m)]).toBeUndefined();
+  await act(async () => controller.beginRollback('first'));
+  expect(rollbackRefreshKey(controller.m)).not.toBe(rollback);
+  expect(controller.m.refreshResults[rollbackRefreshKey(controller.m)]).toBeUndefined();
+});
+
+it('discards a rollback recheck response after leaving its preview', async () => {
+  await ready();
+  const normal = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation(async (method, params) =>
+    method === 'rollback.preview' ? { recordId: params.id, items: [] } : normal(method, params),
+  );
+  await act(async () => controller.beginRollback('first'));
+  const pending = deferred<{ recordId: string; items: [] }>();
+  bridge.invoke.mockReturnValueOnce(pending.promise);
+  let recheck!: ReturnType<Controller['beginRollback']>;
+  act(() => {
+    recheck = controller.beginRollback('first', true);
+    controller.navigate('history');
+  });
+  await act(async () => {
+    pending.resolve({ recordId: 'first', items: [] });
+    await recheck;
+  });
+  expect(controller.m.page).toBe('history');
+  expect(controller.m.refreshResults[rollbackRefreshKey(controller.m)]).toBeUndefined();
 });

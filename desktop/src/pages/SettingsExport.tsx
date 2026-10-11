@@ -132,7 +132,7 @@ export function SettingsPage() {
         </section>
       </div>
       <Footer>
-        <Button type="primary" loading={!!m.busy} onClick={() => c.saveSettings()}>
+        <Button type="primary" onClick={() => c.saveSettings()}>
           保存设置
         </Button>
       </Footer>
@@ -147,7 +147,7 @@ export function ExportPage() {
     <>
       <div className="export-layout">
         <Panel title="导出范围" className="export-scope">
-          <DatabaseOptionsStatus />
+          <DatabaseOptionsStatus scope="export" />
           <Form layout="vertical">
             <Field label="来源数据库">
               <Select
@@ -231,9 +231,7 @@ export function ExportPage() {
                 </span>
                 <Button
                   aria-label="生成预览 SQL"
-                  disabled={
-                    !m.exportSource || !selectedCount || m.loading || !!m.busy || m.exportGenerating
-                  }
+                  disabled={!m.exportSource || !selectedCount || m.loading || m.exportGenerating}
                   loading={m.exportGenerating}
                   onClick={() => c.updateExport()}
                 >
@@ -265,8 +263,7 @@ export function ExportPage() {
         <Button
           type="primary"
           icon={<DownloadOutlined />}
-          disabled={!m.exportSql || !!m.busy}
-          loading={!!m.busy}
+          disabled={!m.exportSql}
           onClick={() => c.saveSql()}
         >
           导出 .sql

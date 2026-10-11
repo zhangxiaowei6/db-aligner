@@ -34,6 +34,7 @@ class ComparisonIntegrationTest {
     String prefix = "ds_it_cmp_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
     var source = new DbRef("server", prefix + "_s");
     var target = new DbRef("server", prefix + "_t");
+    var secondTarget = new DbRef("server", prefix + "_t2");
     var holder = new AtomicReference<Service>();
     var cancelOnRows = new AtomicBoolean(false);
     var readEvents = new AtomicInteger();
@@ -80,7 +81,7 @@ class ComparisonIntegrationTest {
       var secrets = Json.node(Map.of("server", credentials.path("password").asText()));
       db.secrets(secrets);
       try (var admin = db.open(new DbRef("server", ""))) {
-        for (var ref : List.of(source, target))
+        for (var ref : List.of(source, target, secondTarget))
           db.execute(
               admin,
               "CREATE DATABASE "
@@ -114,7 +115,7 @@ class ComparisonIntegrationTest {
                       "targets",
                       List.of(target),
                       "tables",
-                      List.of(new TableChoice("dict", true, true, List.of(), options)),
+                      List.of(new TableChoice("dict", true, false, List.of(), options)),
                       "$secrets",
                       secrets));
           var plan =
@@ -125,7 +126,7 @@ class ComparisonIntegrationTest {
               plan.targets.getFirst().changes.stream().allMatch(c -> c.selected && !c.blocked));
           assertTrue(
               events.stream()
-                  .anyMatch(e -> e.path("progress").path("phase").asText().equals("读取匹配键")));
+                  .anyMatch(e -> e.path("progress").path("phase").asText().equals("读取源表结构")));
           var before = db.snapshot(admin, target, "dict", false);
           var record =
               Json.MAPPER.convertValue(
@@ -304,7 +305,7 @@ class ComparisonIntegrationTest {
                       List.of(target),
                       "tables",
                       List.of(
-                          new TableChoice("missing", true, true, List.of(), options),
+                          new TableChoice("missing", true, false, List.of(), options),
                           new TableChoice("dict", true, false, List.of(), options)),
                       "$secrets",
                       secrets));
@@ -320,6 +321,82 @@ class ComparisonIntegrationTest {
                   .anyMatch(c -> c.table.equals("dict") && c.commentOnly()));
 
           db.execute(admin, "INSERT INTO " + Sql.qualified(source, "missing") + " VALUES (1),(2)");
+          // Data mode skips missing tables per target, while shared tables still execute.
+          for (var ref : List.of(source, target, secondTarget))
+            db.execute(
+                admin,
+                "CREATE TABLE "
+                    + Sql.qualified(ref, "shared")
+                    + " (id int PRIMARY KEY, value varchar(20)) ENGINE=InnoDB");
+          db.execute(
+              admin, "INSERT INTO " + Sql.qualified(source, "shared") + " VALUES (1,'source')");
+          db.execute(
+              admin,
+              "CREATE TABLE "
+                  + Sql.qualified(secondTarget, "missing")
+                  + " (id int PRIMARY KEY) ENGINE=InnoDB");
+          var dataParams =
+              Json.node(
+                  Map.of(
+                      "workspaceId",
+                      "default",
+                      "source",
+                      source,
+                      "targets",
+                      List.of(target, secondTarget),
+                      "tables",
+                      List.of(
+                          new TableChoice("missing", false, true, List.of()),
+                          new TableChoice("shared", false, true, List.of())),
+                      "$secrets",
+                      secrets));
+          var dataPlan =
+              Json.MAPPER.convertValue(service.handle("sync.compare", dataParams), SyncPlan.class);
+          assertEquals(List.of("missing"), dataPlan.targets.getFirst().skippedTables);
+          assertTrue(dataPlan.targets.getLast().skippedTables.isEmpty());
+          assertTrue(
+              dataPlan.targets.getFirst().changes.stream().allMatch(x -> x.table.equals("shared")));
+          assertTrue(dataPlan.targets.stream().allMatch(t -> t.error.isEmpty()));
+          assertTrue(
+              dataPlan.targets.stream()
+                  .flatMap(t -> t.changes.stream())
+                  .allMatch(x -> x.kind.endsWith("_ROW") && !x.blocked));
+          var dataRecord =
+              Json.MAPPER.convertValue(
+                  service.handle(
+                      "sync.save",
+                      Json.node(
+                          Map.of(
+                              "planId",
+                              dataPlan.id,
+                              "selectedIds",
+                              dataPlan.targets.stream()
+                                  .flatMap(t -> t.changes.stream())
+                                  .map(x -> x.id)
+                                  .toList(),
+                              "mode",
+                              "EXECUTE_AND_SAVE",
+                              "$secrets",
+                              secrets))),
+                  SyncRecord.class);
+          assertEquals("SUCCESS", waitRecord(service, dataRecord.id).status);
+          assertFalse(db.snapshot(admin, target, "missing", false).exists);
+          assertEquals(2, db.snapshot(admin, secondTarget, "missing", true).rows.size());
+          for (var ref : List.of(target, secondTarget))
+            assertEquals(
+                "source", db.snapshot(admin, ref, "shared", true).rows.getFirst().get("value"));
+          var skipOnlyParams = dataParams.deepCopy();
+          ((com.fasterxml.jackson.databind.node.ObjectNode) skipOnlyParams)
+              .set("targets", Json.node(List.of(target)));
+          ((com.fasterxml.jackson.databind.node.ObjectNode) skipOnlyParams)
+              .set(
+                  "tables", Json.node(List.of(new TableChoice("missing", false, true, List.of()))));
+          var skipOnly =
+              Json.MAPPER.convertValue(
+                  service.handle("sync.compare", skipOnlyParams), SyncPlan.class);
+          assertEquals(List.of("missing"), skipOnly.targets.getFirst().skippedTables);
+          assertTrue(skipOnly.targets.getFirst().changes.isEmpty());
+
           var completeMissing =
               Json.node(
                   Map.of(
@@ -332,7 +409,7 @@ class ComparisonIntegrationTest {
                       "tables",
                       List.of(
                           new TableChoice(
-                              "missing", true, true, List.of(), StructureOptions.all())),
+                              "missing", true, false, List.of(), StructureOptions.all())),
                       "$secrets",
                       secrets));
           var completePlan =
@@ -342,7 +419,7 @@ class ComparisonIntegrationTest {
           assertTrue(missingChanges.stream().noneMatch(x -> x.blocked), Json.write(completePlan));
           assertEquals(
               1, missingChanges.stream().filter(x -> x.kind.equals("CREATE_TABLE")).count());
-          assertEquals(2, missingChanges.stream().filter(x -> x.kind.equals("ADD_ROW")).count());
+          assertEquals(0, missingChanges.stream().filter(x -> x.kind.endsWith("_ROW")).count());
           var missingRecord =
               Json.MAPPER.convertValue(
                   service.handle(
@@ -357,15 +434,22 @@ class ComparisonIntegrationTest {
                               "EXECUTE_AND_SAVE"))),
                   SyncRecord.class);
           assertEquals("SUCCESS", waitRecord(service, missingRecord.id).status);
-          assertEquals(2, db.snapshot(admin, target, "missing", true).rows.size());
+          assertEquals(0, db.snapshot(admin, target, "missing", true).rows.size());
           MySqlIntegrationTest.assertNoEngineObjects(db, target);
 
           // Metadata-lock wait proves cancellation reaches JDBC, rather than waiting for the next
           // table.
+          var lockParams = params.deepCopy();
+          ((com.fasterxml.jackson.databind.node.ObjectNode) lockParams.path("tables").get(0))
+              .put("structure", false)
+              .put("data", true);
           db.execute(admin, "LOCK TABLES " + Sql.qualified(source, "dict") + " WRITE");
           String id;
           try {
-            id = Json.node(service.handle("sync.compare.start", params)).path("compareId").asText();
+            id =
+                Json.node(service.handle("sync.compare.start", lockParams))
+                    .path("compareId")
+                    .asText();
             long waitDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
             while (processCount(admin, source.database()) == 0 && System.nanoTime() < waitDeadline)
               Thread.sleep(20);
@@ -455,7 +539,7 @@ class ComparisonIntegrationTest {
               IllegalArgumentException.class, () -> service.handle("sync.compare.start", invalid));
         } finally {
           db.execute(admin, "UNLOCK TABLES");
-          for (var ref : List.of(source, target))
+          for (var ref : List.of(source, target, secondTarget))
             db.execute(admin, "DROP DATABASE " + Sql.id(ref.database()));
         }
       }

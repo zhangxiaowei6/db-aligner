@@ -52,7 +52,9 @@ export function CompareConfirmation() {
         <p>
           结构 {tables.filter((table) => table.structure).length} 张表 · 数据 {dataCount} 张表
         </p>
-        <p>统一结构默认：{structureSummary(pending.structureDefaults)}</p>
+        {tables.some((table) => table.structure) && (
+          <p>统一结构默认：{structureSummary(pending.structureDefaults)}</p>
+        )}
         {dataCount > 0 && (
           <Alert
             type={allData ? 'error' : 'warning'}
@@ -77,12 +79,10 @@ export function CompareConfirmation() {
                   ))}
                   {' 缺少该表：'}
                   {table.structure && fullStructure(table.structureOptions)
-                    ? table.data
-                      ? '将创建表并复制全部数据'
-                      : '将创建表'
+                    ? '将创建表'
                     : table.structure
                       ? '结构细项不足，无法创建完整表，该表将被阻止'
-                      : '仅数据同步无法写入，该表将被阻止'}
+                      : '将在上述目标库自动跳过，仅同步其他目标库中存在的同名表'}
                 </div>
               )}
               {table.structure && (

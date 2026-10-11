@@ -13,7 +13,7 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.4902954101562,
+        "x": 848.9192504882812,
         "y": 0,
         "width": 639.9999389648438,
         "height": 1056
@@ -76,9 +76,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.4849243164062,
+        "x": 848,
         "y": 0,
-        "width": 639.9999389648438,
+        "width": 640,
         "height": 1056
       }
     },
@@ -239,6 +239,19 @@
       "theme": "dark"
     },
     {
+      "check": "scope-data-mode-light",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "exclusive-sync-mode-and-per-target-missing-data-skip",
+      "theme": "light",
+      "passed": true
+    },
+    {
       "check": "tree-pointer-short-click-400ms-long-press-and-release",
       "theme": "light",
       "passed": true
@@ -256,6 +269,19 @@
     {
       "check": "database-options-follow-persisted-group-and-member-order",
       "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "scope-data-mode-dark",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "exclusive-sync-mode-and-per-target-missing-data-skip",
+      "theme": "dark",
       "passed": true
     },
     {
@@ -287,10 +313,292 @@
       "check": "context-menu-icons-connection",
       "theme": "light",
       "passed": true
+    },
+    {
+      "check": "context-menu-icons-database",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "context-menu-icons-table",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "connection-actions-testing",
+      "theme": "light",
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
+      "bottom": 287.796875,
+      "scrollBottom": 287.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-success-1488",
+      "theme": "light",
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
+      "bottom": 287.796875,
+      "scrollBottom": 287.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-success-1180",
+      "theme": "light",
+      "tops": [
+        259.796875,
+        259.796875,
+        259.796875
+      ],
+      "bottom": 283.796875,
+      "scrollBottom": 283.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-success-900",
+      "theme": "light",
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
+      "bottom": 303.796875,
+      "scrollBottom": 303.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-narrow-column",
+      "theme": "light",
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
+      "bottom": 303.796875,
+      "scrollBottom": 303.796875,
+      "clippedInsideCell": true,
+      "overflow": true
+    },
+    {
+      "check": "connection-actions-failure",
+      "theme": "light",
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
+      "bottom": 303.796875,
+      "scrollBottom": 303.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "workspace-list-button-only-edit-save-cancel-and-create",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "template-list-button-only-edit-save-cancel-create-and-external-delete",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "context-menu-icons-group",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "context-menu-icons-connection",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "context-menu-icons-database",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "context-menu-icons-table",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "connection-actions-testing",
+      "theme": "dark",
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
+      "bottom": 287.796875,
+      "scrollBottom": 287.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-success-1488",
+      "theme": "dark",
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
+      "bottom": 287.796875,
+      "scrollBottom": 287.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-success-1180",
+      "theme": "dark",
+      "tops": [
+        259.796875,
+        259.796875,
+        259.796875
+      ],
+      "bottom": 283.796875,
+      "scrollBottom": 283.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-success-900",
+      "theme": "dark",
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
+      "bottom": 303.796875,
+      "scrollBottom": 303.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "connection-actions-narrow-column",
+      "theme": "dark",
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
+      "bottom": 303.796875,
+      "scrollBottom": 303.796875,
+      "clippedInsideCell": true,
+      "overflow": true
+    },
+    {
+      "check": "connection-actions-failure",
+      "theme": "dark",
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
+      "bottom": 303.796875,
+      "scrollBottom": 303.796875,
+      "clippedInsideCell": true,
+      "overflow": false
+    },
+    {
+      "check": "workspace-list-button-only-edit-save-cancel-and-create",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "template-list-button-only-edit-save-cancel-create-and-external-delete",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "save-current-scope-template-without-navigation",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "light",
+      "width": 1904,
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "light",
+      "width": 1488,
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "light",
+      "width": 1180,
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "light",
+      "width": 900,
+      "passed": true
+    },
+    {
+      "check": "refresh-success-and-failure-repeat-loading-hover-focus-and-searchable-template-apply",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "save-current-scope-template-without-navigation",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "dark",
+      "width": 1904,
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "dark",
+      "width": 1488,
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "dark",
+      "width": 1180,
+      "passed": true
+    },
+    {
+      "check": "template-toolbar-vertical-alignment",
+      "theme": "dark",
+      "width": 900,
+      "passed": true
+    },
+    {
+      "check": "refresh-success-and-failure-repeat-loading-hover-focus-and-searchable-template-apply",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "context-feedback-session-isolation-and-in-place-edit",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "context-feedback-session-isolation-and-in-place-edit",
+      "theme": "dark",
+      "passed": true
     }
   ],
   "desktop": [],
-  "errors": [
-    "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n0 !== 3\n"
-  ]
+  "errors": []
 }

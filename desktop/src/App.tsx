@@ -1,12 +1,10 @@
 import { AsyncButton as Button, RefreshButton } from './components/AsyncButton';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
-import { Alert, Breadcrumb, Dropdown, Empty, Menu, Select, Space, Spin, Tooltip, Tree } from 'antd';
+import { Alert, Breadcrumb, Dropdown, Empty, Menu, Select, Space, Spin, Tree } from 'antd';
 import {
   BookOutlined,
   ApiOutlined,
   ClockCircleOutlined,
-  CheckOutlined,
-  CloseOutlined,
   DatabaseOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -20,9 +18,22 @@ import {
 } from '@ant-design/icons';
 import { BusinessProvider, useController } from './controller';
 import { preview } from './api';
-import { pageTitles, statusOf, type TreeNode } from './model';
+import {
+  pageTitles,
+  statusOf,
+  tableRefreshKey,
+  rollbackRefreshKey,
+  type ConnectionTestResult,
+  type TreeNode,
+} from './model';
 import { Status } from './components/shared';
-import { ConnectionsPage, ImportPage, TemplatesPage, WorkspacesPage } from './pages/Management';
+import {
+  ConnectionEditor,
+  ConnectionsPage,
+  ImportPage,
+  TemplatesPage,
+  WorkspacesPage,
+} from './pages/Management';
 import { DiffPage, RollbackPage, ScopePage } from './pages/Sync';
 import { HistoryPage, RecordDrawers, RecordPage, TablePage } from './pages/Records';
 import { ExportPage, SettingsPage } from './pages/SettingsExport';
@@ -31,6 +42,9 @@ import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
 import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
 import { useTreeDragGesture } from './components/useTreeDragGesture';
+import { useTreeViewport } from './components/useTreeViewport';
+import { MenuOperationFeedback } from './components/MenuOperationFeedback';
+import { collapseTreeBranch } from './connection-tree';
 import {
   connectionGroupName,
   dropPlacement,
@@ -42,14 +56,77 @@ function Shell() {
   const [sidebarWidth, setSidebarWidth] = useState(() => (window.innerWidth <= 1300 ? 256 : 280));
   const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
   const [selectedTreeKeys, setSelectedTreeKeys] = useState<Key[]>([]);
+  const [expandedTreeKeys, setExpandedTreeKeys] = useState<Key[]>([]);
+  const [loadingTreeKeys, setLoadingTreeKeys] = useState<Key[]>([]);
+  const treeLoads = useRef(new Map<Key, object>());
+  const menuSerial = useRef(0);
+  const activeMenu = useRef<{ key: string; serial: number } | undefined>(undefined);
+  const [contextMenu, setContextMenu] = useState<{
+    key: string;
+    serial: number;
+    results: Record<string, ConnectionTestResult>;
+  }>();
+  function closeMenu() {
+    activeMenu.current = undefined;
+    setContextMenu(undefined);
+  }
+  function openMenu(key: string) {
+    const session = { key, serial: ++menuSerial.current };
+    activeMenu.current = session;
+    setContextMenu({ ...session, results: {} });
+  }
+  async function menuOperation(key: string, work: () => Promise<ConnectionTestResult | undefined>) {
+    const session = activeMenu.current;
+    if (!session) return;
+    setContextMenu(
+      (menu) =>
+        menu && {
+          ...menu,
+          results: Object.fromEntries(Object.entries(menu.results).filter(([id]) => id !== key)),
+        },
+    );
+    const result = await work();
+    if (result && activeMenu.current === session)
+      setContextMenu((menu) => menu && { ...menu, results: { ...menu.results, [key]: result } });
+  }
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    window.addEventListener('keydown', escape, true);
+    return () => {
+      activeMenu.current = undefined;
+      window.removeEventListener('keydown', escape, true);
+    };
+  }, []);
+
   const resizeSidebar = (width: number) =>
     setSidebarWidth(Math.max(240, Math.min(640, window.innerWidth * 0.45, width)));
   const c = useController();
   const { m } = c;
   const treeGesture = useTreeDragGesture(m.organizationSaving, m.workspaceId);
+  const treeViewport = useTreeViewport();
   // 拖拽状态完全由 antd/rc-tree 内部管理：不在 capture 层拦截或 preventDefault，
   // 否则 dragend 永远不会触发，rc-tree 的拖拽高亮会永久残留（看起来像无法取消的选中）。
-  useEffect(() => setSelectedTreeKeys([]), [m.workspaceId]);
+  useEffect(() => {
+    closeMenu();
+    setSelectedTreeKeys([]);
+    setExpandedTreeKeys([]);
+    setLoadingTreeKeys([]);
+    treeLoads.current.clear();
+    return () => treeLoads.current.clear();
+  }, [m.workspaceId]);
+  function reloadExpandedNode(node: TreeNode) {
+    if (!['connection', 'database'].includes(node.type)) return;
+    const token = {};
+    treeLoads.current.set(node.key, token);
+    setLoadingTreeKeys((keys) => [...keys.filter((key) => key !== node.key), node.key]);
+    void c.loadTree(node, true).finally(() => {
+      if (treeLoads.current.get(node.key) !== token) return;
+      treeLoads.current.delete(node.key);
+      setLoadingTreeKeys((keys) => keys.filter((key) => key !== node.key));
+    });
+  }
   const comparing = !!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status);
   const workspace = m.state.workspaces.find((w) => w.id === m.workspaceId);
   const connections = m.state.connections.filter((conn) =>
@@ -96,6 +173,7 @@ function Shell() {
           { key: 'group-new', label: '新增分组', icon: <PlusOutlined aria-hidden /> },
         ],
         onClick: ({ key }: { key: string }) => {
+          closeMenu();
           if (key === 'group-edit')
             c.editGroup(m.state.connectionGroups.find((group) => group.id === node.groupId));
           else if (key === 'group-new') c.editGroup();
@@ -107,57 +185,40 @@ function Shell() {
         },
       };
     if (node.type === 'connection') {
-      const test = m.connectionTests[node.connectionId || ''];
-      const refresh = m.refreshResults['connection:' + node.connectionId];
+      const testPending = m.connectionTests['tree:' + node.connectionId]?.status === 'testing';
+      const refreshPending = !!m.refreshing['connection:' + node.connectionId];
+      const result = (key: string, pending: boolean, message: string) =>
+        pending
+          ? { status: 'testing' as const, message }
+          : contextMenu?.key === node.key
+            ? contextMenu.results[key]
+            : undefined;
       return {
         items: [
           { key: 'edit', label: '编辑连接', icon: <EditOutlined aria-hidden /> },
           { key: 'group', label: '更换分组', icon: <FolderOutlined aria-hidden /> },
           {
             key: 'test',
-            icon: <ApiOutlined aria-hidden />,
-            disabled: test?.status === 'testing',
+            icon: testPending ? <LoadingOutlined aria-hidden /> : <ApiOutlined aria-hidden />,
+            disabled: testPending,
             label: (
-              <Space>
-                测试连接
-                {test?.status === 'success' ? (
-                  <CheckOutlined style={{ color: 'var(--success-text)' }} />
-                ) : test?.status === 'error' ? (
-                  <CloseOutlined style={{ color: 'var(--danger-text)' }} />
-                ) : test?.status === 'testing' ? (
-                  <LoadingOutlined />
-                ) : null}
-              </Space>
+              <MenuOperationFeedback
+                label="测试连接"
+                retry="点击再次测试"
+                result={result('test', testPending, '正在测试连接')}
+              />
             ),
           },
           {
             key: 'refresh',
+            icon: refreshPending ? <LoadingOutlined aria-hidden /> : <ReloadOutlined aria-hidden />,
+            disabled: refreshPending,
             label: (
-              <Tooltip
-                title={
-                  refresh
-                    ? `${refresh.message}${refresh.status === 'testing' ? '' : ' · 点击再次刷新'}`
-                    : '点击刷新'
-                }
-                trigger={['hover', 'focus']}
-              >
-                <Space
-                  className={refresh ? `refresh-menu-result test-${refresh.status}` : undefined}
-                >
-                  刷新数据库
-                  {refresh?.status === 'success' ? (
-                    <CheckOutlined aria-hidden />
-                  ) : refresh?.status === 'error' ? (
-                    <CloseOutlined aria-hidden />
-                  ) : null}
-                </Space>
-              </Tooltip>
-            ),
-            disabled: !!m.refreshing['connection:' + node.connectionId],
-            icon: m.refreshing['connection:' + node.connectionId] ? (
-              <LoadingOutlined aria-hidden />
-            ) : (
-              <ReloadOutlined aria-hidden />
+              <MenuOperationFeedback
+                label="刷新数据库"
+                retry="点击再次刷新"
+                result={result('refresh', refreshPending, '正在刷新数据库')}
+              />
             ),
           },
           { key: 'delete', label: '删除连接', icon: <DeleteOutlined aria-hidden />, danger: true },
@@ -165,15 +226,41 @@ function Shell() {
         onClick: ({ key }: { key: string }) => {
           const connection = connections.find((item) => item.id === node.connectionId);
           if (!connection) return;
-          if (key === 'edit') c.editConnection(connection);
+          if (!['test', 'refresh'].includes(key)) closeMenu();
+          if (key === 'edit') c.editConnection(connection, undefined, true);
           if (key === 'group') c.chooseConnectionGroup(connection);
-          if (key === 'test') void c.testConnection(connection);
-          if (key === 'refresh') void c.refreshConnection(connection.id);
+          if (key === 'test')
+            void menuOperation('test', () => c.testConnection(connection, 'tree'));
+          if (key === 'refresh')
+            void menuOperation('refresh', () => c.refreshConnection(connection.id));
           if (key === 'delete') void c.removeConnections([connection.id]);
         },
       };
     }
+    const refreshKey = 'database:' + node.key;
+    const refresh = m.refreshing[refreshKey]
+      ? { status: 'testing' as const, message: '正在刷新数据表' }
+      : contextMenu?.key === node.key
+        ? contextMenu.results.refresh
+        : undefined;
     const items = [
+      ...(node.type === 'database'
+        ? [
+            {
+              key: 'refresh',
+              icon: m.refreshing[refreshKey] ? (
+                <LoadingOutlined aria-hidden />
+              ) : (
+                <ReloadOutlined aria-hidden />
+              ),
+              disabled: !!m.refreshing[refreshKey] || loadingTreeKeys.includes(node.key),
+              label: (
+                <MenuOperationFeedback label="刷新数据表" retry="点击再次刷新" result={refresh} />
+              ),
+            },
+            { type: 'divider' as const },
+          ]
+        : []),
       ...(node.type === 'table'
         ? [
             { key: 'view', label: '查看表结构', icon: <TableOutlined aria-hidden /> },
@@ -198,7 +285,9 @@ function Shell() {
     return {
       items,
       onClick: ({ key }: { key: string }) => {
-        if (key === 'view') void c.openTable(node);
+        if (key !== 'refresh') closeMenu();
+        if (key === 'refresh') void menuOperation('refresh', () => c.refreshDatabase(node));
+        else if (key === 'view') void c.openTable(node);
         else if (key === 'export') void c.beginExport(node);
         else void c.beginSync(node, key === 'data' ? 'data' : 'structure');
       },
@@ -327,6 +416,7 @@ function Shell() {
           </div>
           <div
             className="tree-scroll"
+            ref={treeViewport.ref}
             onPointerDownCapture={treeGesture.onPointerDown}
             onPointerMoveCapture={treeGesture.onPointerMove}
             onPointerCancel={treeGesture.onPointerCancel}
@@ -338,9 +428,17 @@ function Shell() {
             {tree.length ? (
               <Tree<TreeNode>
                 style={{ background: 'transparent' }}
+                height={treeViewport.height}
+                virtual
                 key={m.workspaceId}
                 treeData={tree}
                 selectedKeys={selectedTreeKeys}
+                expandedKeys={expandedTreeKeys}
+                autoExpandParent={false}
+                onExpand={(keys, { node, expanded }) => {
+                  setExpandedTreeKeys(expanded ? keys : collapseTreeBranch(keys, node));
+                  if (expanded && !expandedTreeKeys.includes(node.key)) reloadExpandedNode(node);
+                }}
                 onSelect={(keys) => setSelectedTreeKeys(keys.slice(0, 1))}
                 blockNode
                 draggable={
@@ -352,7 +450,10 @@ function Shell() {
                           ['connection', 'group'].includes((node as unknown as TreeNode).type),
                       }
                 }
-                onDragStart={() => setSelectedTreeKeys([])}
+                onDragStart={({ node }) => {
+                  setSelectedTreeKeys([]);
+                  setExpandedTreeKeys((keys) => collapseTreeBranch(keys, node));
+                }}
                 onDragEnd={() => {
                   treeGesture.release();
                   setSelectedTreeKeys([]);
@@ -422,11 +523,11 @@ function Shell() {
                   if (node.type === 'table') void c.openTable(node);
                 }}
                 showIcon
-                loadedKeys={Object.keys(m.treeChildren)}
-                loadData={c.loadTree}
                 icon={(props) => {
                   const node = props as unknown as TreeNode;
-                  return node.type === 'group' ? (
+                  return loadingTreeKeys.includes(node.key) ? (
+                    <LoadingOutlined aria-label="正在加载最新清单" />
+                  ) : node.type === 'group' ? (
                     <FolderOutlined />
                   ) : node.type === 'table' ? (
                     <TableOutlined />
@@ -436,6 +537,8 @@ function Shell() {
                     ) : (
                       <ApiOutlined />
                     )
+                  ) : m.refreshing['database:' + node.key] ? (
+                    <LoadingOutlined aria-label="正在刷新表结构" />
                   ) : (
                     <DatabaseOutlined />
                   );
@@ -443,6 +546,7 @@ function Shell() {
                 titleRender={(node) => {
                   const label = (
                     <span
+                      onContextMenu={() => openMenu(node.key)}
                       className="tree-label"
                       data-node-key={node.key}
                       data-drag-ready={treeGesture.readyKey === node.key ? 'true' : undefined}
@@ -457,7 +561,14 @@ function Shell() {
                     </span>
                   );
                   return (
-                    <Dropdown trigger={['contextMenu']} menu={nodeMenu(node)}>
+                    <Dropdown
+                      trigger={['contextMenu']}
+                      menu={nodeMenu(node)}
+                      open={contextMenu?.key === node.key}
+                      onOpenChange={(open, info) => {
+                        if (!open && info.source === 'trigger') closeMenu();
+                      }}
+                    >
                       {label}
                     </Dropdown>
                   );
@@ -575,9 +686,10 @@ function Shell() {
               {m.page === 'table' && tab && (
                 <>
                   <RefreshButton
+                    key={tableRefreshKey(m)}
                     icon={<ReloadOutlined />}
-                    result={m.refreshResults['table:' + tab.id]}
-                    loading={!!m.refreshing['table:' + tab.id]}
+                    result={m.refreshResults[tableRefreshKey(m)]}
+                    loading={!!m.refreshing[tableRefreshKey(m)]}
                     onClick={() => c.refreshTable()}
                   >
                     刷新
@@ -605,7 +717,6 @@ function Shell() {
                   )}
                   <Button
                     disabled={['RUNNING', 'QUEUED'].includes(m.detail.record.status)}
-                    loading={!!m.busy}
                     onClick={() => c.auditRecord()}
                   >
                     核验当前状态
@@ -617,9 +728,10 @@ function Shell() {
               )}
               {m.page === 'rollback' && m.rollback && (
                 <RefreshButton
+                  key={rollbackRefreshKey(m)}
                   icon={<ReloadOutlined />}
-                  result={m.refreshResults.rollback}
-                  loading={!!m.refreshing.rollback}
+                  result={m.refreshResults[rollbackRefreshKey(m)]}
+                  loading={!!m.refreshing[rollbackRefreshKey(m)]}
                   onClick={() => c.beginRollback(m.rollback!.recordId, true)}
                 >
                   重新校验
@@ -635,6 +747,7 @@ function Shell() {
         </div>
         <div id="page-footer" />
       </main>
+      <ConnectionEditor />
       <RecordDrawers />
       <ConnectionOrganizationDialogs />
     </div>

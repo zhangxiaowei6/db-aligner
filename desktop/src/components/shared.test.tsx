@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { MenuOperationFeedback } from './MenuOperationFeedback';
 import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -171,4 +172,60 @@ it('fills its container, keeps selection narrow, and redistributes space when a 
       '--data-table-width',
     ),
   ).toBe('798px');
+});
+
+it('shows no tooltip on untouched refresh controls or menu actions', async () => {
+  const rendered = render(
+    <App>
+      <RefreshButton>刷新数据库</RefreshButton>
+      <MenuOperationFeedback label="测试连接" retry="点击再次测试" />
+    </App>,
+  );
+  await userEvent.hover(screen.getByRole('button', { name: '刷新数据库' }));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(screen.queryByRole('tooltip')).toBeNull();
+  await userEvent.hover(screen.getByText('测试连接'));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  expect(screen.queryByRole('tooltip')).toBeNull();
+  rendered.rerender(
+    <App>
+      <MenuOperationFeedback
+        label="测试连接"
+        retry="点击再次测试"
+        result={{ status: 'success', message: '连接成功 · 8.4' }}
+      />
+    </App>,
+  );
+  await userEvent.hover(screen.getByText('测试连接'));
+  expect(await screen.findByRole('tooltip')).toHaveProperty(
+    'textContent',
+    '连接成功 · 8.4 · 点击再次测试',
+  );
+  rendered.rerender(
+    <App>
+      <MenuOperationFeedback label="测试连接" retry="点击再次测试" />
+    </App>,
+  );
+  await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+});
+
+it('shows menu result details when the menu row receives keyboard focus', async () => {
+  render(
+    <ul role="menu">
+      <li role="menuitem" tabIndex={0}>
+        <MenuOperationFeedback
+          label="测试连接"
+          retry="点击再次测试"
+          result={{ status: 'success', message: '连接成功 · 8.4' }}
+        />
+      </li>
+    </ul>,
+  );
+  fireEvent.focusIn(screen.getByRole('menuitem'));
+  expect(await screen.findByRole('tooltip')).toHaveProperty(
+    'textContent',
+    '连接成功 · 8.4 · 点击再次测试',
+  );
+  fireEvent.focusOut(screen.getByRole('menuitem'), { relatedTarget: document.body });
+  await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
 });

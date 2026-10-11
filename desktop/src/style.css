@@ -159,9 +159,8 @@ body,
 .tree-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 0 8px 12px;
+  overflow: hidden;
+  padding: 16px 8px;
 }
 .tree-label {
   display: block;
@@ -172,12 +171,26 @@ body,
   vertical-align: bottom;
 }
 .tree-scroll .ant-tree {
-  padding: 8px 0;
+  padding: 0;
   background: transparent;
   border-radius: 0;
 }
 .tree-scroll .ant-tree-treenode {
   padding-bottom: 4px;
+}
+
+/* Keep edge drop lines and their circular endpoints inside the virtual viewport. */
+.tree-scroll
+  .ant-tree-list-holder-inner
+  > .ant-tree-treenode:first-child
+  .ant-tree-drop-indicator[style*='top:'] {
+  top: 3px !important;
+}
+.tree-scroll
+  .ant-tree-list-holder-inner
+  > .ant-tree-treenode:last-child
+  .ant-tree-drop-indicator[style*='bottom:'] {
+  bottom: 1px !important;
 }
 
 .tree-scroll .ant-tree-treenode-draggable {
@@ -479,6 +492,20 @@ p {
 }
 .scope-panel .scope-toolbar {
   margin-bottom: 8px;
+}
+.scope-table-search {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0 12px;
+}
+.scope-table-search label {
+  font-weight: 600;
+}
+.scope-table-search .ant-input-affix-wrapper {
+  width: 360px;
+  max-width: 100%;
 }
 .table-name-cell {
   display: flex;
