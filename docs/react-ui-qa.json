@@ -55,7 +55,7 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.2710571289062,
+        "x": 848.0071411132812,
         "y": 0,
         "width": 639.9999389648438,
         "height": 1056
@@ -160,9 +160,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.0077514648438,
+        "x": 848,
         "y": 0,
-        "width": 640.0000610351562,
+        "width": 640,
         "height": 1056
       }
     },
@@ -250,6 +250,24 @@
       "theme": "light"
     },
     {
+      "check": "record-all-targets-执行脚本-light",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true,
+      "theme": "light"
+    },
+    {
+      "check": "record-all-targets-回滚脚本-light",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true,
+      "theme": "light"
+    },
+    {
       "check": "template-options-confirm-data-compare-cancel-navigation-retry-copy-save-record",
       "passed": true,
       "theme": "light"
@@ -266,10 +284,10 @@
     },
     {
       "check": "rollback-light",
-      "scrollBottom": 991,
-      "footerTop": 991,
-      "footerBottom": 1056,
-      "windowHeight": 1056,
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
       "hitFooter": true,
       "theme": "light"
     },
@@ -294,6 +312,24 @@
       "theme": "dark"
     },
     {
+      "check": "record-all-targets-执行脚本-dark",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true,
+      "theme": "dark"
+    },
+    {
+      "check": "record-all-targets-回滚脚本-dark",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true,
+      "theme": "dark"
+    },
+    {
       "check": "template-options-confirm-data-compare-cancel-navigation-retry-copy-save-record",
       "passed": true,
       "theme": "dark"
@@ -310,10 +346,10 @@
     },
     {
       "check": "rollback-dark",
-      "scrollBottom": 991,
-      "footerTop": 991,
-      "footerBottom": 1056,
-      "windowHeight": 1056,
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
       "hitFooter": true,
       "theme": "dark"
     },
@@ -385,6 +421,16 @@
     },
     {
       "check": "database-options-follow-persisted-group-and-member-order",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete",
       "theme": "dark",
       "passed": true
     },
