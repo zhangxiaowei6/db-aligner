@@ -27,6 +27,11 @@ import {
   refKey,
   splitKeys,
   toggleIds,
+  targetRefreshKey,
+  recordRefreshKey,
+  rollbackRefreshKey,
+  tableRefreshKey,
+  type ConnectionTestResult,
   type CompareSelection,
   type ImportRow,
   type Model,
@@ -49,6 +54,30 @@ import type {
   TableChoice,
   Workspace,
 } from './types';
+
+function scopeForMode(s: Model, mode: SyncMode): Model {
+  if (s.scopeMode === mode) return s;
+  const draft = s.scopeDrafts[mode];
+  return {
+    ...s,
+    scopeDrafts: {
+      ...s.scopeDrafts,
+      [s.scopeMode]: { tables: copyModel(s.scopeTables), search: s.tableSearch },
+    },
+    scopeMode: mode,
+    scopeTables: draft
+      ? copyModel(draft.tables)
+      : s.scopeTables.map((table) => ({
+          ...copyModel(table),
+          structure: false,
+          data: false,
+          keyColumns: [],
+          keyText: '',
+          structureOptions: { ...s.structureDefaults },
+        })),
+    tableSearch: draft?.search || '',
+  };
+}
 
 function useBusinessController() {
   const databaseLoads = useRef(
@@ -73,6 +102,8 @@ function useBusinessController() {
   const templateEditorGeneration = useRef(0);
   const templateSaving = useRef(false);
   const refreshPending = useRef(new Set<string>());
+  const treeTestsPending = useRef(new Map<string, ConnectionTestResult>());
+  const exportGeneration = useRef<object | undefined>(undefined);
   const comparisonActive = () =>
     !!latest.current.compareTask &&
     ['RUNNING', 'CANCELLING'].includes(latest.current.compareTask.status);
@@ -97,6 +128,8 @@ function useBusinessController() {
     if (!mounted.current) return;
     const current = latest.current;
     const next = update(current);
+    if (current.page !== next.page || current.recordView !== next.recordView)
+      requests.current.delete('rollback');
     if (
       current.workspaceId !== next.workspaceId ||
       (current.page === 'workspaces' && next.page !== 'workspaces')
@@ -104,6 +137,16 @@ function useBusinessController() {
       workspaceEditorGeneration.current += 1;
       next.workspaceDialog = false;
       next.workspaceForm = { id: '', name: '', description: '', connectionIds: [] };
+    }
+    if (
+      current.connectionDialog &&
+      (current.workspaceId !== next.workspaceId || current.page !== next.page)
+    ) {
+      connectionEditorGeneration.current += 1;
+      next.connectionDialog = false;
+      next.connectionTest = undefined;
+      next.connectionForm = emptyConnection(next.workspaceId);
+      next.databasesText = '';
     }
     if (current.workspaceId !== next.workspaceId) {
       groupEditorGeneration.current += 1;
@@ -122,6 +165,30 @@ function useBusinessController() {
       next.templateSource = '';
       next.templateTargets = [];
     }
+    if (
+      current.workspaceId !== next.workspaceId ||
+      current.page !== next.page ||
+      current.sourceKey !== next.sourceKey ||
+      JSON.stringify(current.targetKeys) !== JSON.stringify(next.targetKeys)
+    ) {
+      for (const key of Object.keys(current.refreshResults)) {
+        if (
+          key.startsWith('targetTables:') ||
+          ((current.workspaceId !== next.workspaceId || current.page !== next.page) &&
+            (key.startsWith('table:') ||
+              key.startsWith('recordScripts:') ||
+              key.startsWith('rollback:')))
+        ) {
+          requests.current.delete('refresh:' + key);
+          next.refreshResults = Object.fromEntries(
+            Object.entries(next.refreshResults).filter(([id]) => id !== key),
+          );
+          next.refreshing = Object.fromEntries(
+            Object.entries(next.refreshing).filter(([id]) => id !== key),
+          );
+        }
+      }
+    }
     if (current.page === 'export' && next.page !== 'export') {
       next.exportSql = '';
       next.exportPreview = undefined;
@@ -135,12 +202,19 @@ function useBusinessController() {
         'sourceKey',
         'targetKeys',
         'scopeTables',
+        'scopeDrafts',
         'scopeMode',
         'structureDefaults',
         'targetTables',
       ] as const)
         Object.assign(next, { [key]: current[key] });
     }
+    if (
+      (next.page === 'scope' && current.page !== next.page) ||
+      current.sourceKey !== next.sourceKey ||
+      JSON.stringify(current.targetKeys) !== JSON.stringify(next.targetKeys)
+    )
+      next.scopeView = current.scopeView + 1;
     if (
       next.compareConfirmation &&
       selectionSignature(compareSelection(next)) !== selectionSignature(next.compareConfirmation)
@@ -261,12 +335,14 @@ function useBusinessController() {
           state.connections.some((c) => c.id === id),
         ),
         connectionTests: Object.fromEntries(
-          Object.entries(s.connectionTests).filter(
-            ([id]) =>
+          Object.entries(s.connectionTests).filter(([key]) => {
+            const id = key.startsWith('tree:') ? key.slice(5) : key;
+            return (
               state.connections.some((c) => c.id === id) &&
               connectionSignature(s.state.connections.find((c) => c.id === id)) ===
-                connectionSignature(state.connections.find((c) => c.id === id)),
-          ),
+                connectionSignature(state.connections.find((c) => c.id === id))
+            );
+          }),
         ),
         dbLoading: Object.fromEntries(
           Object.entries(s.dbLoading).filter(([id]) => state.connections.some((c) => c.id === id)),
@@ -291,6 +367,10 @@ function useBusinessController() {
           s.sourceKey && !state.connections.some((c) => c.id === fromKey(s.sourceKey).connectionId)
             ? []
             : s.scopeTables,
+        scopeDrafts:
+          s.sourceKey && !state.connections.some((c) => c.id === fromKey(s.sourceKey).connectionId)
+            ? {}
+            : s.scopeDrafts,
         currentTable:
           s.currentTable && state.connections.some((c) => c.id === s.currentTable!.ref.connectionId)
             ? s.currentTable
@@ -345,6 +425,8 @@ function useBusinessController() {
       sourceKey: '',
       targetKeys: [],
       scopeTables: [],
+      scopeDrafts: {},
+      tableSearch: '',
       scopeMode: 'structure',
       plan: undefined,
       selectedIds: [],
@@ -355,7 +437,13 @@ function useBusinessController() {
       dbCache: {},
       dbLoading: {},
       dbErrors: {},
-      refreshing: {},
+      refreshing: Object.fromEntries(
+        [...refreshPending.current]
+          .filter((key) => key.startsWith(id + '/'))
+          .map((key) => key.slice(id.length + 1))
+          .filter((key) => key.startsWith('connection:') || key.startsWith('database:'))
+          .map((key) => [key, true]),
+      ),
       refreshResults: {},
       scopeTemplateId: '',
       applyingTemplateId: '',
@@ -363,7 +451,11 @@ function useBusinessController() {
       templateApplyError: '',
       connectionSelection: [],
       connectionTest: undefined,
-      connectionTests: {},
+      connectionTests: Object.fromEntries(
+        [...treeTestsPending.current]
+          .filter(([key]) => key.startsWith(id + '/'))
+          .map(([key, result]) => [key.slice(id.length + 1), result]),
+      ),
       connectionDialog: false,
       treeChildren: {},
       historySelection: [],
@@ -424,14 +516,36 @@ function useBusinessController() {
   useEffect(() => {
     if (!m.loading && ['scope', 'templates', 'export'].includes(m.page)) void loadDatabaseOptions();
   }, [m.loading, m.page, m.workspaceId, m.state.connections]);
-  async function loadTree(node: TreeNode) {
+  async function loadTree(node: TreeNode, force = false) {
     if (!['connection', 'database'].includes(node.type)) return;
-    const valid = request('tree:' + node.key);
+    const connectionId = node.connectionId || node.ref?.connectionId;
+    const signature = connectionSignature(
+      latest.current.state.connections.find((connection) => connection.id === connectionId),
+    );
+    const requestValid = request('tree:' + node.key);
+    const valid = () =>
+      requestValid() &&
+      connectionSignature(
+        latest.current.state.connections.find((connection) => connection.id === connectionId),
+      ) === signature;
+    if (force) {
+      for (const key of requests.current.keys()) {
+        if (key.startsWith('tree:' + node.key + '/')) requests.current.delete(key);
+      }
+      commit((s) => ({
+        ...s,
+        treeChildren: Object.fromEntries(
+          Object.entries(s.treeChildren).filter(
+            ([key]) => key !== node.key && !key.startsWith(node.key + '/'),
+          ),
+        ),
+      }));
+    }
     await action(async () => {
       let children: TreeNode[];
       if (node.type === 'connection') {
         const databases =
-          latest.current.dbCache[node.connectionId!] ??
+          (!force ? latest.current.dbCache[node.connectionId!] : undefined) ??
           (await api<string[]>('databases.list', {
             connectionId: node.connectionId,
           }));
@@ -468,29 +582,45 @@ function useBusinessController() {
   async function openTable(node: TreeNode) {
     if (!node.ref || !node.table) return;
     const id = refKey(node.ref) + '/' + node.table;
-    const valid = request('table');
+    const viewValid = request('table');
+    const modelValid = request('table:' + id);
+    const valid = () => viewValid() && modelValid();
     await action(async () => {
-      let tab = latest.current.currentTable?.id === id ? latest.current.currentTable : undefined;
-      if (!tab) {
-        const model = await api<Table>('table.get', { ref: node.ref, table: node.table });
-        tab = { id, ref: node.ref!, table: node.table!, model };
-      }
+      const model = await api<Table>('table.get', { ref: node.ref, table: node.table });
+      const tab = { id, ref: node.ref!, table: node.table!, model };
       if (valid())
         commit((s) => ({
           ...s,
           currentTable: tab,
+          tableView: s.tableView + 1,
           page: 'table',
         }));
     });
   }
-  async function runRefresh(key: string, label: string, work: () => Promise<boolean | void>) {
+  const clearRefresh = useCallback(
+    (key: string) => {
+      requests.current.delete('refresh:' + key);
+      commit((s) => ({
+        ...s,
+        refreshResults: Object.fromEntries(
+          Object.entries(s.refreshResults).filter(([id]) => id !== key),
+        ),
+        refreshing: Object.fromEntries(Object.entries(s.refreshing).filter(([id]) => id !== key)),
+      }));
+    },
+    [commit],
+  );
+  async function runRefresh(
+    key: string,
+    label: string,
+    work: () => Promise<boolean | void>,
+  ): Promise<ConnectionTestResult | undefined> {
     const workspace = latest.current.workspaceId;
     const pendingKey = workspace + '/' + key;
     if (refreshPending.current.has(pendingKey)) return;
     refreshPending.current.add(pendingKey);
     const valid = request('refresh:' + key);
     const startedAt = Date.now();
-    // Keep even a cached/instant preview response visibly distinct from the previous result.
     const showLoading = () =>
       new Promise<void>((resolve) =>
         setTimeout(resolve, Math.max(0, 300 - (Date.now() - startedAt))),
@@ -527,28 +657,35 @@ function useBusinessController() {
     } finally {
       refreshPending.current.delete(pendingKey);
       if (valid()) commit((s) => ({ ...s, refreshing: { ...s.refreshing, [key]: false } }));
+      else if (
+        latest.current.workspaceId === workspace &&
+        (key.startsWith('connection:') || key.startsWith('database:'))
+      )
+        commit((s) => ({ ...s, refreshing: { ...s.refreshing, [key]: false } }));
     }
+    return valid() ? latest.current.refreshResults[key] : undefined;
   }
-  async function refreshDatabaseOptions() {
+  async function refreshDatabaseOptions(feedbackKey: string) {
     const s = latest.current;
     const ids = s.state.connections
       .filter((c) => c.workspaceIds.includes(s.workspaceId))
       .map((c) => c.id);
     if (!ids.length) return;
-    await runRefresh('databases', '刷新数据库', async () => {
+    return await runRefresh(feedbackKey, '刷新数据库', async () => {
       await loadDatabaseOptions(true);
       if (latest.current.workspaceId !== s.workspaceId) return false;
       const errors = ids.map((id) => latest.current.dbErrors[id]).filter(Boolean);
       if (errors.length) throw new Error(errors.join('；'));
     });
   }
-  async function refreshTargetTables() {
+  async function refreshTargetTables(entry = 'main') {
     const s = latest.current;
     if (!s.targetKeys.length || comparisonActive()) return;
-    await runRefresh('targetTables', '刷新目标表清单', async () => {
+    await runRefresh(targetRefreshKey(s, entry), '刷新目标表清单', async () => {
       await loadTargetTables(true);
       if (
         latest.current.workspaceId !== s.workspaceId ||
+        latest.current.sourceKey !== s.sourceKey ||
         JSON.stringify(latest.current.targetKeys) !== JSON.stringify(s.targetKeys)
       )
         return false;
@@ -568,7 +705,7 @@ function useBusinessController() {
     const tab = latest.current.currentTable;
     if (!tab) return;
     const valid = request('table:' + tab.id);
-    await runRefresh('table:' + tab.id, '刷新表结构', async () => {
+    await runRefresh(tableRefreshKey(latest.current), '刷新表结构', async () => {
       const model = await api<Table>('table.get', { ref: tab.ref, table: tab.table });
       if (valid() && latest.current.currentTable?.id === tab.id)
         commit((s) => ({
@@ -578,13 +715,80 @@ function useBusinessController() {
       else return false;
     });
   }
+  async function refreshDatabase(node: TreeNode) {
+    if (node.type !== 'database' || !node.ref) return;
+    const ref = copyModel(node.ref);
+    const key = refKey(ref);
+    const workspace = latest.current.workspaceId;
+    const signature = connectionSignature(
+      latest.current.state.connections.find((connection) => connection.id === ref.connectionId),
+    );
+    return await runRefresh('database:' + key, `刷新 ${ref.database} 数据表`, async () => {
+      // Replace an older lazy load's request token so its late result cannot restore deleted tables.
+      const requestValid = request('tree:' + key);
+      const valid = () =>
+        requestValid() &&
+        latest.current.workspaceId === workspace &&
+        connectionSignature(
+          latest.current.state.connections.find((connection) => connection.id === ref.connectionId),
+        ) === signature;
+      const tab = latest.current.currentTable;
+      const sameDatabase = tab && refKey(tab.ref) === key;
+      const tableValid = sameDatabase ? request('table:' + tab.id) : undefined;
+      try {
+        const tables = await api<{ name: string; comment: string }[]>('tables.list', { ref });
+        if (!valid()) return false;
+        const exists = sameDatabase && tables.some((table) => table.name === tab.table);
+        const model =
+          exists && tableValid?.() && latest.current.currentTable?.id === tab.id
+            ? await api<Table>('table.get', { ref, table: tab.table })
+            : undefined;
+        if (!valid()) return false;
+        commit((s) => {
+          const updateTable = sameDatabase && tableValid?.() && s.currentTable?.id === tab.id;
+          return {
+            ...s,
+            treeChildren: {
+              ...s.treeChildren,
+              [key]: tables.map((table) => ({
+                key: `${key}/${table.name}`,
+                title: table.name,
+                type: 'table',
+                table: table.name,
+                ref,
+                isLeaf: true,
+              })),
+            },
+            ...(updateTable && !exists
+              ? { currentTable: undefined, page: s.page === 'table' ? 'connections' : s.page }
+              : updateTable && model
+                ? { currentTable: { ...tab, model } }
+                : {}),
+          };
+        });
+      } catch (error) {
+        if (!valid()) return false;
+        throw error;
+      }
+    });
+  }
   async function loadScope(
     source = latest.current.sourceKey,
     preselect?: string,
     mode: 'structure' | 'data' = latest.current.scopeMode,
   ) {
     requests.current.delete('beginSync');
-    commit((s) => ({ ...s, sourceKey: source, scopeTables: [], scopeMode: mode }));
+    commit((s) => ({
+      ...s,
+      sourceKey: source,
+      scopeTables: [],
+      scopeDrafts: {},
+      tableSearch: '',
+      scopeMode: mode,
+      refreshResults: Object.fromEntries(
+        Object.entries(s.refreshResults).filter(([key]) => !key.startsWith('targetTables:')),
+      ),
+    }));
     const valid = request('scope');
     if (!source) return false;
     return await action(async () => {
@@ -592,18 +796,26 @@ function useBusinessController() {
         ref: fromKey(source),
       });
       if (!valid() || latest.current.sourceKey !== source) return false;
-      commit((s) => ({
-        ...s,
-        scopeTables: rows.map((t) => ({
+      commit((s) => {
+        const tables = rows.map((t) => ({
           ...t,
           structure: !!preselect && t.name === preselect && mode === 'structure',
           data: !!preselect && t.name === preselect && mode === 'data',
           keyColumns: [],
           keyText: '',
           structureOptions: { ...s.structureDefaults },
-        })),
-        targetKeys: s.targetKeys.filter((k) => k !== source),
-      }));
+        }));
+        return scopeForMode(
+          {
+            ...s,
+            scopeMode: mode,
+            scopeTables: tables,
+            scopeDrafts: {},
+            targetKeys: s.targetKeys.filter((k) => k !== source),
+          },
+          s.scopeMode,
+        );
+      });
       await loadTargetTables();
       return true;
     });
@@ -695,6 +907,7 @@ function useBusinessController() {
       targetTablesLoading: {},
       targetTablesErrors: {},
       scopeTables: [],
+      scopeDrafts: {},
       scopeMode: 'structure',
       structureDefaults: initial.structureDefaults,
       tableSearch: '',
@@ -725,11 +938,12 @@ function useBusinessController() {
   }
   function setScopeMode(mode: SyncMode) {
     if (comparisonActive()) return;
-    commit((s) => ({ ...s, scopeMode: mode, scopeTables: tablesForMode(s.scopeTables, mode) }));
+    commit((s) => scopeForMode(s, mode));
   }
   function toggleScope(type: SyncMode) {
     if (comparisonActive()) return;
-    commit((s) => {
+    commit((current) => {
+      const s = scopeForMode(current, type);
       const matches = (table: ScopeTable) =>
         table.name.toLowerCase().includes(s.tableSearch.toLowerCase());
       const visible = s.scopeTables.filter(matches);
@@ -738,7 +952,7 @@ function useBusinessController() {
       return {
         ...s,
         scopeMode: type,
-        scopeTables: tablesForMode(s.scopeTables, type).map((table) =>
+        scopeTables: s.scopeTables.map((table) =>
           matches(table) ? { ...table, [type]: selected } : table,
         ),
       };
@@ -747,13 +961,17 @@ function useBusinessController() {
   function updateScope(name: string, fields: Partial<ScopeTable>) {
     if (comparisonActive()) return;
     const mode = fields.data ? 'data' : fields.structure ? 'structure' : latest.current.scopeMode;
-    commit((s) => ({
-      ...s,
-      scopeMode: mode,
-      scopeTables: tablesForMode(s.scopeTables, mode).map((t) =>
-        t.name === name ? { ...t, ...fields, [mode === 'data' ? 'structure' : 'data']: false } : t,
-      ),
-    }));
+    commit((current) => {
+      const s = scopeForMode(current, mode);
+      return {
+        ...s,
+        scopeTables: s.scopeTables.map((t) =>
+          t.name === name
+            ? { ...t, ...fields, [mode === 'data' ? 'structure' : 'data']: false }
+            : t,
+        ),
+      };
+    });
   }
   const choices = (tables: TableChoice[]) =>
     tables
@@ -953,6 +1171,7 @@ function useBusinessController() {
       }
     }
     syncSubmitPending.current = true;
+    set('syncSubmitting', mode);
     try {
       if (mode === 'EXECUTE_AND_SAVE' || mode === 'SAVE_ONLY') {
         const accepted = await modal.confirm({
@@ -1000,6 +1219,7 @@ function useBusinessController() {
       });
     } finally {
       syncSubmitPending.current = false;
+      set('syncSubmitting', undefined);
     }
   }
   function editWorkspace(w?: Workspace) {
@@ -1058,7 +1278,7 @@ function useBusinessController() {
       set('workspaceSubmitting', false);
     }
   }
-  function editConnection(c?: ConnectionInfo, group?: string) {
+  function editConnection(c?: ConnectionInfo, group?: string, preservePage = false) {
     connectionEditorGeneration.current += 1;
     const form = c
       ? { ...copyModel(c), password: '', certificatePassword: '' }
@@ -1073,7 +1293,7 @@ function useBusinessController() {
       connectionTest: undefined,
       connectionDialog: true,
       databasesText: form.databases.join(', '),
-      page: 'connections',
+      page: preservePage ? s.page : 'connections',
     }));
   }
   function closeConnection() {
@@ -1244,18 +1464,25 @@ function useBusinessController() {
       void message.success('连接已保存');
     });
   }
-  async function testConnection(connection?: ConnectionInfo) {
+  async function testConnection(
+    connection?: ConnectionInfo,
+    entry: 'list' | 'tree' = 'list',
+  ): Promise<ConnectionTestResult | undefined> {
     const s = latest.current;
-    const previous = connection ? s.connectionTests[connection.id] : s.connectionTest;
-    if (previous?.status === 'testing') return;
+    const testKey = connection ? (entry === 'tree' ? 'tree:' + connection.id : connection.id) : '';
+    const startedAt = Date.now();
+    const previous = connection ? s.connectionTests[testKey] : s.connectionTest;
+    const pendingKey = s.workspaceId + '/' + testKey;
+    if (previous?.status === 'testing' || treeTestsPending.current.has(pendingKey)) return;
     const config = connection
       ? { ...connection }
       : { ...s.connectionForm, databases: splitKeys(s.databasesText) };
-    const valid = request(connection ? 'connectionTest:' + connection.id : 'connectionTest:form');
+    const valid = request(connection ? 'connectionTest:' + testKey : 'connectionTest:form');
     const testing = { status: 'testing' as const, message: '正在测试连接' };
+    if (connection && entry === 'tree') treeTestsPending.current.set(pendingKey, testing);
     commit((v) =>
       connection
-        ? { ...v, connectionTests: { ...v.connectionTests, [connection.id]: testing } }
+        ? { ...v, connectionTests: { ...v.connectionTests, [testKey]: testing } }
         : { ...v, connectionTest: testing },
     );
     let result: NonNullable<Model['connectionTest']>;
@@ -1273,27 +1500,43 @@ function useBusinessController() {
         message: '连接失败 · ' + (error instanceof Error ? error.message : String(error)),
       };
     }
-    if (!valid()) return;
+    if (entry === 'tree')
+      await new Promise<void>((resolve) =>
+        setTimeout(resolve, Math.max(0, 300 - (Date.now() - startedAt))),
+      );
+    if (connection && entry === 'tree') treeTestsPending.current.delete(pendingKey);
+    if (!valid()) {
+      if (
+        connection &&
+        entry === 'tree' &&
+        latest.current.workspaceId === s.workspaceId &&
+        latest.current.connectionTests[testKey] === testing
+      )
+        commit((v) => ({
+          ...v,
+          connectionTests: Object.fromEntries(
+            Object.entries(v.connectionTests).filter(([key]) => key !== testKey),
+          ),
+        }));
+      return;
+    }
     const current = latest.current;
     if (connection) {
       if (
-        current.connectionTests[connection.id] !== testing ||
+        current.connectionTests[testKey] !== testing ||
         JSON.stringify(current.state.connections.find((c) => c.id === connection.id)) !==
           JSON.stringify(connection)
       )
         return;
-      commit((v) => ({ ...v, connectionTests: { ...v.connectionTests, [connection.id]: result } }));
-      if (current.page !== 'connections')
-        void message.open({
-          type: result.status === 'success' ? 'success' : 'error',
-          content: connection.name + '：' + result.message,
-        });
+      commit((v) => ({ ...v, connectionTests: { ...v.connectionTests, [testKey]: result } }));
+      return result;
     } else if (
       current.connectionTest === testing &&
       current.connectionForm === s.connectionForm &&
       current.databasesText === s.databasesText
     ) {
       commit((v) => ({ ...v, connectionTest: result }));
+      return result;
     }
   }
   async function chooseCertificate(field: 'ca' | 'clientCert') {
@@ -1361,7 +1604,7 @@ function useBusinessController() {
     const connection = latest.current.state.connections.find((c) => c.id === id);
     if (!connection) return;
     const signature = connectionSignature(connection);
-    await runRefresh('connection:' + id, `刷新 ${connection.name} 数据库`, async () => {
+    return await runRefresh('connection:' + id, `刷新 ${connection.name} 数据库`, async () => {
       for (const key of requests.current.keys())
         if (key === 'tree:' + id || key.startsWith('tree:' + id + '/'))
           requests.current.delete(key);
@@ -1800,6 +2043,7 @@ function useBusinessController() {
     commit((s) => ({
       ...s,
       detail,
+      recordView: s.recordView + 1,
       fileSelected: file,
       fileSql: '',
       recordScripts: {},
@@ -1824,17 +2068,19 @@ function useBusinessController() {
       set('fileSql', sql);
   }
   async function changeRecordTab(tab: string) {
+    clearRefresh(recordRefreshKey(latest.current));
     set('recordTab', tab);
     await loadRecordScripts(tab);
   }
   async function refreshRecordScripts() {
     const s = latest.current;
     if (!s.detail) return;
-    await runRefresh('recordScripts', '重新加载脚本', async () => {
+    await runRefresh(recordRefreshKey(s), '重新加载脚本', async () => {
       await loadRecordScripts(s.recordTab);
       if (
         latest.current.detail?.record.id !== s.detail?.record.id ||
-        latest.current.recordTab !== s.recordTab
+        latest.current.recordTab !== s.recordTab ||
+        latest.current.recordView !== s.recordView
       )
         return false;
       const errors = Object.values(latest.current.recordScriptErrors).filter(Boolean);
@@ -1957,7 +2203,7 @@ function useBusinessController() {
     });
   }
   async function beginRollback(id: string, refresh = false) {
-    if (refresh && latest.current.refreshing.rollback) return;
+    if (refresh && latest.current.refreshing[rollbackRefreshKey(latest.current)]) return;
     const valid = request('rollback');
     const work = async () => {
       const rollback = await api<RollbackPlan>('rollback.preview', { id });
@@ -1965,6 +2211,7 @@ function useBusinessController() {
         commit((s) => ({
           ...s,
           rollback,
+          rollbackView: refresh ? s.rollbackView : s.rollbackView + 1,
           rollbackIds: rollback.items.filter((i) => i.eligible).map((i) => i.id),
           rollbackSql: rollback.items.find((i) => i.eligible)?.sql.join(';\n') || '',
           rollbackRemark: '',
@@ -1972,7 +2219,7 @@ function useBusinessController() {
         }));
       else return false;
     };
-    if (refresh) await runRefresh('rollback', '重新校验', work);
+    if (refresh) await runRefresh(rollbackRefreshKey(latest.current), '重新校验', work);
     else await action(work);
   }
   function toggleRecovery(ids: string[], checked: boolean) {
@@ -1980,24 +2227,29 @@ function useBusinessController() {
   }
   async function executeRollback() {
     const s = latest.current;
-    if (!s.rollback) return;
-    if (
-      !(await confirm(
-        '执行回滚',
-        `将恢复已选的 ${s.rollbackIds.length} 项变更，执行前会再次核验目标状态与恢复资料。`,
-        '执行所选回滚',
-      ))
-    )
-      return;
-    await action(async () => {
-      const r = await api<SyncRecord>('rollback.execute', {
-        id: s.rollback!.recordId,
-        selectedIds: s.rollbackIds,
-        remark: s.rollbackRemark,
+    if (!s.rollback || latest.current.rollbackSubmitting) return;
+    set('rollbackSubmitting', s.rollback.recordId);
+    try {
+      if (
+        !(await confirm(
+          '执行回滚',
+          `将恢复已选的 ${s.rollbackIds.length} 项变更，执行前会再次核验目标状态与恢复资料。`,
+          '执行所选回滚',
+        ))
+      )
+        return;
+      await action(async () => {
+        const r = await api<SyncRecord>('rollback.execute', {
+          id: s.rollback!.recordId,
+          selectedIds: s.rollbackIds,
+          remark: s.rollbackRemark,
+        });
+        await loadState();
+        if (latest.current.workspaceId === s.workspaceId) await openRecord(r.id);
       });
-      await loadState();
-      if (latest.current.workspaceId === s.workspaceId) await openRecord(r.id);
-    });
+    } finally {
+      set('rollbackSubmitting', undefined);
+    }
   }
   async function beginExport(node?: TreeNode) {
     const s = latest.current;
@@ -2039,7 +2291,9 @@ function useBusinessController() {
   async function updateExport() {
     const s = latest.current;
     const tables = s.exportTables.filter((t) => t.selected).map((t) => t.name);
-    if (s.loading || s.busy || !s.exportSource || !tables.length) return;
+    if (s.loading || s.exportGenerating || !s.exportSource || !tables.length) return;
+    const generation = {};
+    exportGeneration.current = generation;
     invalidateExportPreview(); // 重新生成前清空旧预览并作废旧请求
     const valid = request('exportSQL');
     commit((v) => ({ ...v, exportGenerating: true }));
@@ -2058,7 +2312,10 @@ function useBusinessController() {
           }));
       });
     } finally {
-      set('exportGenerating', false);
+      if (exportGeneration.current === generation) {
+        exportGeneration.current = undefined;
+        set('exportGenerating', false);
+      }
     }
   }
   function selectExport(names: string[]) {
@@ -2082,7 +2339,7 @@ function useBusinessController() {
   }
   async function saveSql() {
     const s = latest.current;
-    if (s.exportSql && !s.busy)
+    if (s.exportSql)
       await action(async () => {
         if (await api('files.save', { name: s.exportFilename, content: s.exportSql }))
           void message.success('结构 SQL 已导出');
@@ -2356,6 +2613,8 @@ function useBusinessController() {
     loadTree,
     openTable,
     refreshTable,
+    refreshDatabase,
+    clearRefresh,
     refreshDatabaseOptions,
     refreshTargetTables,
     refreshEngine,

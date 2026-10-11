@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "qa:ui": "node scripts/ui-qa.mjs",
+    "qa:tree": "node scripts/tree-qa.mjs",
     "qa:desktop": "node scripts/ui-qa.mjs --desktop",
     "dist": "electron-builder --win nsis"
   },

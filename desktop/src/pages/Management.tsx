@@ -39,7 +39,6 @@ export function WorkspacesPage() {
         <DataTable<Workspace>
           rowKey="id"
           dataSource={m.state.workspaces}
-          onRow={(row) => ({ onDoubleClick: () => c.editWorkspace(row) })}
           columns={[
             { title: '工作区', dataIndex: 'name' },
             { title: '说明', dataIndex: 'description' },
@@ -54,13 +53,12 @@ export function WorkspacesPage() {
               key: 'actions',
               width: 160,
               render: (_, row) => (
-                <Space onDoubleClick={(event) => event.stopPropagation()}>
+                <Space>
                   <Button
                     size="small"
                     icon={<EditOutlined aria-hidden />}
                     aria-label={`编辑工作区 ${row.name}`}
                     onClick={() => c.editWorkspace(row)}
-                    onDoubleClick={(event) => event.stopPropagation()}
                   >
                     编辑
                   </Button>
@@ -131,19 +129,11 @@ export function WorkspacesPage() {
 export function ConnectionsPage() {
   const c = useController();
   const { m } = c;
-  const f = m.connectionForm;
-  const [connectionFields] = Form.useForm();
-  useEffect(() => {
-    if (!m.connectionDialog) return;
-    connectionFields.resetFields();
-    connectionFields.setFieldsValue({ ...f, port: String(f.port) });
-  }, [m.connectionDialog, f.id, connectionFields]);
   const filtered = orderedConnections(m.state.connections).filter((conn) =>
     `${conn.name} ${conn.host} ${conn.group}`
       .toLowerCase()
       .includes(m.connectionSearch.toLowerCase()),
   );
-  const workspaces = m.state.workspaces.map((w) => ({ value: w.id, label: w.name }));
   return (
     <>
       <section>
@@ -158,7 +148,6 @@ export function ConnectionsPage() {
             <Button
               danger
               disabled={!m.connectionSelection.length}
-              loading={!!m.busy}
               onClick={() => c.removeConnections()}
             >
               批量删除{m.connectionSelection.length ? `（${m.connectionSelection.length}）` : ''}
@@ -179,7 +168,6 @@ export function ConnectionsPage() {
             getCheckboxProps: (row) => ({ 'aria-label': `选择连接 ${row.name}` }),
           }}
           locale={{ emptyText: '新建连接或导入已有会话' }}
-          onRow={(row) => ({ onClick: () => c.editConnection(row) })}
           columns={[
             { title: '连接名称', dataIndex: 'name' },
             { title: '地址', render: (_, row) => `${row.host}:${row.port}` },
@@ -237,179 +225,193 @@ export function ConnectionsPage() {
           ]}
         />
       </section>
-      <Modal
-        title={
-          m.state.connections.some((connection) => connection.id === f.id) ? '编辑连接' : '新建连接'
-        }
-        open={m.connectionDialog}
-        onCancel={c.closeConnection}
-        centered
-        width={720}
-        footer={
-          <div className="connection-dialog-footer">
-            <div className="connection-dialog-test">
-              <ConnectionTestButton
-                aria-label="测试连接"
-                result={m.connectionTest}
-                disabled={!!connectionTestError(f) || !f.workspaceIds.length}
-                onClick={() => c.testConnection()}
-              />
-              <ConnectionTestFeedback result={m.connectionTest} />
-            </div>
-            <Space>
-              <Button
-                type="primary"
-                loading={!!m.busy}
-                onClick={() =>
-                  connectionFields
-                    .validateFields()
-                    .then(() => c.saveConnection())
-                    .catch(() => {})
-                }
-              >
-                保存连接
-              </Button>
-              <Button onClick={c.closeConnection}>取消</Button>
-            </Space>
-          </div>
-        }
-        destroyOnHidden
-        styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
-      >
-        <Form
-          form={connectionFields}
-          layout="vertical"
-          validateTrigger="onBlur"
-          onValuesChange={(values) => {
-            if (Object.hasOwn(values, 'port'))
-              c.patch('connectionForm', { port: portFromText(String(values.port)) });
-          }}
-        >
-          <Form.Item
-            label="连接名称"
-            name="name"
-            rules={[{ required: true, whitespace: true, message: '请输入连接名称' }]}
-          >
-            <Input
-              value={f.name}
-              onChange={(e) => c.patch('connectionForm', { name: e.target.value })}
-            />
-          </Form.Item>
-          <div className="form-pair">
-            <Form.Item
-              label="服务器地址"
-              name="host"
-              rules={[
-                { required: true, whitespace: true, message: '请输入服务器地址' },
-                { pattern: /^[a-zA-Z0-9.\-:\[\]]+$/, message: '请输入有效的服务器地址' },
-              ]}
-            >
-              <Input
-                value={f.host}
-                onChange={(e) => c.patch('connectionForm', { host: e.target.value })}
-              />
-            </Form.Item>
-            <Form.Item
-              label="端口"
-              name="port"
-              rules={[
-                {
-                  validator: (_, value) =>
-                    portFromText(String(value ?? ''))
-                      ? Promise.resolve()
-                      : Promise.reject(new Error('请输入 1–65535 的整数端口')),
-                },
-              ]}
-            >
-              <Input inputMode="numeric" autoComplete="off" />
-            </Form.Item>
-          </div>
-          <div className="form-pair">
-            <Form.Item
-              label="用户名"
-              name="user"
-              rules={[{ required: true, whitespace: true, message: '请输入用户名' }]}
-            >
-              <Input
-                value={f.user}
-                onChange={(e) => c.patch('connectionForm', { user: e.target.value })}
-              />
-            </Form.Item>
-            <Field label="密码">
-              <Input.Password
-                value={f.password}
-                placeholder={f.hasPassword ? '已保存；留空保留原密码' : '填写连接密码'}
-                onChange={(e) => c.patch('connectionForm', { password: e.target.value })}
-              />
-            </Field>
-          </div>
-          <Field label="指定数据库（可选）">
-            <Input
-              value={m.databasesText}
-              placeholder="shop_test, shop_a"
-              onChange={(e) => c.set('databasesText', e.target.value)}
-            />
-          </Field>
-          <Field label="连接分组">
-            <ConnectionGroupSelect />
-          </Field>
-          <Form.Item
-            label="关联工作区"
-            name="workspaceIds"
-            rules={[{ required: true, type: 'array', min: 1, message: '请选择至少一个工作区' }]}
-          >
-            <Select
-              mode="multiple"
-              value={f.workspaceIds}
-              options={workspaces}
-              onChange={(workspaceIds) => c.patch('connectionForm', { workspaceIds })}
-            />
-          </Form.Item>
-          <Form.Item>
-            <Checkbox
-              checked={f.ssl}
-              onChange={(e) => c.patch('connectionForm', { ssl: e.target.checked })}
-            >
-              启用 SSL，验证证书与服务器名称
-            </Checkbox>
-          </Form.Item>
-          {f.ssl && (
-            <>
-              <Field label="CA 证书（PEM，可留空使用系统信任）">
-                <Space.Compact block>
-                  <Input
-                    value={f.ca}
-                    onChange={(e) => c.patch('connectionForm', { ca: e.target.value })}
-                  />
-                  <Button onClick={() => c.chooseCertificate('ca')}>选择</Button>
-                </Space.Compact>
-              </Field>
-              <Field label="客户端证书（PKCS#12，可选）">
-                <Space.Compact block>
-                  <Input
-                    value={f.clientCert}
-                    onChange={(e) => c.patch('connectionForm', { clientCert: e.target.value })}
-                  />
-                  <Button onClick={() => c.chooseCertificate('clientCert')}>选择</Button>
-                </Space.Compact>
-              </Field>
-              {f.clientCert && (
-                <Field label="证书密码">
-                  <Input.Password
-                    value={f.certificatePassword}
-                    onChange={(e) =>
-                      c.patch('connectionForm', { certificatePassword: e.target.value })
-                    }
-                  />
-                </Field>
-              )}
-            </>
-          )}
-        </Form>
-      </Modal>
     </>
   );
 }
+export function ConnectionEditor() {
+  const c = useController();
+  const { m } = c;
+  const f = m.connectionForm;
+  const [connectionFields] = Form.useForm();
+  useEffect(() => {
+    if (!m.connectionDialog) return;
+    connectionFields.resetFields();
+    connectionFields.setFieldsValue({ ...f, port: String(f.port) });
+  }, [m.connectionDialog, f.id, connectionFields]);
+  const workspaces = m.state.workspaces.map((w) => ({ value: w.id, label: w.name }));
+  return (
+    <Modal
+      title={
+        m.state.connections.some((connection) => connection.id === f.id) ? '编辑连接' : '新建连接'
+      }
+      open={m.connectionDialog}
+      onCancel={c.closeConnection}
+      centered
+      width={720}
+      footer={
+        <div className="connection-dialog-footer">
+          <div className="connection-dialog-test">
+            <ConnectionTestButton
+              aria-label="测试连接"
+              result={m.connectionTest}
+              disabled={!!connectionTestError(f) || !f.workspaceIds.length}
+              onClick={() => c.testConnection()}
+            />
+            <ConnectionTestFeedback result={m.connectionTest} />
+          </div>
+          <Space>
+            <Button
+              type="primary"
+              onClick={() =>
+                connectionFields
+                  .validateFields()
+                  .then(() => c.saveConnection())
+                  .catch(() => {})
+              }
+            >
+              保存连接
+            </Button>
+            <Button onClick={c.closeConnection}>取消</Button>
+          </Space>
+        </div>
+      }
+      destroyOnHidden
+      styles={{ body: { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } }}
+    >
+      <Form
+        form={connectionFields}
+        layout="vertical"
+        validateTrigger="onBlur"
+        onValuesChange={(values) => {
+          if (Object.hasOwn(values, 'port'))
+            c.patch('connectionForm', { port: portFromText(String(values.port)) });
+        }}
+      >
+        <Form.Item
+          label="连接名称"
+          name="name"
+          rules={[{ required: true, whitespace: true, message: '请输入连接名称' }]}
+        >
+          <Input
+            value={f.name}
+            onChange={(e) => c.patch('connectionForm', { name: e.target.value })}
+          />
+        </Form.Item>
+        <div className="form-pair">
+          <Form.Item
+            label="服务器地址"
+            name="host"
+            rules={[
+              { required: true, whitespace: true, message: '请输入服务器地址' },
+              { pattern: /^[a-zA-Z0-9.\-:\[\]]+$/, message: '请输入有效的服务器地址' },
+            ]}
+          >
+            <Input
+              value={f.host}
+              onChange={(e) => c.patch('connectionForm', { host: e.target.value })}
+            />
+          </Form.Item>
+          <Form.Item
+            label="端口"
+            name="port"
+            rules={[
+              {
+                validator: (_, value) =>
+                  portFromText(String(value ?? ''))
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('请输入 1–65535 的整数端口')),
+              },
+            ]}
+          >
+            <Input inputMode="numeric" autoComplete="off" />
+          </Form.Item>
+        </div>
+        <div className="form-pair">
+          <Form.Item
+            label="用户名"
+            name="user"
+            rules={[{ required: true, whitespace: true, message: '请输入用户名' }]}
+          >
+            <Input
+              value={f.user}
+              onChange={(e) => c.patch('connectionForm', { user: e.target.value })}
+            />
+          </Form.Item>
+          <Field label="密码">
+            <Input.Password
+              value={f.password}
+              placeholder={f.hasPassword ? '已保存；留空保留原密码' : '填写连接密码'}
+              onChange={(e) => c.patch('connectionForm', { password: e.target.value })}
+            />
+          </Field>
+        </div>
+        <Field label="指定数据库（可选）">
+          <Input
+            value={m.databasesText}
+            placeholder="shop_test, shop_a"
+            onChange={(e) => c.set('databasesText', e.target.value)}
+          />
+        </Field>
+        <Field label="连接分组">
+          <ConnectionGroupSelect />
+        </Field>
+        <Form.Item
+          label="关联工作区"
+          name="workspaceIds"
+          rules={[{ required: true, type: 'array', min: 1, message: '请选择至少一个工作区' }]}
+        >
+          <Select
+            mode="multiple"
+            value={f.workspaceIds}
+            options={workspaces}
+            onChange={(workspaceIds) => c.patch('connectionForm', { workspaceIds })}
+          />
+        </Form.Item>
+        <Form.Item>
+          <Checkbox
+            checked={f.ssl}
+            onChange={(e) => c.patch('connectionForm', { ssl: e.target.checked })}
+          >
+            启用 SSL，验证证书与服务器名称
+          </Checkbox>
+        </Form.Item>
+        {f.ssl && (
+          <>
+            <Field label="CA 证书（PEM，可留空使用系统信任）">
+              <Space.Compact block>
+                <Input
+                  value={f.ca}
+                  onChange={(e) => c.patch('connectionForm', { ca: e.target.value })}
+                />
+                <Button onClick={() => c.chooseCertificate('ca')}>选择</Button>
+              </Space.Compact>
+            </Field>
+            <Field label="客户端证书（PKCS#12，可选）">
+              <Space.Compact block>
+                <Input
+                  value={f.clientCert}
+                  onChange={(e) => c.patch('connectionForm', { clientCert: e.target.value })}
+                />
+                <Button onClick={() => c.chooseCertificate('clientCert')}>选择</Button>
+              </Space.Compact>
+            </Field>
+            {f.clientCert && (
+              <Field label="证书密码">
+                <Input.Password
+                  value={f.certificatePassword}
+                  onChange={(e) =>
+                    c.patch('connectionForm', { certificatePassword: e.target.value })
+                  }
+                />
+              </Field>
+            )}
+          </>
+        )}
+      </Form>
+    </Modal>
+  );
+}
+
 export function ImportPage() {
   const c = useController();
   const { m } = c;
@@ -452,7 +454,6 @@ export function ImportPage() {
         />
         <Button
           className="top-gap"
-          loading={!!m.busy}
           disabled={!m.importText && !m.importFileToken}
           onClick={() => c.action(() => c.parseImport())}
         >
@@ -564,7 +565,6 @@ export function ImportPage() {
         <Button
           type="primary"
           disabled={!m.importRows.some((r) => r.selected) || !m.importWorkspaceIds.length}
-          loading={!!m.busy}
           onClick={() => c.submitImport()}
         >
           确认导入
@@ -589,7 +589,6 @@ export function TemplatesPage() {
         <DataTable<SyncTemplate>
           rowKey="id"
           dataSource={templates}
-          onRow={(row) => ({ onDoubleClick: () => c.editTemplate(row) })}
           locale={{ emptyText: '尚未保存模板' }}
           columns={[
             { title: '模板名称', dataIndex: 'name' },
@@ -602,7 +601,7 @@ export function TemplatesPage() {
               key: 'actions',
               width: 280,
               render: (_, row) => (
-                <Space onDoubleClick={(event) => event.stopPropagation()}>
+                <Space>
                   <Button
                     size="small"
                     icon={<EditOutlined aria-hidden />}
@@ -669,7 +668,7 @@ export function TemplateEditor() {
         </Space>
       }
     >
-      <DatabaseOptionsStatus />
+      <DatabaseOptionsStatus scope="template" />
       <Form layout="vertical" disabled={m.templateSubmitting}>
         <Field label="模板名称" required>
           <Input

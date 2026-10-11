@@ -39,17 +39,28 @@ npm run typecheck
 npm test
 npm run build
 npm run qa:ui -w desktop
+npm run qa:tree -w desktop
 npm run qa:desktop -w desktop
 npm run dist
 ```
 
-`npm test` 运行前端与引擎单元测试；默认跳过真库验收。`npm run dist` 编译两端、裁剪运行时、整理第三方许可并生成 NSIS 安装包。Maven Wrapper 入口为 `mvnw.cmd`，也可使用 `scripts/mvn.ps1`。版本锁定信息见 `package-lock.json` 与 `engine/pom.xml`。
+`npm test` 运行前端和引擎默认测试，默认跳过真库；`npm run build` 构建前端与 Electron，不构建引擎。Maven 入口为 `mvnw.cmd` 或 `scripts/mvn.ps1`。
 
-界面验收脚本使用生产构建、本机 Chrome / Edge 和内存示例数据，检查长表格与操作栏边界、抽屉层级、主题及业务交互；可通过 `DATA_SYNC_QA_BROWSER` 指定浏览器程序。桌面验收启动独立资料目录，检查原生按钮、主题持久化和任务关闭确认。结果写入 `docs/react-ui-qa.json`、`docs/react-desktop-qa.json`，截图保存在 `docs/screenshots/react-ant-design/`。
+界面验收先运行 `npm run build`，原生桌面验收还需可用引擎构建。脚本使用本机 Chrome／Edge，可通过 `DATA_SYNC_QA_BROWSER` 指定程序；浏览器验收用虚构数据，原生验收用隔离资料目录。
+
+| 验收命令（仓库根目录）                            | 主要用途                                  | 报告                                       |
+| ------------------------------------------------- | ----------------------------------------- | ------------------------------------------ |
+| `npm run qa:ui -w desktop`                        | 布局、主题与业务交互                      | [浏览器 UI](docs/react-ui-qa.json)         |
+| `npm run qa:tree -w desktop`                      | 1,000／5,000 表虚拟滚动、重查、刷新与重试 | [连接树](docs/tree-qa.json)                |
+| `npm run qa:ui -w desktop -- --tree-organization` | 分组与原生 HTML5 拖拽                     | [连接组织](docs/tree-organization-qa.json) |
+| `npm run qa:ui -w desktop -- --context-feedback`  | 右键反馈隔离与当前页面编辑                | [右键反馈](docs/context-feedback-qa.json)  |
+| `npm run qa:desktop -w desktop`                   | 原生窗口、主题持久化与关闭确认            | [桌面](docs/react-desktop-qa.json)         |
+
+截图保存在 `docs/screenshots/react-ant-design/`，视觉复核见[设计 QA](design-qa.md)。验证组合与前置条件见[验证技能](.agents/skills/verification/SKILL.md)，实际执行结果与限制见[验证记录](docs/validation.md)；这些报告路径保存对应最近一次结果，不是每次历史运行的独立快照。
 
 ## 手动构建安装包
 
-在 Windows x64 上准备 Node.js 24 / npm 11，打开 PowerShell，进入项目根目录（包含根 `package.json` 的目录；当前为 `D:\Project\midai\data-sync-tool`）。依赖和工具链已准备好时，执行：
+在 Windows x64 上准备 Node.js 24 / npm 11，打开 PowerShell，进入项目根目录（包含根 `package.json` 的目录）。依赖和工具链已准备好时，执行：
 
 ```powershell
 npm run dist
@@ -95,6 +106,19 @@ npm run dist
 
 ## 开源
 
+文档入口见下节；维护要求见[贡献说明中的文档规范](CONTRIBUTING.md#文档规范)。
+
 项目代码采用 [Apache-2.0](LICENSE)。第三方组件保持各自许可，见 [第三方声明](THIRD_PARTY_NOTICES.md)。MariaDB Connector/J 以独立、未修改 JAR 分发，附带匹配源码与 LGPL 文本；Java 运行时保留法律文件与对应源码地址。MySQL 服务端不随客户端分发。
 
 提交前阅读 [贡献说明](CONTRIBUTING.md)。不要提交连接导出文件、真实凭据、本地数据库、SQL 档案或 `.tools` 中的测试资料。
+
+## 文档导航
+
+| 阅读目的               | 入口                                                                 |
+| ---------------------- | -------------------------------------------------------------------- |
+| 完成日常业务操作       | [使用指南](docs/user-guide.md)、[支持范围](docs/limitations.md)      |
+| 理解内部机制与接口     | [架构与证据模型](docs/architecture.md)、[本地协议](docs/protocol.md) |
+| 开发界面与交互         | [交互规范](docs/interaction-guidelines.md)                           |
+| 核对历史验收与视觉样本 | [验证记录](docs/validation.md)、[设计 QA](design-qa.md)              |
+| 修改、合并或清理文档   | [文档规范](CONTRIBUTING.md#文档规范)                                 |
+| 使用项目开发技能       | [任务与技能索引](AGENTS.md#2-任务与技能索引)                         |

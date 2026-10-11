@@ -61,7 +61,7 @@ export function RefreshButton({
         title={
           result
             ? `${result.message}${result.status === 'testing' ? '' : ' · 点击再次刷新'}`
-            : '点击刷新'
+            : undefined
         }
         trigger={['hover', 'focus']}
       >

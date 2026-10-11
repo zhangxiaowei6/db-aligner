@@ -1,0 +1,46 @@
+{
+  "browser": [
+    {
+      "check": "tree-pointer-short-click-400ms-long-press-and-release",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "native-html5-tree-drag-selection-cancel-invalid-empty-and-reorder",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "group-edit-icon-and-dropdown-create",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "database-options-follow-persisted-group-and-member-order",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "tree-pointer-short-click-400ms-long-press-and-release",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "native-html5-tree-drag-selection-cancel-invalid-empty-and-reorder",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "group-edit-icon-and-dropdown-create",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "database-options-follow-persisted-group-and-member-order",
+      "theme": "dark",
+      "passed": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

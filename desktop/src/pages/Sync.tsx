@@ -1,20 +1,11 @@
+import { targetRefreshKey } from '../model';
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
-import {
-  Alert,
-  Checkbox,
-  Empty,
-  Form,
-  Input,
-  Radio,
-  Select,
-  Space,
-  Tabs,
-  Tag,
-  Tooltip,
-} from 'antd';
+import { Alert, Checkbox, Empty, Form, Input, Select, Space, Tabs, Tag, Tooltip } from 'antd';
 import {
   ArrowRightOutlined,
   DatabaseOutlined,
+  CheckSquareOutlined,
+  ClearOutlined,
   EditOutlined,
   FileOutlined,
   PlusOutlined,
@@ -36,7 +27,7 @@ import {
   type ReviewNode,
   type ScopeTable,
 } from '../model';
-import { DataTable, Field, Footer, Panel, SelectionToggle } from '../components/shared';
+import { DataTable, Field, Footer, Panel } from '../components/shared';
 import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import { columnChangeSummary } from '../column-comparison';
 import { DiffInspector } from '../components/DiffInspector';
@@ -73,6 +64,15 @@ export function ScopePage() {
   );
   const templates = m.state.templates.filter((t) => t.workspaceId === m.workspaceId);
   const selectedTemplate = templates.find((t) => t.id === m.scopeTemplateId);
+  const filteredSelected = filtered.filter((table) => table[m.scopeMode]).length;
+  const allFilteredSelected = filtered.length > 0 && filteredSelected === filtered.length;
+  const selectionLabel = m.tableSearch
+    ? allFilteredSelected
+      ? '取消选择搜索结果'
+      : '全选搜索结果'
+    : allFilteredSelected
+      ? '取消全选'
+      : '全选所有表';
   return (
     <>
       <div className="scope-layout">
@@ -136,7 +136,7 @@ export function ScopePage() {
             {m.templateApplyError && <Alert type="error" showIcon title={m.templateApplyError} />}
           </div>
 
-          <DatabaseOptionsStatus />
+          <DatabaseOptionsStatus scope="sync" />
           <Form layout="vertical">
             <div className="source-target-form">
               <Field label="来源数据库">
@@ -169,51 +169,30 @@ export function ScopePage() {
           </Form>
           <div className="section-heading">
             <h2>选择需要比较的表</h2>
-            <Input
-              className="short-input"
-              prefix={<SearchOutlined />}
-              placeholder="搜索表名"
-              value={m.tableSearch}
-              onChange={(e) => c.set('tableSearch', e.target.value)}
-            />
           </div>
+          <Tabs
+            aria-label="同步类型"
+            activeKey={m.scopeMode}
+            onChange={(value) => c.setScopeMode(value as 'structure' | 'data')}
+            items={[
+              {
+                key: 'structure',
+                label: '同步结构',
+                disabled: comparing || !!m.applyingTemplateId,
+              },
+              { key: 'data', label: '同步数据', disabled: comparing || !!m.applyingTemplateId },
+            ]}
+          />
           <div className="scope-toolbar">
-            <Space wrap>
-              <Radio.Group
-                aria-label="同步类型"
-                value={m.scopeMode}
-                disabled={comparing}
-                onChange={(event) => c.setScopeMode(event.target.value)}
-                options={[
-                  { label: '同步结构', value: 'structure' },
-                  { label: '同步数据', value: 'data' },
-                ]}
-              />
-              {([m.scopeMode] as const).map((kind) => {
-                return (
-                  <SelectionToggle
-                    key={kind}
-                    disabled={comparing}
-                    total={filtered.length}
-                    selected={filtered.filter((table) => table[kind]).length}
-                    onToggle={() => c.toggleScope(kind)}
-                  >
-                    {kind === 'structure' ? '选择结构表' : '选择数据表'}
-                  </SelectionToggle>
-                );
-              })}
-            </Space>
-            <span className="hint">每次只同步一种类型；切换类型保留已选表</span>
+            <span className="hint">每次只同步一种类型；两种类型分别保留选表和搜索</span>
             <RefreshButton
+              key={targetRefreshKey(m)}
               size="small"
               aria-label="刷新目标表清单"
-              result={m.refreshResults.targetTables}
+              result={m.refreshResults[targetRefreshKey(m)]}
               icon={<ReloadOutlined aria-hidden />}
               disabled={comparing || !m.targetKeys.length}
-              loading={
-                !!m.refreshing.targetTables ||
-                m.targetKeys.some((key) => m.targetTablesLoading[key])
-              }
+              loading={!!m.refreshing[targetRefreshKey(m)]}
               onClick={() => c.refreshTargetTables()}
             >
               刷新目标表清单
@@ -239,16 +218,14 @@ export function ScopePage() {
                 .join('；')}
               action={
                 <RefreshButton
+                  key={targetRefreshKey(m, 'retry')}
                   size="small"
                   aria-label="重试"
-                  result={m.refreshResults.targetTables}
+                  result={m.refreshResults[targetRefreshKey(m, 'retry')]}
                   icon={<ReloadOutlined aria-hidden />}
-                  loading={
-                    !!m.refreshing.targetTables ||
-                    m.targetKeys.some((key) => m.targetTablesLoading[key])
-                  }
+                  loading={!!m.refreshing[targetRefreshKey(m, 'retry')]}
                   disabled={comparing}
-                  onClick={() => c.refreshTargetTables()}
+                  onClick={() => c.refreshTargetTables('retry')}
                 >
                   重试
                 </RefreshButton>
@@ -272,13 +249,66 @@ export function ScopePage() {
               </Button>
             </div>
           )}
+          <div className="scope-table-search">
+            <label htmlFor="scope-table-search">搜索表</label>
+            <Input
+              id="scope-table-search"
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="输入表名，筛选下方表格"
+              value={m.tableSearch}
+              onChange={(e) => c.set('tableSearch', e.target.value)}
+            />
+            <Button
+              icon={
+                allFilteredSelected ? (
+                  <ClearOutlined aria-hidden />
+                ) : (
+                  <CheckSquareOutlined aria-hidden />
+                )
+              }
+              disabled={comparing || !filtered.length}
+              aria-pressed={allFilteredSelected}
+              onClick={() => c.toggleScope(m.scopeMode)}
+            >
+              {selectionLabel}
+            </Button>
+            <span className="hint" role="status">
+              显示 {filtered.length} / {m.scopeTables.length} 张表 · 当前类型已选{' '}
+              {m.scopeTables.filter((table) => table[m.scopeMode]).length} 张
+            </span>
+          </div>
           <DataTable<ScopeTable>
             size="small"
             className="scope-table"
             rowKey="name"
             dataSource={filtered}
-            locale={{ emptyText: '选择源库后加载表名' }}
+            locale={{
+              emptyText: m.tableSearch ? '没有匹配的表，请调整搜索内容' : '选择源库后加载表名',
+            }}
             columns={[
+              {
+                key: 'selection',
+                width: 64,
+                align: 'center',
+                title: (
+                  <Checkbox
+                    checked={allFilteredSelected}
+                    indeterminate={filteredSelected > 0 && !allFilteredSelected}
+                    disabled={comparing || !filtered.length}
+                    aria-label="选择当前列表全部表"
+                    onChange={() => c.toggleScope(m.scopeMode)}
+                  />
+                ),
+                render: (_, row) => (
+                  <Checkbox
+                    checked={row[m.scopeMode]}
+                    disabled={comparing}
+                    aria-label={`${row.name} ${m.scopeMode === 'structure' ? '表结构' : '基础数据'}`}
+                    onChange={(e) => c.updateScope(row.name, { [m.scopeMode]: e.target.checked })}
+                  />
+                ),
+              },
               {
                 title: '表名',
                 key: 'name',
@@ -309,66 +339,41 @@ export function ScopePage() {
                 render: (value: string) => value || '无表注释',
               },
               {
-                title: '表结构',
-                width: 85,
-                align: 'center',
-                render: (_, row) => (
-                  <Checkbox
-                    checked={row.structure}
-                    disabled={comparing || m.scopeMode !== 'structure'}
-                    aria-label={`${row.name} 表结构`}
-                    onChange={(e) => c.updateScope(row.name, { structure: e.target.checked })}
-                  />
-                ),
-              },
-              {
-                title: '结构细项',
-                width: 130,
-                render: (_, row) => (
-                  <TableStructureOptions
-                    label={`${row.name} 结构细项`}
-                    value={row.structureOptions}
-                    disabled={comparing || !row.structure}
-                    onChange={(options) => c.updateScope(row.name, { structureOptions: options })}
-                  />
-                ),
-              },
-              {
-                title: '基础数据',
-                width: 90,
-                align: 'center',
-                render: (_, row) => (
-                  <Checkbox
-                    checked={row.data}
-                    disabled={comparing || m.scopeMode !== 'data'}
-                    aria-label={`${row.name} 基础数据`}
-                    onChange={(e) => c.updateScope(row.name, { data: e.target.checked })}
-                  />
-                ),
-              },
-              {
-                title: '匹配键',
-                width: 240,
-                render: (_, row) => (
-                  <Input
-                    value={row.keyText}
-                    disabled={comparing || !row.data}
-                    placeholder="默认主键；复合键用逗号分隔"
-                    aria-label={`${row.name} 匹配键`}
-                    onChange={(e) => c.updateScope(row.name, { keyText: e.target.value })}
-                  />
-                ),
+                title: m.scopeMode === 'structure' ? '结构细项' : '匹配键',
+                width: m.scopeMode === 'structure' ? 220 : 320,
+                render: (_, row) =>
+                  m.scopeMode === 'structure' ? (
+                    <TableStructureOptions
+                      label={`${row.name} 结构细项`}
+                      value={row.structureOptions}
+                      disabled={comparing || !row.structure}
+                      onChange={(options) => c.updateScope(row.name, { structureOptions: options })}
+                    />
+                  ) : (
+                    <Input
+                      value={row.keyText}
+                      disabled={comparing || !row.data}
+                      placeholder="默认主键；复合键用逗号分隔"
+                      aria-label={`${row.name} 匹配键`}
+                      onChange={(e) => c.updateScope(row.name, { keyText: e.target.value })}
+                    />
+                  ),
               },
             ]}
           />
-          <p className="hint">删除与高风险结构变更默认不选中，在差异预览中逐项确认。</p>
-          <p className="hint">
-            数据同步仅处理源库与目标库都存在的同名表；目标缺表时自动跳过，不创建表。
-          </p>
-          <p className="hint">
-            业务键匹配保留目标主键，不自动映射关联表
-            ID。已有表的字段定义或顺序变化时，请先同步结构，再重新比较数据。
-          </p>
+          {m.scopeMode === 'structure' ? (
+            <p className="hint">删除与高风险结构变更默认不选中，在差异预览中逐项确认。</p>
+          ) : (
+            <>
+              <p className="hint">
+                数据同步仅处理源库与目标库都存在的同名表；目标缺表时自动跳过，不创建表。
+              </p>
+              <p className="hint">
+                业务键匹配保留目标主键，不自动映射关联表
+                ID。已有表的字段定义或顺序变化时，请先同步结构，再重新比较数据。
+              </p>
+            </>
+          )}
         </Panel>
       </div>
       <Footer>
@@ -410,7 +415,21 @@ export function DiffPage() {
   const { m } = c;
   const plan = m.plan;
   if (!plan) return <Empty description="先选择同步范围并比较" />;
-  const nodes = reviewNodes(m);
+  const changes = changesOf(m);
+  const tabs = [
+    { key: 'structure', label: '表结构' },
+    { key: 'data', label: '基础数据' },
+  ].filter(({ key }) =>
+    changes.some((change) =>
+      change.kind === 'BLOCKED'
+        ? plan.tables.some(
+            (table) => table.name === change.table && table[key as 'structure' | 'data'],
+          )
+        : (key === 'data') === change.kind.endsWith('_ROW'),
+    ),
+  );
+  const diffTab = tabs.find((tab) => tab.key === m.diffTab)?.key || tabs[0]?.key || m.diffTab;
+  const nodes = reviewNodes({ ...m, diffTab });
   const flatten = (items: ReviewNode[]): ReviewNode[] =>
     items.flatMap((node) => [node, ...flatten(node.children || [])]);
   const allNodes = flatten(nodes);
@@ -497,14 +516,9 @@ export function DiffPage() {
         );
       })}
       <div className="diff-toolbar">
-        <Tabs
-          activeKey={m.diffTab}
-          onChange={(value) => c.set('diffTab', value)}
-          items={[
-            { key: 'structure', label: '表结构' },
-            { key: 'data', label: '基础数据' },
-          ]}
-        />
+        {!!tabs.length && (
+          <Tabs activeKey={diffTab} onChange={(value) => c.set('diffTab', value)} items={tabs} />
+        )}
         <Input
           className="short-input"
           prefix={<SearchOutlined />}
@@ -516,7 +530,7 @@ export function DiffPage() {
       <div className="diff-layout">
         <section>
           <p className="hint">
-            {m.diffTab === 'data' ? '按目标库、表和数据记录分组' : '按目标库与表分组'}
+            {diffTab === 'data' ? '按目标库、表和数据记录分组' : '按目标库与表分组'}
           </p>
           <DataTable<ReviewNode>
             rowKey="id"
@@ -619,15 +633,14 @@ export function DiffPage() {
         />
         <span>已选 {changesOf(m).filter((v) => m.selectedIds.includes(v.id)).length} 项变更</span>
         <Button
-          disabled={!m.selectedIds.length || !!m.busy}
+          disabled={!m.selectedIds.length || !!m.syncSubmitting}
           onClick={() => c.saveSync('SAVE_ONLY')}
         >
           仅保存记录
         </Button>
         <Button
           type="primary"
-          loading={!!m.busy}
-          disabled={!m.selectedIds.length}
+          disabled={!m.selectedIds.length || !!m.syncSubmitting}
           onClick={() => c.saveSync('EXECUTE_AND_SAVE')}
         >
           执行并保存
@@ -725,8 +738,7 @@ export function RollbackPage() {
         <Button onClick={() => c.action(() => c.openRecord(rollback.recordId))}>返回记录</Button>
         <Button
           type="primary"
-          loading={!!m.busy}
-          disabled={!m.rollbackIds.length}
+          disabled={!m.rollbackIds.length || !!m.rollbackSubmitting}
           onClick={() => c.executeRollback()}
         >
           执行所选回滚

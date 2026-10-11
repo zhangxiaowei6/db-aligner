@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Windows 构建与打包'
+  short_description: '完成两端构建、运行时与许可整理，核验本次安装包并说明安装验收边界'
+  default_prompt: '使用 $windows-packaging 完整构建本项目的 Windows 安装包，核验本次产物并记录验收边界。'

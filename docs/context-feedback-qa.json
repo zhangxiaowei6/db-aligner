@@ -1,0 +1,16 @@
+{
+  "browser": [
+    {
+      "check": "context-feedback-session-isolation-and-in-place-edit",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "context-feedback-session-isolation-and-in-place-edit",
+      "theme": "dark",
+      "passed": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

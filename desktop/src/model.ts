@@ -94,6 +94,12 @@ export interface Model {
   workspaceId: string;
   page: Page;
   busy: number;
+  syncSubmitting?: string;
+  rollbackSubmitting?: string;
+  scopeView: number;
+  tableView: number;
+  recordView: number;
+  rollbackView: number;
   loading: boolean;
   refreshing: Record<string, boolean>;
   refreshResults: Record<string, ConnectionTestResult>;
@@ -110,6 +116,7 @@ export interface Model {
   targetTablesErrors: Record<string, string>;
   scopeTables: ScopeTable[];
   scopeMode: 'structure' | 'data';
+  scopeDrafts: Partial<Record<'structure' | 'data', { tables: ScopeTable[]; search: string }>>;
   templateMode: 'structure' | 'data';
   scopeTemplateId: string;
   applyingTemplateId: string;
@@ -235,6 +242,10 @@ export function initialModel(): Model {
     workspaceId: 'default',
     page: 'scope',
     busy: 0,
+    scopeView: 0,
+    tableView: 0,
+    recordView: 0,
+    rollbackView: 0,
     loading: true,
     refreshing: {},
     refreshResults: {},
@@ -250,6 +261,7 @@ export function initialModel(): Model {
     targetTablesErrors: {},
     scopeTables: [],
     scopeMode: 'structure',
+    scopeDrafts: {},
     templateMode: 'structure',
     scopeTemplateId: '',
     applyingTemplateId: '',
@@ -499,3 +511,16 @@ export const pageTitles: Record<Page, string> = {
   export: '导出表结构',
   settings: '设置',
 };
+
+export function targetRefreshKey(m: Model, entry = 'main') {
+  return `targetTables:${m.scopeMode}:${m.scopeView}:${entry}:${JSON.stringify([m.sourceKey, m.targetKeys])}`;
+}
+export function recordRefreshKey(m: Model) {
+  return `recordScripts:${m.recordView}:${m.detail?.record.id}:${m.recordTab}`;
+}
+export function rollbackRefreshKey(m: Model) {
+  return `rollback:${m.rollbackView}:${m.rollback?.recordId}`;
+}
+export function tableRefreshKey(m: Model) {
+  return `table:${m.tableView}:${m.currentTable?.id}`;
+}

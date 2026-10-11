@@ -1,3 +1,4 @@
+import { recordRefreshKey } from '../model';
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
 import {
   Alert,
@@ -400,8 +401,9 @@ export function RecordPage() {
                     description={m.recordScriptErrors[file]}
                     action={
                       <RefreshButton
-                        loading={!!m.refreshing.recordScripts}
-                        result={m.refreshResults.recordScripts}
+                        key={recordRefreshKey(m)}
+                        loading={!!m.refreshing[recordRefreshKey(m)]}
+                        result={m.refreshResults[recordRefreshKey(m)]}
                         onClick={() => c.refreshRecordScripts()}
                       >
                         重试
@@ -511,9 +513,7 @@ export function RecordPage() {
         <Panel>
           <div className="section-heading">
             <h2>外部执行记录</h2>
-            <Button loading={!!m.busy} onClick={() => c.verifyExternal()}>
-              校验目标库与恢复资料
-            </Button>
+            <Button onClick={() => c.verifyExternal()}>校验目标库与恢复资料</Button>
           </div>
           {detail.external.declaredAt ? (
             <>
@@ -588,7 +588,7 @@ export function RecordDrawers() {
         footer={
           <Space>
             <Button onClick={() => c.set('versionDrawer', false)}>取消</Button>
-            <Button type="primary" loading={!!m.busy} onClick={() => c.markVersion()}>
+            <Button type="primary" onClick={() => c.markVersion()}>
               确认标记
             </Button>
           </Space>
@@ -659,7 +659,6 @@ export function RecordDrawers() {
             <Button onClick={() => c.set('externalDrawer', false)}>取消</Button>
             <Button
               type="primary"
-              loading={!!m.busy}
               disabled={!m.externalIds.length}
               onClick={() => c.saveExternal()}
             >
