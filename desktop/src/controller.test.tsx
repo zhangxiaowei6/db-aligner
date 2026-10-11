@@ -1724,9 +1724,11 @@ describe('React business state and protocol', () => {
     );
     expect(screen.queryByRole('region', { name: 'shop_a 执行脚本' })).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: '执行脚本' }));
-    expect(
-      screen.getByRole('region', { name: 'shop_a 执行脚本' }).querySelector('code')!.textContent,
-    ).toBe('ALTER TABLE t ADD COLUMN remark INT;');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('region', { name: 'shop_a 执行脚本' }).querySelector('code')!.textContent,
+      ).toBe('ALTER TABLE t ADD COLUMN remark INT;'),
+    );
   });
   it('does not execute a plan when its selection changed during confirmation', async () => {
     await ready();
@@ -2966,6 +2968,104 @@ describe('module-owned operation feedback', () => {
     expect(controller.m.sourceKey).toBe('source/a');
     expect(controller.m.connectionDialog).toBe(false);
   });
+});
+
+it('loads only the active target script and rejects late target and tab responses', async () => {
+  await ready();
+  const normal = bridge.invoke.getMockImplementation()!;
+  const pending = deferred<string>();
+  bridge.invoke.mockImplementation((method, params) => {
+    if (method === 'record.get')
+      return Promise.resolve({
+        record: {
+          id: 'targets',
+          workspaceId: 'default',
+          createdAt: '',
+          mode: 'SAVE_ONLY',
+          status: 'UNEXECUTED',
+          remark: '',
+          parentId: '',
+          archivePath: '',
+          selectedIds: [],
+          results: [],
+        },
+        files: [
+          'first/02_sync.sql',
+          'second/02_sync.sql',
+          'third/02_sync.sql',
+          'third/04_rollback.sql',
+          'third/05_rollback_local.sql',
+        ],
+        events: [],
+        external: {},
+      });
+    if (method === 'record.file')
+      return params.file === 'second/02_sync.sql'
+        ? pending.promise
+        : Promise.resolve(String(params.file));
+    return normal(method, params);
+  });
+  await act(async () => controller.openRecord('targets'));
+  expect(
+    bridge.invoke.mock.calls
+      .filter(([method]) => method === 'record.file')
+      .map(([, params]) => params.file),
+  ).toEqual(['first/02_sync.sql']);
+  let late!: Promise<void>;
+  act(() => {
+    late = controller.selectRecordScript('second/02_sync.sql');
+  });
+  await act(async () => controller.selectRecordScript('third/02_sync.sql'));
+  expect(controller.m.recordScripts).toEqual({ 'third/02_sync.sql': 'third/02_sync.sql' });
+  await act(async () => controller.changeRecordTab('rollbackScripts'));
+  expect(controller.m.fileSelected).toBe('third/05_rollback_local.sql');
+  await act(async () => {
+    pending.resolve('late second target');
+    await late;
+  });
+  expect(controller.m.recordScripts).toEqual({
+    'third/05_rollback_local.sql': 'third/05_rollback_local.sql',
+  });
+  expect(
+    bridge.invoke.mock.calls.some(
+      ([method, params]) => method === 'record.file' && params.file === 'third/04_rollback.sql',
+    ),
+  ).toBe(false);
+});
+
+it('normalizes legacy Windows target manifest paths during lazy script loading', async () => {
+  await ready();
+  const normal = bridge.invoke.getMockImplementation()!;
+  bridge.invoke.mockImplementation((method, params) => {
+    if (method === 'record.get')
+      return Promise.resolve({
+        record: {
+          id: 'windows-path',
+          workspaceId: 'default',
+          createdAt: '',
+          mode: 'SAVE_ONLY',
+          status: 'UNEXECUTED',
+          remark: '',
+          parentId: '',
+          archivePath: '',
+          selectedIds: [],
+          results: [],
+        },
+        files: ['first\\target.json', 'first\\02_sync.sql'],
+        events: [],
+        external: {},
+      });
+    if (method === 'record.file')
+      return Promise.resolve(
+        String(params.file).endsWith('target.json')
+          ? JSON.stringify({ connectionId: 'source', database: 'a' })
+          : 'fixture SQL',
+      );
+    return normal(method, params);
+  });
+  await act(async () => controller.openRecord('windows-path'));
+  expect(controller.m.recordScriptTargets.first).toEqual({ connectionId: 'source', database: 'a' });
+  expect(controller.m.recordScripts['first\\02_sync.sql']).toBe('fixture SQL');
 });
 
 it('binds script reload feedback to the record view and script tab, rejecting late results', async () => {

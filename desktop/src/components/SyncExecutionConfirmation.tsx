@@ -1,6 +1,8 @@
 import type { ConnectionInfo, DbRef, SyncPlan } from '../types';
 import SqlView from './SqlView';
 import { executionScript } from '../sync-scripts';
+import { useMemo, useState } from 'react';
+import { Select } from 'antd';
 
 export function SyncExecutionConfirmation({
   plan,
@@ -13,17 +15,26 @@ export function SyncExecutionConfirmation({
   connections: ConnectionInfo[];
   saveOnly?: boolean;
 }) {
-  const selected = new Set(selectedIds);
-  const targets = plan.targets
-    .map((target) => {
-      const changes = target.changes.filter((change) => selected.has(change.id) && !change.blocked);
-      return {
-        ...target,
-        count: changes.length,
-        script: executionScript(changes),
-      };
-    })
-    .filter((target) => target.count > 0);
+  const [targetKey, setTargetKey] = useState('');
+  const targets = useMemo(() => {
+    const selected = new Set(selectedIds);
+    return plan.targets
+      .map((target) => {
+        const changes = target.changes.filter(
+          (change) => selected.has(change.id) && !change.blocked,
+        );
+        return {
+          ...target,
+          count: changes.length,
+          changes,
+        };
+      })
+      .filter((target) => target.count > 0);
+  }, [plan, selectedIds]);
+  const target =
+    targets.find((item) => item.ref.connectionId + '/' + item.ref.database === targetKey) ||
+    targets[0];
+  const script = useMemo(() => executionScript(target?.changes || []), [target]);
   function database(ref: DbRef) {
     const connection = connections.find((item) => item.id === ref.connectionId);
     return (
@@ -69,8 +80,18 @@ export function SyncExecutionConfirmation({
       </p>
       <section aria-label="本次执行脚本" className="sync-confirm-scripts">
         <h3>本次执行脚本</h3>
-        <p className="hint">按目标库展示全部已选变更的 SQL，可滚动查看并复制完整内容。</p>
-        {targets.map((target) => (
+        <p className="hint">切换目标库查看全部已选变更的 SQL，可分页查看并复制完整内容。</p>
+        <Select
+          aria-label="执行脚本目标库"
+          className="script-target-select"
+          value={target ? target.ref.connectionId + '/' + target.ref.database : undefined}
+          onChange={setTargetKey}
+          options={targets.map((item) => ({
+            value: item.ref.connectionId + '/' + item.ref.database,
+            label: `${connections.find((connection) => connection.id === item.ref.connectionId)?.name || item.ref.connectionId} / ${item.ref.database} · ${item.count} 项变更`,
+          }))}
+        />
+        {target && (
           <section
             key={target.ref.connectionId + '/' + target.ref.database}
             aria-label={`${target.ref.database} 执行脚本`}
@@ -78,9 +99,9 @@ export function SyncExecutionConfirmation({
             <h4>
               {target.ref.database} · {target.count} 项变更
             </h4>
-            <SqlView sql={target.script} />
+            <SqlView sql={script} />
           </section>
-        ))}
+        )}
       </section>
     </div>
   );

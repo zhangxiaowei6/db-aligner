@@ -107,6 +107,23 @@ const generate = () => screen.getByRole('button', { name: /生成预览 SQL/ });
 const save = () => screen.getByRole('button', { name: /导出 .sql/ });
 
 describe('manual schema export', () => {
+  it('saves the complete large script while displaying a bounded page', async () => {
+    const largeSql = 'CREATE TABLE `fixture` (`id` INT);\r\n'.repeat(12_000);
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((method, ...args) =>
+      method === 'schema.export' ? Promise.resolve({ sql: largeSql }) : original(method, ...args),
+    );
+    await ready();
+    act(() => controller.selectExport(['dict']));
+    await act(async () => controller.updateExport());
+    expect(document.querySelector('code')!.textContent!.length).toBeLessThanOrEqual(32_769);
+    expect(controller.m.exportSql).toBe(largeSql);
+    await act(async () => controller.saveSql());
+    expect(bridge.invoke).toHaveBeenCalledWith('files.save', {
+      name: controller.m.exportFilename,
+      content: largeSql,
+    });
+  });
   it('selects all pages and preserves other pages when a row is unchecked', async () => {
     await ready();
     const manyRows = Array.from({ length: 32 }, (_, i) => ({

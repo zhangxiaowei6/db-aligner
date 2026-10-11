@@ -1,0 +1,296 @@
+{
+  "browser": [
+    {
+      "check": "performance-export-298-0-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "light",
+      "tables": 298,
+      "displayMs": 133.39999997615814,
+      "sqlCharacters": 529325,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 615,
+      "pageMs": 15,
+      "heapBytes": 20844064
+    },
+    {
+      "check": "performance-export-1000-0-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "light",
+      "tables": 1000,
+      "displayMs": 117.29999995231628,
+      "sqlCharacters": 1776779,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 632,
+      "pageMs": 15.699999928474426,
+      "heapBytes": 27462408
+    },
+    {
+      "check": "performance-export-5000-0-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "light",
+      "tables": 5000,
+      "displayMs": 143.29999995231628,
+      "sqlCharacters": 8892779,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 645,
+      "pageMs": 13.600000023841858,
+      "heapBytes": 59656260
+    },
+    {
+      "check": "performance-export-298-10485760-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "light",
+      "tables": 298,
+      "bytes": 10485760,
+      "displayMs": 123,
+      "sqlCharacters": 10485760,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 646,
+      "pageMs": 12.100000023841858,
+      "heapBytes": 58862876
+    },
+    {
+      "check": "sql-replacement-memory",
+      "theme": "light",
+      "cycles": 5,
+      "beforeCycles": {
+        "documents": 1,
+        "nodes": 974,
+        "jsEventListeners": 852
+      },
+      "afterCycles": {
+        "documents": 1,
+        "nodes": 982,
+        "jsEventListeners": 1577
+      },
+      "cycleHeaps": [
+        48414656,
+        39025288,
+        48518328,
+        39136348,
+        48560544
+      ]
+    },
+    {
+      "check": "performance-diff-light",
+      "scrollBottom": 662.578125,
+      "footerTop": 662.578125,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "virtual-difference-performance",
+      "theme": "light",
+      "changes": 20000,
+      "mountedRows": 4,
+      "selectionMs": 25.600000023841858,
+      "filterMs": 82.70000004768372
+    },
+    {
+      "check": "performance-rollback-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "virtual-recovery-performance",
+      "theme": "light",
+      "items": 20000,
+      "mountedRows": 8,
+      "selectionMs": 33.799999952316284
+    },
+    {
+      "check": "performance-rollback-narrow-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "performance-export-298-0-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "dark",
+      "tables": 298,
+      "displayMs": 125.19999992847443,
+      "sqlCharacters": 529325,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 615,
+      "pageMs": 17.800000071525574,
+      "heapBytes": 20991412
+    },
+    {
+      "check": "performance-export-1000-0-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "dark",
+      "tables": 1000,
+      "displayMs": 131.30000007152557,
+      "sqlCharacters": 1776779,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 632,
+      "pageMs": 14,
+      "heapBytes": 27451968
+    },
+    {
+      "check": "performance-export-5000-0-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "dark",
+      "tables": 5000,
+      "displayMs": 129.29999995231628,
+      "sqlCharacters": 8892779,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 645,
+      "pageMs": 17.5,
+      "heapBytes": 59802048
+    },
+    {
+      "check": "performance-export-298-10485760-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "bounded-sql-performance",
+      "theme": "dark",
+      "tables": 298,
+      "bytes": 10485760,
+      "displayMs": 122.19999992847443,
+      "sqlCharacters": 10485760,
+      "displayedCharacters": 32768,
+      "sqlNodes": 0,
+      "domNodes": 646,
+      "pageMs": 12.600000023841858,
+      "heapBytes": 58867004
+    },
+    {
+      "check": "sql-replacement-memory",
+      "theme": "dark",
+      "cycles": 5,
+      "beforeCycles": {
+        "documents": 1,
+        "nodes": 971,
+        "jsEventListeners": 852
+      },
+      "afterCycles": {
+        "documents": 1,
+        "nodes": 973,
+        "jsEventListeners": 1575
+      },
+      "cycleHeaps": [
+        48388776,
+        39036344,
+        48503072,
+        39078356,
+        48527980
+      ]
+    },
+    {
+      "check": "performance-diff-dark",
+      "scrollBottom": 662.578125,
+      "footerTop": 662.578125,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "virtual-difference-performance",
+      "theme": "dark",
+      "changes": 20000,
+      "mountedRows": 4,
+      "selectionMs": 24.700000047683716,
+      "filterMs": 86.20000004768372
+    },
+    {
+      "check": "performance-rollback-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "virtual-recovery-performance",
+      "theme": "dark",
+      "items": 20000,
+      "mountedRows": 8,
+      "selectionMs": 27.300000071525574
+    },
+    {
+      "check": "performance-rollback-narrow-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    }
+  ],
+  "desktop": [],
+  "errors": [],
+  "environment": {
+    "node": "v22.22.2",
+    "platform": "win32",
+    "browser": "154.0.8037.98",
+    "fixture": "production frontend with isolated in-memory data; no database operations"
+  }
+}

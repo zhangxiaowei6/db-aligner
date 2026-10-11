@@ -1,5 +1,37 @@
 # 设计 QA 记录
 
+## 2026-10-11：SQL 大脚本与虚拟列表性能
+
+本次使用最终生产前端资源和虚构压力数据完成浅色／深色验收。
+`npm run qa:ui -w desktop` 的 97 项检查通过；专项压力报告见
+[性能 UI](docs/performance-ui-qa.json)，实际环境与证明范围见[验证记录](docs/validation.md)。
+
+- SQL 工具栏明确“复制完整 SQL”；大脚本当前页、总页数、跳转和跨页语句提示保持可达。
+  SQL 和表清单各自滚动，最小窗口底部导出按钮不被覆盖。
+- 执行确认和历史脚本使用目标选择器，一次显示一个目标；完整目标摘要仍保留。
+- 差异／回滚 20,000 项列表使用虚拟滚动，长列表末尾可选择与键盘查看；
+  勾选仍覆盖分组完整范围，阻止项禁用。窄窗口上下排列，底部操作保持可达。
+- 已查看浅色／深色 10 MiB SQL、20,000 项差异和回滚，以及 960 px 窄回滚截图；
+  颜色跟随主题，内容区独立滚动，无底部遮挡。当前截图的 SQL 内容为虚构单行压力输入。
+
+本次专项截图：
+[大 SQL 浅色](docs/screenshots/react-ant-design/performance-sql-10mb-light.png)、
+[大 SQL 深色](docs/screenshots/react-ant-design/performance-sql-10mb-dark.png)、
+[大差异浅色](docs/screenshots/react-ant-design/performance-diff-20000-light.png)、
+[大差异深色](docs/screenshots/react-ant-design/performance-diff-20000-dark.png)、
+[回滚深色](docs/screenshots/react-ant-design/performance-rollback-20000-dark.png)、
+[窄回滚浅色](docs/screenshots/react-ant-design/performance-rollback-960-light.png)。
+
+界面验收不证明生产数据库、旧安装包或干净 Windows 安装已验证。
+
+## 2026-10-11：树加载 icon 与长列表差异明细
+
+连接／数据库展开时以旋转加载 icon 替换节点原图标，至少展示 300 ms，慢请求持续至结束，页面不追加“加载中”文字。已查看[连接浅色](docs/screenshots/react-ant-design/tree-loading-connection-light.png)、[连接深色](docs/screenshots/react-ant-design/tree-loading-connection-dark.png)、[数据库浅色](docs/screenshots/react-ant-design/tree-loading-database-light.png)及[数据库深色](docs/screenshots/react-ant-design/tree-loading-database-dark.png)截图，图标位于原资源图标位置，文字与缩进保持原样。
+
+差异列表滚到底部后选择字段，右侧明细始终在当前视口内；两区分别滚动，查看明细或 SQL 不移动列表。切换字段及键盘 Enter 查看时，明细回到顶部。摘要限制高度，保留底部操作可达；960px 窄窗口上下排列列表和明细。已查看[长列表浅色](docs/screenshots/react-ant-design/diff-long-list-1488-light.png)、[长列表深色](docs/screenshots/react-ant-design/diff-long-list-1488-dark.png)、[最小窗口](docs/screenshots/react-ant-design/diff-long-list-1180-dark.png)及[窄窗口](docs/screenshots/react-ant-design/diff-long-list-960-light.png)截图。
+
+完整浏览器 97 项、长列表六组、树四组验收通过，控制台错误为 0；截图使用 80 张虚构差异表和人工延迟响应。SQL 导出行为按用户最终要求保留原实现。环境、命令、报告与未覆盖范围见[本轮验证记录](docs/validation.md#2026-10-11树展开图标与长差异列表明细)。本轮没有进行真实数据库、原生客户端或安装包验收。
+
 本文件保留按日期采集的视觉复核、截图与对照，历史样本不作为当前界面或本次执行的证明。现行要求见[交互规范](docs/interaction-guidelines.md)，命令、环境和测试结果集中在[验证记录](docs/validation.md)；后续维护遵循[文档规范](CONTRIBUTING.md#文档规范)。
 
 ## 右键菜单反馈、原地编辑与模块隔离（2026-10-11）

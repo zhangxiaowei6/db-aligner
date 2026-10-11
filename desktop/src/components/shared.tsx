@@ -208,20 +208,32 @@ function ResizeHeader({
     </th>
   );
 }
-export function DataTable<T extends object>(props: TableProps<T>) {
+export function DataTable<T extends object>({
+  fitViewport = false,
+  ...props
+}: TableProps<T> & { fitViewport?: boolean }) {
   const [widths, setWidths] = useState<Record<string, number>>({});
   const [lastResized, setLastResized] = useState('');
   const host = useRef<HTMLDivElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(400);
   useLayoutEffect(() => {
     const element = host.current;
     if (!element) return;
-    const update = () => setAvailableWidth(Math.floor(element.getBoundingClientRect().width));
+    const update = () => {
+      const bounds = element.getBoundingClientRect();
+      setAvailableWidth(Math.floor(bounds.width));
+      if (fitViewport) {
+        const headerHeight =
+          element.querySelector('.ant-table-thead')?.getBoundingClientRect().height || 48;
+        setViewportHeight(Math.max(80, Math.floor(bounds.height - headerHeight - 4)));
+      }
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [fitViewport]);
   const utilityWidth =
     (props.rowSelection ? Number(props.rowSelection.columnWidth) || 48 : 0) +
     (props.expandable?.expandedRowRender ? Number(props.expandable.columnWidth) || 48 : 0);
@@ -281,7 +293,7 @@ export function DataTable<T extends object>(props: TableProps<T>) {
   const columns = resizeColumns(props.columns || []);
   totalWidth += utilityWidth;
   return (
-    <div ref={host} className="data-table-host">
+    <div ref={host} className={`data-table-host${fitViewport ? ' table-viewport' : ''}`}>
       <Table<T>
         bordered
         size="middle"
@@ -291,10 +303,11 @@ export function DataTable<T extends object>(props: TableProps<T>) {
           showSizeChanger: true,
         }}
         {...props}
+        virtual={fitViewport || props.virtual}
         className={`resizable-data-table ${props.className || ''}`}
         style={{ ...props.style, '--data-table-width': `${totalWidth}px` } as CSSProperties}
         tableLayout="fixed"
-        scroll={{ ...props.scroll, x: totalWidth }}
+        scroll={{ ...props.scroll, ...(fitViewport ? { y: viewportHeight } : {}), x: totalWidth }}
         rowSelection={props.rowSelection ? { columnWidth: 48, ...props.rowSelection } : undefined}
         expandable={props.expandable ? { columnWidth: 48, ...props.expandable } : undefined}
         columns={columns}

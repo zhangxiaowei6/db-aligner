@@ -119,9 +119,13 @@ function Shell() {
   function reloadExpandedNode(node: TreeNode) {
     if (!['connection', 'database'].includes(node.type)) return;
     const token = {};
+    const startedAt = Date.now();
     treeLoads.current.set(node.key, token);
     setLoadingTreeKeys((keys) => [...keys.filter((key) => key !== node.key), node.key]);
-    void c.loadTree(node, true).finally(() => {
+    void c.loadTree(node, true).finally(async () => {
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(0, 300 - (Date.now() - startedAt))),
+      );
       if (treeLoads.current.get(node.key) !== token) return;
       treeLoads.current.delete(node.key);
       setLoadingTreeKeys((keys) => keys.filter((key) => key !== node.key));
@@ -524,7 +528,7 @@ function Shell() {
                 }}
                 showIcon
                 icon={(props) => {
-                  const node = props as unknown as TreeNode;
+                  const node = { ...props, key: props.eventKey } as unknown as TreeNode;
                   return loadingTreeKeys.includes(node.key) ? (
                     <LoadingOutlined aria-label="正在加载最新清单" />
                   ) : node.type === 'group' ? (
@@ -551,6 +555,7 @@ function Shell() {
                       data-node-key={node.key}
                       data-drag-ready={treeGesture.readyKey === node.key ? 'true' : undefined}
                       data-node-type={node.type}
+                      aria-busy={loadingTreeKeys.includes(node.key)}
                       title={node.title}
                       data-connection-id={
                         node.type === 'connection' ? node.connectionId : undefined
@@ -642,7 +647,9 @@ function Shell() {
             }
           />
         )}
-        <div className={`page-scroll${m.page === 'export' ? ' export-page-scroll' : ''}`}>
+        <div
+          className={`page-scroll${m.page === 'export' ? ' export-page-scroll' : (m.page === 'diff' && m.plan) || (m.page === 'rollback' && m.rollback) ? ' diff-page-scroll' : ''}`}
+        >
           <Breadcrumb
             items={
               m.page === 'scope' || m.page === 'diff'

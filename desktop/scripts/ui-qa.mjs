@@ -7,6 +7,8 @@ import { createRequire } from 'node:module';
 import { promises as fs, existsSync } from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { performanceQA } from './performance-qa.mjs';
 const require = createRequire(import.meta.url);
 const desktop = path.resolve(import.meta.dirname, '..');
 const repo = path.resolve(desktop, '..');
@@ -76,6 +78,113 @@ async function modalSettled(page) {
       element.getAnimations().every((animation) => animation.playState !== 'running'),
     ),
   );
+}
+async function longDiffQA(browser, theme) {
+  const fixture = await build({
+    entryPoints: [path.join(desktop, 'src/preview.ts')],
+    bundle: true,
+    format: 'iife',
+    globalName: 'DiffFixture',
+    write: false,
+  });
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.addInitScript({
+      content: `${fixture.outputFiles[0].text}
+        const plan = structuredClone(DiffFixture.previewPlan);
+        const target = plan.targets[0];
+        const sample = target.changes.find(change => change.kind === 'MODIFY_COLUMN');
+        const names = Array.from({ length: 80 }, (_, index) => 'qa_table_' + String(index).padStart(3, '0'));
+        plan.tables = names.map(name => ({ ...plan.tables[0], name, structure: true, data: false }));
+        target.changes = names.map((name, index) => ({
+          ...sample, id: 'qa-change-' + index, table: name, label: 'qa_field_' + String(index).padStart(3, '0'),
+          sql: 'ALTER TABLE ' + name + ' MODIFY COLUMN qa_field_' + String(index).padStart(3, '0') + ' BIGINT;'
+        }));
+        const sourceTable = plan.sourceSnapshot[sample.table];
+        const beforeTable = target.before[sample.table];
+        const snapshot = (table, name, index) => ({
+          ...table, name,
+          columns: table.columns.map(column => column.name === sample.label
+            ? { ...column, name: 'qa_field_' + String(index).padStart(3, '0') } : column)
+        });
+        plan.sourceSnapshot = Object.fromEntries(names.map((name, index) => [name, snapshot(sourceTable, name, index)]));
+        target.before = Object.fromEntries(names.map((name, index) => [name, snapshot(beforeTable, name, index)]));
+        plan.targets = [target];
+        window.diffFixturePending = 0;
+        window.dataSync = {
+          ...DiffFixture.previewBridge,
+          invoke(method, params) {
+            if (method === 'sync.compare.start') return Promise.resolve({ compareId: params.compareId });
+            if (method === 'sync.compare.get') return Promise.resolve({
+              compareId: params.compareId, status: 'COMPLETED', plan,
+              progress: { table: '', phase: '', rows: 0, completed: 160, total: 160 }
+            });
+            window.diffFixturePending++;
+            return DiffFixture.previewBridge.invoke(method, params).finally(() => window.diffFixturePending--);
+          }
+        };`,
+    });
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByText('显示 6 / 6 张表', { exact: false }).waitFor();
+    await page.waitForFunction(() => window.diffFixturePending === 0);
+    await page.getByRole('button', { name: '开始比较', exact: true }).click();
+    await modalSettled(page);
+    await page.getByRole('button', { name: '确认并开始比较', exact: true }).click();
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    for (const width of [1488, 1180, 960]) {
+      await page.setViewportSize({ width, height: width === 1488 ? 1056 : 760 });
+      const list = page.locator('.diff-layout > section');
+      const inspector = page.getByLabel('差异明细', { exact: true });
+      await list.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const lastRow = list.locator('tr').filter({ hasText: 'qa_field_079' });
+      await lastRow.click();
+      assert((await inspector.innerText()).includes('qa_field_079'));
+      const selectedBefore = await list.evaluate((element) => element.scrollTop);
+      const bounds = await inspector.boundingBox();
+      const listBounds = await list.boundingBox();
+      const footerBounds = await page.locator('#page-footer').boundingBox();
+      assert(
+        bounds.height > 80 && listBounds.height > 80,
+        'both difference panes need usable height',
+      );
+      assert(bounds.y >= 0 && bounds.y + bounds.height <= footerBounds.y + 1);
+      assert.equal(await inspector.evaluate((element) => element.scrollTop), 0);
+      assert.equal(await page.locator('.page-scroll').evaluate((element) => element.scrollTop), 0);
+      await inspector.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      assert.equal(await list.evaluate((element) => element.scrollTop), selectedBefore);
+      assert((await inspector.locator('.sql-view').innerText()).includes('qa_table_079'));
+      await lastRow.press('ArrowUp');
+      const previous = list.locator('tr').filter({ hasText: 'qa_field_078' });
+      await previous.focus();
+      await previous.press('Enter');
+      assert.equal(await inspector.evaluate((element) => element.scrollTop), 0);
+      assert((await inspector.innerText()).includes('qa_field_078'));
+      await shot(page, `diff-long-list-${width}-${theme}`);
+      await footerCheck(page, `diff-long-list-footer-${width}-${theme}`);
+      report.browser.push({
+        check: 'diff-long-list-independent-scroll-and-keyboard',
+        theme,
+        width,
+        passed: true,
+      });
+    }
+  } catch (error) {
+    await shot(page, `diff-long-list-failure-${theme}`);
+    throw error;
+  } finally {
+    await context.close();
+  }
 }
 async function syncModeQA(browser, theme) {
   const context = await browser.newContext({
@@ -1096,6 +1205,14 @@ async function browserQA() {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     browser = await chromium.launch({ headless: true, executablePath });
+    if (process.argv.includes('--performance')) {
+      await performanceQA(browser, { repo, report, observe, shot, footerCheck });
+      return;
+    }
+    if (process.argv.includes('--diff-scroll')) {
+      for (const theme of ['light', 'dark']) await longDiffQA(browser, theme);
+      return;
+    }
     if (process.argv.includes('--tree-organization')) {
       for (const theme of ['light', 'dark']) await organizationQA(browser, theme);
       return;
@@ -1109,6 +1226,7 @@ async function browserQA() {
       return;
     }
     for (const mode of ['light', 'dark']) {
+      await longDiffQA(browser, mode);
       const context = await browser.newContext({
         viewport: { width: 1488, height: 1056 },
         colorScheme: mode,
@@ -1357,7 +1475,7 @@ async function browserQA() {
       await comparison.waitFor();
       await comparison.getByRole('button', { name: '确认并开始比较' }).click();
       await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
-      await page.getByRole('button', { name: '复制 SQL', exact: true }).click();
+      await page.getByRole('button', { name: '复制完整 SQL', exact: true }).click();
       assert((await page.evaluate(() => navigator.clipboard.readText())).includes('ALTER TABLE'));
       await page.getByRole('button', { name: '仅保存记录', exact: true }).click();
       const saveConfirmation = page.getByRole('dialog');
@@ -1652,13 +1770,17 @@ try {
       'docs',
       native
         ? 'react-desktop-qa.json'
-        : process.argv.includes('--tree-organization')
-          ? 'tree-organization-qa.json'
-          : process.argv.includes('--context-feedback')
-            ? 'context-feedback-qa.json'
-            : process.argv.includes('--sync-modes')
-              ? 'sync-mode-ui-qa.json'
-              : 'react-ui-qa.json',
+        : process.argv.includes('--performance')
+          ? 'performance-ui-qa.json'
+          : process.argv.includes('--tree-organization')
+            ? 'tree-organization-qa.json'
+            : process.argv.includes('--context-feedback')
+              ? 'context-feedback-qa.json'
+              : process.argv.includes('--sync-modes')
+                ? 'sync-mode-ui-qa.json'
+                : process.argv.includes('--diff-scroll')
+                  ? 'diff-scroll-ui-qa.json'
+                  : 'react-ui-qa.json',
     ),
     JSON.stringify(report, null, 2) + '\n',
   );

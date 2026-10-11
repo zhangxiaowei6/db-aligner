@@ -104,6 +104,7 @@ function useBusinessController() {
   const refreshPending = useRef(new Set<string>());
   const treeTestsPending = useRef(new Map<string, ConnectionTestResult>());
   const exportGeneration = useRef<object | undefined>(undefined);
+  const targetTableSets = useRef(new WeakMap<string[], Set<string>>());
   const comparisonActive = () =>
     !!latest.current.compareTask &&
     ['RUNNING', 'CANCELLING'].includes(latest.current.compareTask.status);
@@ -111,7 +112,13 @@ function useBusinessController() {
   const missingTargetsOf = (s: Model, name: string) =>
     s.targetKeys.filter((key) => {
       const tables = s.targetTables[key];
-      return Array.isArray(tables) && !tables.includes(name);
+      if (!Array.isArray(tables)) return false;
+      let names = targetTableSets.current.get(tables);
+      if (!names) {
+        names = new Set(tables);
+        targetTableSets.current.set(tables, names);
+      }
+      return !names.has(name);
     });
   const compareSelection = (s: Model): CompareSelection => ({
     workspaceId: s.workspaceId,
@@ -215,13 +222,23 @@ function useBusinessController() {
       JSON.stringify(current.targetKeys) !== JSON.stringify(next.targetKeys)
     )
       next.scopeView = current.scopeView + 1;
+    const scopeChanged =
+      current.workspaceId !== next.workspaceId ||
+      current.sourceKey !== next.sourceKey ||
+      current.targetKeys !== next.targetKeys ||
+      current.scopeTables !== next.scopeTables ||
+      current.structureDefaults !== next.structureDefaults;
     if (
       next.compareConfirmation &&
+      (scopeChanged ||
+        current.targetTables !== next.targetTables ||
+        current.compareConfirmation !== next.compareConfirmation) &&
       selectionSignature(compareSelection(next)) !== selectionSignature(next.compareConfirmation)
     )
       next.compareConfirmation = undefined;
     if (
       next.appliedTemplate === current.appliedTemplate &&
+      scopeChanged &&
       (next.workspaceId !== current.workspaceId ||
         next.sourceKey !== current.sourceKey ||
         JSON.stringify(next.targetKeys) !== JSON.stringify(current.targetKeys) ||
@@ -1153,8 +1170,9 @@ function useBusinessController() {
   async function saveSync(mode: string) {
     const s = latest.current;
     if (!s.plan || !s.selectedIds.length || syncSubmitPending.current) return;
+    const selectedIds = new Set(s.selectedIds);
     for (const target of s.plan.targets) {
-      const selected = target.changes.filter((change) => s.selectedIds.includes(change.id));
+      const selected = target.changes.filter((change) => selectedIds.has(change.id));
       const dependent = selected.find(
         (change) =>
           change.kind.endsWith('_ROW') &&
@@ -2056,7 +2074,7 @@ function useBusinessController() {
           : 'scripts',
       page: 'record',
     }));
-    await loadRecordScripts('scripts');
+    await loadRecordScripts(latest.current.recordTab);
   }
   async function selectFile(file: string) {
     const id = latest.current.detail?.record.id;
@@ -2069,34 +2087,70 @@ function useBusinessController() {
   }
   async function changeRecordTab(tab: string) {
     clearRefresh(recordRefreshKey(latest.current));
-    set('recordTab', tab);
+    request('recordScripts');
+    commit((s) => ({
+      ...s,
+      recordTab: tab,
+      fileSelected: defaultScriptFile(s.detail?.files || [], tab),
+      recordScripts: {},
+      recordScriptErrors: {},
+    }));
     await loadRecordScripts(tab);
+  }
+  async function selectRecordScript(file: string) {
+    const s = latest.current;
+    if (!s.detail || !recordScriptFiles(s.detail.files, s.recordTab).includes(file)) return;
+    clearRefresh(recordRefreshKey(s));
+    commit((current) => ({
+      ...current,
+      fileSelected: file,
+      recordScripts: {},
+      recordScriptErrors: {},
+    }));
+    await loadRecordScripts(s.recordTab);
   }
   async function refreshRecordScripts() {
     const s = latest.current;
     if (!s.detail) return;
     await runRefresh(recordRefreshKey(s), '重新加载脚本', async () => {
-      await loadRecordScripts(s.recordTab);
+      await loadRecordScripts(s.recordTab, true);
       if (
         latest.current.detail?.record.id !== s.detail?.record.id ||
         latest.current.recordTab !== s.recordTab ||
         latest.current.recordView !== s.recordView
       )
         return false;
-      const errors = Object.values(latest.current.recordScriptErrors).filter(Boolean);
+      const errors = [latest.current.recordScriptErrors[latest.current.fileSelected]].filter(
+        Boolean,
+      );
       if (errors.length) throw new Error(errors.join('；'));
     });
   }
-  async function loadRecordScripts(tab: string) {
+  async function loadRecordScripts(tab: string, force = false) {
     const s = latest.current;
     if (!s.detail || !['scripts', 'rollbackScripts'].includes(tab)) return;
     const id = s.detail.record.id;
-    const valid = request('recordScripts');
+    const file = recordScriptFiles(s.detail.files, tab).includes(s.fileSelected)
+      ? s.fileSelected
+      : defaultScriptFile(s.detail.files, tab);
+    if (!file) return;
+    if (file !== s.fileSelected) set('fileSelected', file);
+    const requestValid = request('recordScripts');
+    const valid = () =>
+      requestValid() &&
+      latest.current.page === 'record' &&
+      latest.current.recordView === s.recordView &&
+      latest.current.detail?.record.id === id &&
+      latest.current.recordTab === tab &&
+      latest.current.fileSelected === file;
     // Target manifests identify the connection even when two connections use the same database name.
-    const manifests = s.detail.files.filter((file) => file.endsWith('/target.json'));
+    const folder = file.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
+    const manifests = s.detail.files.filter(
+      (candidate) => candidate.replaceAll('\\', '/') === `${folder}/target.json`,
+    );
     await Promise.all(
       manifests.map(async (file) => {
-        const folder = file.slice(0, -'/target.json'.length);
+        const folder = file.replaceAll('\\', '/').slice(0, -'/target.json'.length);
         if (s.recordScriptTargets[folder]) return;
         try {
           const ref = JSON.parse(await api<string>('record.file', { id, file })) as DbRef;
@@ -2115,16 +2169,17 @@ function useBusinessController() {
         }
       }),
     );
+    if (!valid()) return;
     await Promise.all(
-      recordScriptFiles(s.detail.files, tab).map(async (file) => {
-        if (s.recordScripts[file] !== undefined) return;
+      [file].map(async (file) => {
+        if (!force && s.recordScripts[file] !== undefined) return;
         try {
           const sql = await api<string>('record.file', { id, file });
           if (valid() && latest.current.detail?.record.id === id) {
             commit((current) => ({
               ...current,
-              recordScripts: { ...current.recordScripts, [file]: sql },
-              recordScriptErrors: { ...current.recordScriptErrors, [file]: '' },
+              recordScripts: { [file]: sql },
+              recordScriptErrors: { [file]: '' },
             }));
           }
         } catch (error) {
@@ -2132,7 +2187,6 @@ function useBusinessController() {
             commit((current) => ({
               ...current,
               recordScriptErrors: {
-                ...current.recordScriptErrors,
                 [file]: error instanceof Error ? error.message : String(error),
               },
             }));
@@ -2319,9 +2373,10 @@ function useBusinessController() {
     }
   }
   function selectExport(names: string[]) {
+    const selected = new Set(names);
     commit((s) => ({
       ...s,
-      exportTables: s.exportTables.map((t) => ({ ...t, selected: names.includes(t.name) })),
+      exportTables: s.exportTables.map((t) => ({ ...t, selected: selected.has(t.name) })),
     }));
     invalidateExportPreview();
   }
@@ -2672,6 +2727,7 @@ function useBusinessController() {
     openRecord,
     changeRecordTab,
     selectFile,
+    selectRecordScript,
     exportRecords,
     auditRecord,
     cancelTask,

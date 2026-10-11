@@ -589,6 +589,51 @@ p {
 .diff-layout > section {
   min-width: 0;
 }
+.diff-page-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.diff-page-scroll > :is(.ant-breadcrumb, .page-heading) {
+  flex-shrink: 0;
+}
+.diff-page-scroll .page-heading {
+  margin: 8px 0 12px;
+}
+.diff-overview {
+  max-height: 45%;
+  overflow: auto;
+  margin-bottom: 12px;
+}
+.diff-page-scroll > :is(.ant-spin, .ant-spin-nested-loading),
+.diff-page-scroll > :is(.ant-spin, .ant-spin-nested-loading) > .ant-spin-container,
+.diff-page-scroll .page-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.diff-page-scroll .page-body > :not(.diff-layout) {
+  flex-shrink: 0;
+}
+.diff-page-scroll .table-chips {
+  max-height: 72px;
+  overflow: auto;
+}
+.diff-page-scroll .page-body > .ant-alert {
+  max-height: 100px;
+  overflow: auto;
+}
+.diff-page-scroll .diff-layout {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+.diff-page-scroll .diff-layout > :is(section, aside) {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
 .diff-object {
   display: inline-flex;
   align-items: center;
@@ -658,6 +703,46 @@ p {
   justify-content: flex-end;
   padding: 6px 8px;
   border-bottom: 1px solid var(--line);
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sql-toolbar > .hint {
+  margin-right: auto;
+}
+.sql-pagination {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+.script-target-select {
+  width: 100%;
+  margin: 12px 0;
+}
+.diff-layout > section.review-viewport {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.review-viewport > p {
+  flex-shrink: 0;
+}
+.table-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.diff-layout .ant-table-row.diff-inspected-row > .ant-table-cell {
+  background: var(--selected-bg);
+}
+.diff-layout .ant-table-row {
+  cursor: pointer;
 }
 .sql-view pre {
   font:
@@ -955,6 +1040,12 @@ p {
   }
 }
 @media (max-width: 1000px) {
+  .diff-overview {
+    max-height: 35%;
+  }
+  .diff-page-scroll .diff-layout {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
   .export-page-scroll {
     display: block;
     overflow: auto;
@@ -1121,7 +1212,7 @@ p.hint {
 .sync-confirm-scripts .sql-view pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: none;
+  max-height: 360px;
 }
 .difference-status.ant-tag {
   margin-inline-end: 0;

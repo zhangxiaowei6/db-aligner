@@ -1,6 +1,19 @@
 import { targetRefreshKey } from '../model';
+import { useEffect, useMemo, useRef } from 'react';
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
-import { Alert, Checkbox, Empty, Form, Input, Select, Space, Tabs, Tag, Tooltip } from 'antd';
+import {
+  Alert,
+  Checkbox,
+  Empty,
+  Form,
+  Input,
+  Popover,
+  Select,
+  Space,
+  Tabs,
+  Tag,
+  Tooltip,
+} from 'antd';
 import {
   ArrowRightOutlined,
   DatabaseOutlined,
@@ -22,6 +35,7 @@ import {
   leaves,
   recoveryNodes,
   reviewNodes,
+  reviewCounts,
   rollbackLeaves,
   selection,
   type ReviewNode,
@@ -413,126 +427,168 @@ export function ScopePage() {
 export function DiffPage() {
   const c = useController();
   const { m } = c;
+  const inspector = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (inspector.current) inspector.current.scrollTop = 0;
+  }, [m.currentChangeId, m.diffTab, m.plan?.id]);
   const plan = m.plan;
-  if (!plan) return <Empty description="先选择同步范围并比较" />;
-  const changes = changesOf(m);
-  const tabs = [
-    { key: 'structure', label: '表结构' },
-    { key: 'data', label: '基础数据' },
-  ].filter(({ key }) =>
-    changes.some((change) =>
-      change.kind === 'BLOCKED'
-        ? plan.tables.some(
-            (table) => table.name === change.table && table[key as 'structure' | 'data'],
-          )
-        : (key === 'data') === change.kind.endsWith('_ROW'),
-    ),
+  const changes = useMemo(() => changesOf(m), [plan]);
+  const modes = useMemo(
+    () => new Map(plan?.tables.map((table) => [table.name, table]) || []),
+    [plan],
+  );
+  const tabs = useMemo(
+    () =>
+      [
+        { key: 'structure', label: '表结构' },
+        { key: 'data', label: '基础数据' },
+      ].filter(({ key }) =>
+        changes.some((change) =>
+          change.kind === 'BLOCKED'
+            ? modes.get(change.table)?.[key as 'structure' | 'data']
+            : (key === 'data') === change.kind.endsWith('_ROW'),
+        ),
+      ),
+    [changes, modes],
   );
   const diffTab = tabs.find((tab) => tab.key === m.diffTab)?.key || tabs[0]?.key || m.diffTab;
-  const nodes = reviewNodes({ ...m, diffTab });
-  const flatten = (items: ReviewNode[]): ReviewNode[] =>
-    items.flatMap((node) => [node, ...flatten(node.children || [])]);
-  const allNodes = flatten(nodes);
+  const nodes = useMemo(() => reviewNodes({ ...m, diffTab }), [plan, diffTab, m.diffSearch]);
+  const selected = useMemo(() => new Set(m.selectedIds), [m.selectedIds]);
+  const counts = useMemo(() => reviewCounts(nodes, selected), [nodes, selected]);
+  const allNodes = useMemo(() => {
+    const result: ReviewNode[] = [];
+    function visit(items: ReviewNode[]) {
+      for (const node of items) {
+        result.push(node);
+        visit(node.children || []);
+      }
+    }
+    visit(nodes);
+    return result;
+  }, [nodes]);
+  if (!plan) return <Empty description="先选择同步范围并比较" />;
   const inspected =
     allNodes.find((node) => node.id === m.currentChangeId) ||
     allNodes.find((node) => node.change && !node.change.blocked) ||
     allNodes.find((node) => node.change);
   return (
     <>
-      <div className="source-summary">
-        <DatabaseOutlined />
-        <div>
-          <strong>{plan.source.database}</strong>
-          <small>
-            {m.state.connections.find((conn) => conn.id === plan.source.connectionId)?.name}
-          </small>
+      <div className="diff-overview">
+        <div className="source-summary">
+          <DatabaseOutlined />
+          <div>
+            <strong>{plan.source.database}</strong>
+            <small>
+              {m.state.connections.find((conn) => conn.id === plan.source.connectionId)?.name}
+            </small>
+          </div>
+          <ArrowRightOutlined />
+          <DatabaseOutlined className="primary-text" />
+          <div>
+            <strong>{plan.targets.length} 个目标库</strong>
+            <small>
+              包括{' '}
+              {plan.targets
+                .slice(0, 3)
+                .map((t) => t.ref.database)
+                .join('、')}
+            </small>
+          </div>
+          <Space className="summary-actions">
+            <Button onClick={() => c.navigate('scope')}>上一步</Button>
+          </Space>
         </div>
-        <ArrowRightOutlined />
-        <DatabaseOutlined className="primary-text" />
-        <div>
-          <strong>{plan.targets.length} 个目标库</strong>
-          <small>
-            包括{' '}
-            {plan.targets
-              .slice(0, 3)
-              .map((t) => t.ref.database)
-              .join('、')}
-          </small>
+        <div className="table-chips">
+          <span>仅比较已选的 {plan.tables.length} 张表：</span>
+          {plan.tables.slice(0, 20).map((t) => (
+            <Tag key={t.name}>{t.name}</Tag>
+          ))}
+          {plan.tables.length > 20 && (
+            <Popover
+              trigger="click"
+              title={`已选 ${plan.tables.length} 张表`}
+              content={
+                <DataTable
+                  rowKey="name"
+                  size="small"
+                  dataSource={plan.tables}
+                  columns={[{ title: '表名', dataIndex: 'name', width: 240, ellipsis: true }]}
+                />
+              }
+            >
+              <Button size="small">查看全部表</Button>
+            </Popover>
+          )}
         </div>
-        <Space className="summary-actions">
-          <Button onClick={() => c.navigate('scope')}>上一步</Button>
-        </Space>
-      </div>
-      <div className="table-chips">
-        <span>仅比较已选的 {plan.tables.length} 张表：</span>
-        {plan.tables.map((t) => (
-          <Tag key={t.name}>{t.name}</Tag>
-        ))}
-      </div>
-      {plan.targets
-        .filter((t) => t.error)
-        .map((t) => (
-          <Alert
-            className="bottom-gap"
-            key={`${t.ref.connectionId}/${t.ref.database}`}
-            type="error"
-            showIcon
-            title={`${t.ref.database}：${t.error}`}
+        {plan.targets
+          .filter((t) => t.error)
+          .map((t) => (
+            <Alert
+              className="bottom-gap"
+              key={`${t.ref.connectionId}/${t.ref.database}`}
+              type="error"
+              showIcon
+              title={`${t.ref.database}：${t.error}`}
+            />
+          ))}
+        {plan.targets.map((target) => {
+          const missing = plan.tables.filter(
+            (table) => table.data && target.before[table.name]?.exists === false,
+          );
+          if (!missing.length) return null;
+          const connection = m.state.connections.find(
+            (item) => item.id === target.ref.connectionId,
+          );
+          return (
+            <Alert
+              className="bottom-gap missing-data-tables"
+              key={`missing:${target.ref.connectionId}/${target.ref.database}`}
+              type="warning"
+              showIcon
+              title={`${target.ref.database}${connection ? `（${connection.name}）` : ''}：目标缺少数据同步表`}
+              description={
+                <ul>
+                  {missing.map((table) => (
+                    <li key={table.name}>
+                      <strong>{table.name}</strong>：
+                      {target.skippedTables?.includes(table.name)
+                        ? '已自动跳过：目标库不存在该表。其他目标库中的同名表继续同步。'
+                        : target.changes.some(
+                              (change) =>
+                                change.table === table.name &&
+                                change.kind === 'CREATE_TABLE' &&
+                                !change.blocked,
+                            )
+                          ? '同步数据前必须选中创建表操作，先建表、后写入数据。'
+                          : '仅数据同步无法写入，请启用完整结构同步或先创建目标表。'}
+                    </li>
+                  ))}
+                </ul>
+              }
+            />
+          );
+        })}
+        <div className="diff-toolbar">
+          {!!tabs.length && (
+            <Tabs activeKey={diffTab} onChange={(value) => c.set('diffTab', value)} items={tabs} />
+          )}
+          <Input
+            className="short-input"
+            prefix={<SearchOutlined />}
+            placeholder="筛选表或变更项"
+            value={m.diffSearch}
+            onChange={(e) => c.set('diffSearch', e.target.value)}
           />
-        ))}
-      {plan.targets.map((target) => {
-        const missing = plan.tables.filter(
-          (table) => table.data && target.before[table.name]?.exists === false,
-        );
-        if (!missing.length) return null;
-        const connection = m.state.connections.find((item) => item.id === target.ref.connectionId);
-        return (
-          <Alert
-            className="bottom-gap missing-data-tables"
-            key={`missing:${target.ref.connectionId}/${target.ref.database}`}
-            type="warning"
-            showIcon
-            title={`${target.ref.database}${connection ? `（${connection.name}）` : ''}：目标缺少数据同步表`}
-            description={
-              <ul>
-                {missing.map((table) => (
-                  <li key={table.name}>
-                    <strong>{table.name}</strong>：
-                    {target.skippedTables?.includes(table.name)
-                      ? '已自动跳过：目标库不存在该表。其他目标库中的同名表继续同步。'
-                      : target.changes.some(
-                            (change) =>
-                              change.table === table.name &&
-                              change.kind === 'CREATE_TABLE' &&
-                              !change.blocked,
-                          )
-                        ? '同步数据前必须选中创建表操作，先建表、后写入数据。'
-                        : '仅数据同步无法写入，请启用完整结构同步或先创建目标表。'}
-                  </li>
-                ))}
-              </ul>
-            }
-          />
-        );
-      })}
-      <div className="diff-toolbar">
-        {!!tabs.length && (
-          <Tabs activeKey={diffTab} onChange={(value) => c.set('diffTab', value)} items={tabs} />
-        )}
-        <Input
-          className="short-input"
-          prefix={<SearchOutlined />}
-          placeholder="筛选表或变更项"
-          value={m.diffSearch}
-          onChange={(e) => c.set('diffSearch', e.target.value)}
-        />
+        </div>
       </div>
       <div className="diff-layout">
-        <section>
+        <section className={allNodes.length > 200 ? 'review-viewport' : undefined}>
           <p className="hint">
             {diffTab === 'data' ? '按目标库、表和数据记录分组' : '按目标库与表分组'}
           </p>
           <DataTable<ReviewNode>
+            key={`${plan.id}/${diffTab}/${m.diffSearch}`}
+            fitViewport={allNodes.length > 200}
             rowKey="id"
             pagination={false}
             dataSource={nodes}
@@ -550,16 +606,23 @@ export function DiffPage() {
               {
                 title: '对象／变更项',
                 render: (_, row) => {
-                  const ids = leaves(row)
-                    .filter((v) => !v.blocked)
-                    .map((v) => v.id);
+                  const count = counts.get(row.id)!;
                   return (
                     <span className="diff-object">
                       <Checkbox
-                        {...selection(m.selectedIds, ids)}
+                        checked={count.eligible > 0 && count.selected === count.eligible}
+                        indeterminate={count.selected > 0 && count.selected < count.eligible}
+                        disabled={!count.eligible}
                         aria-label={`选择 ${row.label}`}
                         onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => c.toggleChanges(ids, e.target.checked)}
+                        onChange={(e) =>
+                          c.toggleChanges(
+                            leaves(row)
+                              .filter((change) => !change.blocked)
+                              .map((change) => change.id),
+                            e.target.checked,
+                          )
+                        }
                       />
                       {row.type === 'database' ? (
                         <DatabaseOutlined />
@@ -600,13 +663,13 @@ export function DiffPage() {
                       )}
                     </Space>
                   ) : (
-                    <span className="primary-text">{leaves(row).length} 项差异</span>
+                    <span className="primary-text">{counts.get(row.id)!.total} 项差异</span>
                   ),
               },
             ]}
           />
         </section>
-        <aside className="diff-inspector">
+        <aside className="diff-inspector" ref={inspector} aria-label="差异明细" tabIndex={0}>
           <DiffInspector
             plan={plan}
             node={inspected}
@@ -631,7 +694,7 @@ export function DiffPage() {
           placeholder="填写本次变更说明"
           onChange={(e) => c.set('scopeRemark', e.target.value)}
         />
-        <span>已选 {changesOf(m).filter((v) => m.selectedIds.includes(v.id)).length} 项变更</span>
+        <span>已选 {changes.filter((change) => selected.has(change.id)).length} 项变更</span>
         <Button
           disabled={!m.selectedIds.length || !!m.syncSubmitting}
           onClick={() => c.saveSync('SAVE_ONLY')}
@@ -653,6 +716,9 @@ export function RollbackPage() {
   const c = useController();
   const { m } = c;
   const rollback = m.rollback;
+  const nodes = useMemo(() => recoveryNodes(m), [rollback]);
+  const selected = useMemo(() => new Set(m.rollbackIds), [m.rollbackIds]);
+  const counts = useMemo(() => reviewCounts(nodes, selected), [nodes, selected]);
   if (!rollback) return <Empty description="从同步记录打开回滚预览" />;
   return (
     <>
@@ -662,55 +728,66 @@ export function RollbackPage() {
         title="仅恢复已执行的变更；按逆序处理，回滚结果另存为关联记录。"
       />
       <div className="diff-layout top-gap">
-        <DataTable<ReviewNode>
-          rowKey="id"
-          pagination={false}
-          dataSource={recoveryNodes(m)}
-          expandable={{ defaultExpandAllRows: true }}
-          onRow={(row) => ({
-            onClick: () => {
-              if (row.item) c.set('rollbackSql', row.item.sql.join(';\n'));
-            },
-          })}
-          columns={[
-            {
-              title: '目标库／表／恢复项',
-              render: (_, row) => {
-                const ids = rollbackLeaves(row)
-                  .filter((i) => i.eligible)
-                  .map((i) => i.id);
-                return (
-                  <span className="diff-object">
-                    <Checkbox
-                      {...selection(m.rollbackIds, ids)}
-                      aria-label={`恢复 ${row.label}`}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => c.toggleRecovery(ids, e.target.checked)}
-                    />
-                    {row.type === 'database' ? (
-                      <DatabaseOutlined />
-                    ) : row.type === 'table' ? (
-                      <TableOutlined />
-                    ) : (
-                      <FileOutlined />
-                    )}
-                    {row.label}
-                  </span>
-                );
+        <section className={counts.size > 200 ? 'review-viewport' : undefined}>
+          <DataTable<ReviewNode>
+            key={rollback.recordId}
+            fitViewport={counts.size > 200}
+            rowKey="id"
+            pagination={false}
+            dataSource={nodes}
+            expandable={{ defaultExpandAllRows: true }}
+            onRow={(row) => ({
+              onClick: () => {
+                if (row.item) c.set('rollbackSql', row.item.sql.join(';\n'));
               },
-            },
-            {
-              title: '校验',
-              width: 200,
-              render: (_, row) =>
-                row.item && (
-                  <Tag color={row.item.eligible ? 'success' : 'error'}>
-                    {row.item.eligible ? '校验通过' : row.item.reason}
-                  </Tag>
-                ),
-            },
-          ]}
-        />
+            })}
+            columns={[
+              {
+                title: '目标库／表／恢复项',
+                render: (_, row) => {
+                  const count = counts.get(row.id)!;
+                  return (
+                    <span className="diff-object">
+                      <Checkbox
+                        checked={count.eligible > 0 && count.selected === count.eligible}
+                        indeterminate={count.selected > 0 && count.selected < count.eligible}
+                        disabled={!count.eligible}
+                        aria-label={`恢复 ${row.label}`}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) =>
+                          c.toggleRecovery(
+                            rollbackLeaves(row)
+                              .filter((item) => item.eligible)
+                              .map((item) => item.id),
+                            e.target.checked,
+                          )
+                        }
+                      />
+                      {row.type === 'database' ? (
+                        <DatabaseOutlined />
+                      ) : row.type === 'table' ? (
+                        <TableOutlined />
+                      ) : (
+                        <FileOutlined />
+                      )}
+                      {row.label}
+                    </span>
+                  );
+                },
+              },
+              {
+                title: '校验',
+                width: 200,
+                render: (_, row) =>
+                  row.item && (
+                    <Tag color={row.item.eligible ? 'success' : 'error'}>
+                      {row.item.eligible ? '校验通过' : row.item.reason}
+                    </Tag>
+                  ),
+              },
+            ]}
+          />
+        </section>
         <aside className="diff-inspector">
           <h2>回滚 SQL 预览</h2>
           <SqlView sql={m.rollbackSql} />

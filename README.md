@@ -40,6 +40,7 @@ npm test
 npm run build
 npm run qa:ui -w desktop
 npm run qa:tree -w desktop
+npm run qa:ui -w desktop -- --performance
 npm run qa:desktop -w desktop
 npm run dist
 ```
@@ -57,6 +58,8 @@ npm run dist
 | `npm run qa:desktop -w desktop`                   | 原生窗口、主题持久化与关闭确认            | [桌面](docs/react-desktop-qa.json)         |
 
 截图保存在 `docs/screenshots/react-ant-design/`，视觉复核见[设计 QA](design-qa.md)。验证组合与前置条件见[验证技能](.agents/skills/verification/SKILL.md)，实际执行结果与限制见[验证记录](docs/validation.md)；这些报告路径保存对应最近一次结果，不是每次历史运行的独立快照。
+
+SQL 分页、大清单虚拟滚动与后端热点见[性能排查](docs/performance.md)。专项性能验收使用生产前端和虚构数据，最新指标保存到 `docs/performance-ui-qa.json`，不连接数据库或证明真实同步成功。
 
 ## 手动构建安装包
 

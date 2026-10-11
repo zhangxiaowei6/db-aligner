@@ -1,13 +1,27 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { App } from 'antd';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { SyncExecutionConfirmation } from './SyncExecutionConfirmation';
 import { previewPlan } from '../preview';
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+beforeEach(() => {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => ({ matches: false, addEventListener() {}, removeEventListener() {} })),
+  );
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
 });
 it('shows and copies every selected SQL statement per target, with table creation first', async () => {
   const plan = structuredClone(previewPlan);
@@ -45,8 +59,12 @@ it('shows and copies every selected SQL statement per target, with table creatio
   expect(sql).toContain('INSERT INTO t VALUES (79);');
   expect(sql).not.toContain('NEVER EXECUTE');
   expect(sql).not.toContain(';;');
-  expect(screen.getByRole('region', { name: 'shop_b 执行脚本' }).textContent).toContain(second.sql);
+  expect(screen.queryByRole('region', { name: 'shop_b 执行脚本' })).toBeNull();
   expect(screen.queryByRole('region', { name: 'shop_c 执行脚本' })).toBeNull();
-  fireEvent.click(within(script).getByRole('button', { name: '复制 SQL' }));
+  fireEvent.click(within(script).getByRole('button', { name: '复制完整 SQL' }));
   expect(copy).toHaveBeenCalledWith(sql);
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '执行脚本目标库' }));
+  fireEvent.click(screen.getByText(/target1 \/ shop_b/));
+  expect(screen.getByRole('region', { name: 'shop_b 执行脚本' }).textContent).toContain(second.sql);
+  expect(screen.queryByRole('region', { name: 'shop_a 执行脚本' })).toBeNull();
 });

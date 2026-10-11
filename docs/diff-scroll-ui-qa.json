@@ -1,0 +1,90 @@
+{
+  "browser": [
+    {
+      "check": "diff-long-list-footer-1488-light",
+      "scrollBottom": 958.578125,
+      "footerTop": 958.578125,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "diff-long-list-independent-scroll-and-keyboard",
+      "theme": "light",
+      "width": 1488,
+      "passed": true
+    },
+    {
+      "check": "diff-long-list-footer-1180-light",
+      "scrollBottom": 662.578125,
+      "footerTop": 662.578125,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "diff-long-list-independent-scroll-and-keyboard",
+      "theme": "light",
+      "width": 1180,
+      "passed": true
+    },
+    {
+      "check": "diff-long-list-footer-960-light",
+      "scrollBottom": 618.578125,
+      "footerTop": 618.578125,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "diff-long-list-independent-scroll-and-keyboard",
+      "theme": "light",
+      "width": 960,
+      "passed": true
+    },
+    {
+      "check": "diff-long-list-footer-1488-dark",
+      "scrollBottom": 958.578125,
+      "footerTop": 958.578125,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "diff-long-list-independent-scroll-and-keyboard",
+      "theme": "dark",
+      "width": 1488,
+      "passed": true
+    },
+    {
+      "check": "diff-long-list-footer-1180-dark",
+      "scrollBottom": 662.578125,
+      "footerTop": 662.578125,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "diff-long-list-independent-scroll-and-keyboard",
+      "theme": "dark",
+      "width": 1180,
+      "passed": true
+    },
+    {
+      "check": "diff-long-list-footer-960-dark",
+      "scrollBottom": 618.578125,
+      "footerTop": 618.578125,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "diff-long-list-independent-scroll-and-keyboard",
+      "theme": "dark",
+      "width": 960,
+      "passed": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

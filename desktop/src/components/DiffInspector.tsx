@@ -59,6 +59,7 @@ export function DiffInspector({
   onInspect: (change: Change) => void;
 }) {
   if (!node) return <Empty description="选择数据库、表或变更项查看详情" />;
+  const selected = new Set(selectedIds);
   const change = node.change;
   const target = plan.targets.find(
     (item) =>
@@ -80,8 +81,7 @@ export function DiffInspector({
           <Tag>{tables.length} 张表</Tag>
           <Tag>{changes.length} 项变更</Tag>
           <Tag color="processing">
-            已选 {changes.filter((item) => selectedIds.includes(item.id) && !item.blocked).length}{' '}
-            项
+            已选 {changes.filter((item) => selected.has(item.id) && !item.blocked).length} 项
           </Tag>
         </Space>
         {node.type === 'table' && !target.before[node.label]?.exists && (
@@ -131,15 +131,9 @@ export function DiffInspector({
               width: 100,
               render: (_, item) => (
                 <Tag
-                  color={
-                    item.blocked
-                      ? 'error'
-                      : selectedIds.includes(item.id)
-                        ? 'processing'
-                        : 'default'
-                  }
+                  color={item.blocked ? 'error' : selected.has(item.id) ? 'processing' : 'default'}
                 >
-                  {item.blocked ? '无法执行' : selectedIds.includes(item.id) ? '已选' : '未选'}
+                  {item.blocked ? '无法执行' : selected.has(item.id) ? '已选' : '未选'}
                 </Tag>
               ),
             },

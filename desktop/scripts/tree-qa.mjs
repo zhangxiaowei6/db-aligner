@@ -80,6 +80,12 @@ try {
           window.dataSync = {
             ...TreeFixture.previewBridge,
             invoke(method, params) {
+              if (window.treeLoadDelay && ['databases.list', 'tables.list'].includes(method)) {
+                return new Promise(resolve => { window.treeLoadRelease = resolve; }).then(() => {
+                  window.treeLoadDelay = false;
+                  return window.dataSync.invoke(method, params);
+                });
+              }
               if (method === 'tables.list') {
                 window.treeTableLoads++;
                 if (window.treeRefreshFailure) return Promise.reject(new Error('刷新验收失败（虚构数据）'));
@@ -124,12 +130,44 @@ try {
       }
       await page.locator('.tree-label[data-node-key="group:preview-source-group"]').waitFor();
       await toggle('group:preview-source-group', true);
-      await toggle('test', true);
-      const firstExpandMs = await toggle('test/shop_test', true);
+      async function expandWithLoading(key) {
+        await page.evaluate(() => {
+          window.treeLoadDelay = true;
+        });
+        const label = page.locator(`.tree-label[data-node-key="${key}"]`);
+        const row = label.locator('xpath=ancestor::*[@role="treeitem"][1]');
+        const startedAt = Date.now();
+        await row.locator('.ant-tree-switcher').click();
+        await row.getByLabel('正在加载最新清单').waitFor();
+        assert.equal(await row.locator('.anticon-loading.anticon-spin').count(), 1);
+        assert(!(await label.innerText()).includes('加载中'), 'loading feedback must use the icon');
+        assert.equal(await label.getAttribute('aria-busy'), 'true');
+        await page.waitForTimeout(450);
+        assert(
+          await row.getByLabel('正在加载最新清单').isVisible(),
+          'pending query must keep the loading icon visible',
+        );
+        if (count === 1000)
+          await page.screenshot({
+            path: path.join(
+              repo,
+              `docs/screenshots/react-ant-design/tree-loading-${key === 'test' ? 'connection' : 'database'}-${theme}.png`,
+            ),
+            animations: 'disabled',
+          });
+        await page.evaluate(() => window.treeLoadRelease());
+        await row.getByLabel('正在加载最新清单').waitFor({ state: 'hidden' });
+        await page.locator('.ant-tree-treenode-motion').waitFor({ state: 'detached' });
+        assert.equal(await row.getByLabel('正在加载最新清单').count(), 0);
+        return Date.now() - startedAt;
+      }
+      await expandWithLoading('test');
+      const firstExpandMs = await expandWithLoading('test/shop_test');
       const samples = [];
       for (let i = 0; i < 3; i++) {
         const collapseMs = await toggle('test/shop_test', false);
         const expandMs = await toggle('test/shop_test', true);
+        assert(expandMs >= 290, 'instant responses must still show loading for at least 300 ms');
         samples.push({ collapseMs, expandMs });
       }
       const parents = [];

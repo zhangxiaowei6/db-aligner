@@ -429,8 +429,9 @@ export const leaves = (n: ReviewNode): Change[] =>
   n.change ? [n.change] : (n.children || []).flatMap(leaves);
 export const rollbackLeaves = (n: ReviewNode): RollbackItem[] =>
   n.item ? [n.item] : (n.children || []).flatMap(rollbackLeaves);
-export function selection(ids: string[], eligibleIds: string[]) {
-  const count = eligibleIds.filter((id) => ids.includes(id)).length;
+export function selection(ids: string[] | ReadonlySet<string>, eligibleIds: string[]) {
+  const selected = Array.isArray(ids) ? new Set(ids) : ids;
+  const count = eligibleIds.filter((id) => selected.has(id)).length;
   return {
     checked: eligibleIds.length > 0 && count === eligibleIds.length,
     indeterminate: count > 0 && count < eligibleIds.length,
@@ -438,54 +439,98 @@ export function selection(ids: string[], eligibleIds: string[]) {
   };
 }
 export function toggleIds(ids: string[], eligible: string[], checked: boolean) {
-  return checked ? [...new Set([...ids, ...eligible])] : ids.filter((id) => !eligible.includes(id));
+  const eligibleSet = new Set(eligible);
+  return checked ? [...new Set([...ids, ...eligible])] : ids.filter((id) => !eligibleSet.has(id));
 }
 export function reviewNodes(m: Model): ReviewNode[] {
-  return (m.plan?.targets || [])
-    .map((t) => ({
-      id: refKey(t.ref),
-      label: t.ref.database,
-      type: 'database',
-      targetKey: refKey(t.ref),
-      children: [...new Set(t.changes.map((c) => c.table))]
-        .map((table) => ({
-          id: `${refKey(t.ref)}/${table}`,
-          label: table,
+  const search = m.diffSearch.toLowerCase();
+  return (m.plan?.targets || []).flatMap((target) => {
+    const targetKey = refKey(target.ref);
+    const tables = new Map<string, ReviewNode>();
+    for (const change of target.changes) {
+      let table = tables.get(change.table);
+      if (!table) {
+        table = {
+          id: `${targetKey}/${change.table}`,
+          label: change.table,
           type: 'table',
-          targetKey: refKey(t.ref),
-          children: t.changes
-            .filter(
-              (c) =>
-                c.table === table &&
-                (c.kind === 'BLOCKED' ||
-                  (m.diffTab === 'data' ? c.kind.endsWith('_ROW') : !c.kind.endsWith('_ROW'))) &&
-                (!m.diffSearch ||
-                  `${c.table} ${c.label} ${c.kind}`
-                    .toLowerCase()
-                    .includes(m.diffSearch.toLowerCase())),
-            )
-            .map((c) => ({ id: c.id, label: c.label, type: 'change', change: c })),
-        }))
-        .filter((n) => n.children.length),
-    }))
-    .filter((n) => n.children.length);
+          targetKey,
+          children: [],
+        };
+        tables.set(change.table, table);
+      }
+      if (change.kind !== 'BLOCKED' && (m.diffTab === 'data') !== change.kind.endsWith('_ROW'))
+        continue;
+      if (
+        search &&
+        !`${change.table} ${change.label} ${change.kind}`.toLowerCase().includes(search)
+      )
+        continue;
+      table.children!.push({ id: change.id, label: change.label, type: 'change', change });
+    }
+    const children = [...tables.values()].filter((table) => table.children!.length);
+    return children.length
+      ? [
+          {
+            id: targetKey,
+            label: target.ref.database,
+            type: 'database',
+            targetKey,
+            children,
+          },
+        ]
+      : [];
+  });
 }
 export function recoveryNodes(m: Model): ReviewNode[] {
-  return [...new Set(m.rollback?.items.map((i) => i.targetKey) || [])].map((target) => ({
-    id: target,
-    label: target.split('/').slice(1).join('/'),
-    type: 'database',
-    children: [
-      ...new Set(m.rollback!.items.filter((i) => i.targetKey === target).map((i) => i.table)),
-    ].map((table) => ({
-      id: `${target}/${table}`,
-      label: table,
-      type: 'table',
-      children: m
-        .rollback!.items.filter((i) => i.targetKey === target && i.table === table)
-        .map((i) => ({ id: i.id, label: i.label, type: 'change', item: i })),
-    })),
-  }));
+  const targets = new Map<string, ReviewNode>();
+  const tables = new Map<string, ReviewNode>();
+  for (const item of m.rollback?.items || []) {
+    let target = targets.get(item.targetKey);
+    if (!target) {
+      target = {
+        id: item.targetKey,
+        label: item.targetKey.split('/').slice(1).join('/'),
+        type: 'database',
+        children: [],
+      };
+      targets.set(item.targetKey, target);
+    }
+    const tableKey = `${item.targetKey}/${item.table}`;
+    let table = tables.get(tableKey);
+    if (!table) {
+      table = { id: tableKey, label: item.table, type: 'table', children: [] };
+      tables.set(tableKey, table);
+      target.children!.push(table);
+    }
+    table.children!.push({ id: item.id, label: item.label, type: 'change', item });
+  }
+  return [...targets.values()];
+}
+
+export function reviewCounts(nodes: ReviewNode[], selected: ReadonlySet<string>) {
+  const counts = new Map<string, { total: number; eligible: number; selected: number }>();
+  function visit(node: ReviewNode) {
+    const eligible = node.change ? !node.change.blocked : !!node.item?.eligible;
+    const count =
+      node.change || node.item
+        ? {
+            total: 1,
+            eligible: Number(eligible),
+            selected: Number(eligible && selected.has(node.id)),
+          }
+        : { total: 0, eligible: 0, selected: 0 };
+    for (const child of node.children || []) {
+      const childCount = visit(child);
+      count.total += childCount.total;
+      count.eligible += childCount.eligible;
+      count.selected += childCount.selected;
+    }
+    counts.set(node.id, count);
+    return count;
+  }
+  nodes.forEach(visit);
+  return counts;
 }
 export function dbOptions(m: Model) {
   return organizedConnections(m.state)
