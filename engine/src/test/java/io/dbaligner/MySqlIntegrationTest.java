@@ -51,6 +51,7 @@ class MySqlIntegrationTest {
       db.secrets(Json.node(Map.of("server", creds.path("password").asText())));
       try (var admin = db.open(new DbRef("server", ""))) {
         db.supportedServer(admin);
+        verifyStringLiterals(db, admin);
         for (var ref : List.of(src, a, b))
           db.execute(
               admin,
@@ -95,6 +96,9 @@ class MySqlIntegrationTest {
           assertTrue(plan.targets.stream().allMatch(t -> t.error.isBlank()), Json.write(plan));
           assertEquals(1, plan.sourceSnapshot.size());
           assertEquals(3, plan.targets.getFirst().changes.size());
+          assertTrue(
+              plan.targets.getFirst().changes.stream()
+                  .anyMatch(x -> x.sql.contains("_utf8mb4'新增' COLLATE utf8mb4_bin")));
           assertEquals(
               10,
               ((Number)
@@ -547,6 +551,51 @@ class MySqlIntegrationTest {
             db.execute(admin, "DROP DATABASE " + Sql.id(ref.database()));
         }
       }
+    }
+  }
+
+  static void verifyStringLiterals(Database db, Connection connection) throws Exception {
+    String previousMode;
+    try (var statement = connection.createStatement();
+        var result = statement.executeQuery("SELECT @@SESSION.sql_mode")) {
+      assertTrue(result.next());
+      previousMode = result.getString(1);
+    }
+    try {
+      for (String mode : List.of("", "NO_BACKSLASH_ESCAPES")) {
+        db.execute(connection, "SET SESSION sql_mode='" + mode + "'");
+        for (String text :
+            List.of(
+                "myData:outworkMedia",
+                "中文菜单😀",
+                "O'Reilly",
+                "'); DROP TABLE t; --",
+                "",
+                "a\\b",
+                "a\n\r\t\0\u001ab")) {
+          try (var statement = connection.createStatement();
+              var result = statement.executeQuery("SELECT " + Sql.value(text))) {
+            assertTrue(result.next());
+            assertEquals(text, result.getString(1), "SQL mode: " + mode);
+          }
+        }
+        try (var statement = connection.createStatement();
+            var result =
+                statement.executeQuery(
+                    "SELECT "
+                        + Sql.value("A")
+                        + " = "
+                        + Sql.value("a")
+                        + ", HEX("
+                        + Sql.value(Map.of("$binary", "00ff"))
+                        + ")")) {
+          assertTrue(result.next());
+          assertEquals(0, result.getInt(1));
+          assertEquals("00FF", result.getString(2));
+        }
+      }
+    } finally {
+      db.execute(connection, "SET SESSION sql_mode=" + Sql.value(previousMode));
     }
   }
 

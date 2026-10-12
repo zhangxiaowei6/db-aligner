@@ -30,14 +30,17 @@ public final class Sql {
     return id(r.database()) + "." + id(table);
   }
 
-  // Hex UTF-8 literals remain correct with either NO_BACKSLASH_ESCAPES setting.
+  // Readable literals double quotes; escape-sensitive values use hex in either SQL mode.
   public static String value(Object v) {
     if (v == null) return "NULL";
     if (v instanceof Map<?, ?> m && m.containsKey("$binary")) return "X'" + m.get("$binary") + "'";
     if (v instanceof Number n) return new BigDecimal(n.toString()).toPlainString();
     if (v instanceof Boolean b) return b ? "1" : "0";
+    String text = v.toString();
+    if (text.codePoints().noneMatch(c -> c == '\\' || Character.isISOControl(c)))
+      return "_utf8mb4'" + text.replace("'", "''") + "' COLLATE utf8mb4_bin";
     return "CONVERT(X'"
-        + HexFormat.of().formatHex(v.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))
+        + HexFormat.of().formatHex(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
         + "' USING utf8mb4) COLLATE utf8mb4_bin";
   }
 
