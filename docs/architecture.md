@@ -6,6 +6,8 @@ React 渲染进程通过上下文隔离的 preload 访问限定接口。Electron
 
 Java 使用 Spring Boot 非 Web 模式，stdin/stdout 每行一条 UTF-8 JSON。日志只写 stderr，由主进程追加到 `engine.log`。Windows 下协议输出明确写 UTF-8 字节，避免控制台编码破坏中文。主进程每次请求在内部传递凭据，查询返回不包含明文密码。
 
+DBAligner 的 Java 包名与入口为 `io.dbaligner` 和 `io.dbaligner.EngineMain`，Maven 坐标为 `io.dbaligner:db-aligner-engine`，安装应用 ID 为 `io.dbaligner.desktop`。正常生产资料使用全新的 `%APPDATA%/db-aligner-desktop/data`，需要重新配置连接；不迁移或删除旧应用的档案与密码材料。IPC 通道、桥接与配置／脚本包格式标识分别使用 `dbaligner:*`、`window.dbAligner` 与 `dbaligner-*`。指定 `DB_ALIGNER_HOME` 时，业务资料与 Electron 配置分别位于指定目录及其 `electron-profile` 子目录。
+
 SQLite 使用 WAL 与 FULL 同步保存实体、计划、记录、事件和版本链接。归档目录保存不可变原始计划、勾选、SQL 和后续证据；任务步骤状态和关联核验以追加信息保存。记录摘要不加载大型行证据，详情按需读取。
 
 ## 比较
@@ -50,9 +52,9 @@ SQLite 使用 WAL 与 FULL 同步保存实体、计划、记录、事件和版�
 
 ## 实现入口
 
-- [Jobs.java](../engine/src/main/java/io/datasync/Jobs.java)：锁内采集、执行事实、回滚预览、独立行冲突与关联恢复。
-- [Archives.java](../engine/src/main/java/io/datasync/Archives.java)：原值与摘要验证、逆向 SQL 和不可变档案。
-- [Database.java](../engine/src/main/java/io/datasync/Database.java)与[Planner.java](../engine/src/main/java/io/datasync/Planner.java)：连接绑定、元数据／数据读取、差异、摘要与外键风险。
-- [External.java](../engine/src/main/java/io/datasync/External.java)、[Store.java](../engine/src/main/java/io/datasync/Store.java)与[Backup.java](../engine/src/main/java/io/datasync/Backup.java)：外部证据、本地持久化及备份验证。
+- [Jobs.java](../engine/src/main/java/io/dbaligner/Jobs.java)：锁内采集、执行事实、回滚预览、独立行冲突与关联恢复。
+- [Archives.java](../engine/src/main/java/io/dbaligner/Archives.java)：原值与摘要验证、逆向 SQL 和不可变档案。
+- [Database.java](../engine/src/main/java/io/dbaligner/Database.java)与[Planner.java](../engine/src/main/java/io/dbaligner/Planner.java)：连接绑定、元数据／数据读取、差异、摘要与外键风险。
+- [External.java](../engine/src/main/java/io/dbaligner/External.java)、[Store.java](../engine/src/main/java/io/dbaligner/Store.java)与[Backup.java](../engine/src/main/java/io/dbaligner/Backup.java)：外部证据、本地持久化及备份验证。
 
 现行支持边界见[支持范围](limitations.md)，操作步骤见[使用指南](user-guide.md)，实际验证见[验证记录](validation.md)。源码和现有用例用于定位行为，不能作为本次重新验证通过的证据。

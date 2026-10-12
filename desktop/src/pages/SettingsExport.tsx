@@ -125,7 +125,7 @@ export function SettingsPage() {
         </section>
         <section className="settings-section">
           <h2>关于</h2>
-          <p>Data Sync · 桌面数据库同步工具 · 开源许可 Apache-2.0</p>
+          <p>DBAligner · 数据库结构与基础数据同步工具 · 开源许可 Apache-2.0</p>
           <p className="hint">
             数据库驱动、Java 运行时及其他依赖的许可见项目 THIRD_PARTY_NOTICES.md。
           </p>

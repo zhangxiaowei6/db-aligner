@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { isThemeMode, readThemeMode, writeThemeMode } from '../electron/appearance';
 const roots: string[] = [];
 async function isolated() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'datasync-appearance-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dbaligner-appearance-'));
   roots.push(root);
   return root;
 }
@@ -14,7 +14,7 @@ afterEach(async () => {
     const target = path.resolve(root);
     if (
       !target.startsWith(path.resolve(os.tmpdir()) + path.sep) ||
-      !path.basename(target).startsWith('datasync-appearance-')
+      !path.basename(target).startsWith('dbaligner-appearance-')
     )
       throw new Error('Invalid cleanup target');
     await fs.rm(target, { recursive: true, force: true });

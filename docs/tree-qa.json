@@ -1,9 +1,9 @@
 {
-  "recordedAt": "2026-10-11T11:30:27.481Z",
+  "recordedAt": "2026-10-12T08:16:36.849Z",
   "baseline": false,
   "environment": {
-    "node": "v22.22.2",
-    "browser": "154.0.8037.98",
+    "node": "v24.9.0",
+    "browser": "155.0.8059.39",
     "viewport": {
       "width": 1488,
       "height": 1056
@@ -13,31 +13,31 @@
     {
       "theme": "light",
       "tables": 1000,
-      "firstExpandMs": 642,
+      "firstExpandMs": 600,
       "samples": [
         {
-          "collapseMs": 276.7999999523163,
-          "expandMs": 317.5
+          "collapseMs": 252.60000002384186,
+          "expandMs": 315
         },
         {
-          "collapseMs": 268.5,
-          "expandMs": 313.7000000476837
+          "collapseMs": 247.80000001192093,
+          "expandMs": 318.9000000357628
         },
         {
-          "collapseMs": 267.7000000476837,
-          "expandMs": 315.7000000476837
+          "collapseMs": 282.60000002384186,
+          "expandMs": 319.4000000357628
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 16.09999990463257,
-          "expandMs": 320.2999999523163
+          "collapseMs": 21.599999964237213,
+          "expandMs": 310.19999998807907
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 20.399999976158142,
-          "expandMs": 236
+          "collapseMs": 19.5,
+          "expandMs": 230
         }
       ],
       "mountedRows": 28,
@@ -47,31 +47,31 @@
     {
       "theme": "light",
       "tables": 5000,
-      "firstExpandMs": 585,
+      "firstExpandMs": 576,
       "samples": [
         {
-          "collapseMs": 273.90000009536743,
-          "expandMs": 317
+          "collapseMs": 248.60000002384186,
+          "expandMs": 315.2000000476837
         },
         {
-          "collapseMs": 261.7999999523163,
-          "expandMs": 317.2999999523163
+          "collapseMs": 243,
+          "expandMs": 320.10000002384186
         },
         {
-          "collapseMs": 255.10000002384186,
-          "expandMs": 317.8000000715256
+          "collapseMs": 271.39999997615814,
+          "expandMs": 316.19999998807907
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 15.800000071525574,
-          "expandMs": 314
+          "collapseMs": 18.600000023841858,
+          "expandMs": 310.69999998807907
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 16.199999928474426,
-          "expandMs": 229.19999992847443
+          "collapseMs": 18.899999976158142,
+          "expandMs": 227.0999999642372
         }
       ],
       "mountedRows": 28,
@@ -81,31 +81,31 @@
     {
       "theme": "dark",
       "tables": 1000,
-      "firstExpandMs": 685,
+      "firstExpandMs": 627,
       "samples": [
         {
-          "collapseMs": 311.2000000476837,
-          "expandMs": 327.3000000715256
+          "collapseMs": 254.9000000357628,
+          "expandMs": 313.30000001192093
         },
         {
-          "collapseMs": 278.60000002384186,
-          "expandMs": 319.5
+          "collapseMs": 253.5,
+          "expandMs": 316.5
         },
         {
-          "collapseMs": 264.10000002384186,
-          "expandMs": 318.2999999523163
+          "collapseMs": 279.5,
+          "expandMs": 325
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 25.700000047683716,
-          "expandMs": 319.1999999284744
+          "collapseMs": 29.600000023841858,
+          "expandMs": 317.19999998807907
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 26.200000047683716,
-          "expandMs": 238.39999997615814
+          "collapseMs": 20.099999964237213,
+          "expandMs": 231.5999999642372
         }
       ],
       "mountedRows": 28,
@@ -115,31 +115,31 @@
     {
       "theme": "dark",
       "tables": 5000,
-      "firstExpandMs": 590,
+      "firstExpandMs": 570,
       "samples": [
         {
-          "collapseMs": 263.10000002384186,
-          "expandMs": 318
+          "collapseMs": 248,
+          "expandMs": 315.0999999642372
         },
         {
-          "collapseMs": 262.1999999284744,
-          "expandMs": 317.39999997615814
+          "collapseMs": 248.80000001192093,
+          "expandMs": 317.19999998807907
         },
         {
-          "collapseMs": 255.19999992847443,
-          "expandMs": 317.59999990463257
+          "collapseMs": 274.30000001192093,
+          "expandMs": 319.19999998807907
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 13.800000071525574,
-          "expandMs": 316.39999997615814
+          "collapseMs": 20.900000035762787,
+          "expandMs": 312
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 16.399999976158142,
-          "expandMs": 230
+          "collapseMs": 18.900000035762787,
+          "expandMs": 228.30000001192093
         }
       ],
       "mountedRows": 28,
@@ -147,54 +147,5 @@
       "interactionsPassed": true
     }
   ],
-  "errors": [],
-  "beforeOptimization": {
-    "recordedAt": "2026-10-11T06:24:51.613Z",
-    "baseline": true,
-    "cases": [
-      {
-        "theme": "light",
-        "tables": 1000,
-        "firstExpandMs": 1383,
-        "samples": [
-          {
-            "collapseMs": 2199.100000023842,
-            "expandMs": 2624.899999976158
-          },
-          {
-            "collapseMs": 1626.8999999761581,
-            "expandMs": 2279.5
-          },
-          {
-            "collapseMs": 1786.8999999761581,
-            "expandMs": 2227.3000000715256
-          }
-        ],
-        "mountedRows": 1005,
-        "tableLoads": 1
-      },
-      {
-        "theme": "light",
-        "tables": 5000,
-        "firstExpandMs": 5014.399999976158,
-        "samples": [
-          {
-            "collapseMs": 7948.599999904633,
-            "expandMs": 9629.899999976158
-          },
-          {
-            "collapseMs": 5422.099999904633,
-            "expandMs": 8868.700000047684
-          },
-          {
-            "collapseMs": 5320.899999976158,
-            "expandMs": 12527.600000023842
-          }
-        ],
-        "mountedRows": 5005,
-        "tableLoads": 1
-      }
-    ],
-    "errors": []
-  }
+  "errors": []
 }

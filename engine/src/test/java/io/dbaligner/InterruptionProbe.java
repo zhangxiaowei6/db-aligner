@@ -1,6 +1,6 @@
-package io.datasync;
+package io.dbaligner;
 
-import static io.datasync.Model.*;
+import static io.dbaligner.Model.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,9 +24,9 @@ final class InterruptionProbe implements AutoCloseable {
                 "-Dfile.encoding=UTF-8",
                 "-cp",
                 System.getProperty("java.class.path"),
-                "io.datasync.EngineMain")
+                "io.dbaligner.EngineMain")
             .redirectError(root.resolve("engine-stderr.log").toFile());
-    builder.environment().put("DATA_SYNC_HOME", root.toString());
+    builder.environment().put("DB_ALIGNER_HOME", root.toString());
     process = builder.start();
     output = process.inputReader(java.nio.charset.StandardCharsets.UTF_8);
     input = process.outputWriter(java.nio.charset.StandardCharsets.UTF_8);

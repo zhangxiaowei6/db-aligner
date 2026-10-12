@@ -1,4 +1,4 @@
-package io.datasync;
+package io.dbaligner;
 
 import java.io.*;
 import java.nio.file.*;
@@ -25,9 +25,9 @@ public class EngineMain {
     var boot = new SpringApplication(EngineMain.class);
     boot.setWebApplicationType(WebApplicationType.NONE);
     var context = boot.run();
-    String root = System.getenv("DATA_SYNC_HOME");
+    String root = System.getenv("DB_ALIGNER_HOME");
     if (root == null || root.isBlank())
-      throw new IllegalArgumentException("DATA_SYNC_HOME is required");
+      throw new IllegalArgumentException("DB_ALIGNER_HOME is required");
     try (var service = new Service(Path.of(root), EngineMain::emit);
         var worker = Executors.newVirtualThreadPerTaskExecutor();
         var in =

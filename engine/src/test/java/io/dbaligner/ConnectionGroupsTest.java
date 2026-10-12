@@ -1,4 +1,4 @@
-package io.datasync;
+package io.dbaligner;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -211,7 +211,7 @@ class ConnectionGroupsTest {
               Map.of(
                   "content",
                   Json.write(
-                      Map.of("format", "datasync-config-v1", "connections", List.of(legacy))))));
+                      Map.of("format", "dbaligner-config-v1", "connections", List.of(legacy))))));
       assertTrue(service.store.get("connection", "legacy").has("sortOrder"));
     }
   }

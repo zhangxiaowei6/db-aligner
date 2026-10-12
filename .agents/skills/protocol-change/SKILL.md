@@ -15,7 +15,7 @@ description: 修改本仓库的 Electron IPC、preload、Java 路由、协议模
 - 先读[仓库约定](../../../AGENTS.md)、[本地协议](../../../docs/protocol.md)与[架构与证据模型](../../../docs/architecture.md)。
 - 主进程与桥接：[main.ts](../../../desktop/electron/main.ts)与[preload.ts](../../../desktop/electron/preload.ts)。
 - 前端契约：[types.ts](../../../desktop/src/types.ts)、[model.ts](../../../desktop/src/model.ts)、[api.ts](../../../desktop/src/api.ts)与[preview.ts](../../../desktop/src/preview.ts)。
-- 引擎契约：[EngineMain.java](../../../engine/src/main/java/io/datasync/EngineMain.java)、[Service.java](../../../engine/src/main/java/io/datasync/Service.java)、[Model.java](../../../engine/src/main/java/io/datasync/Model.java)与[Json.java](../../../engine/src/main/java/io/datasync/Json.java)。
+- 引擎契约：[EngineMain.java](../../../engine/src/main/java/io/dbaligner/EngineMain.java)、[Service.java](../../../engine/src/main/java/io/dbaligner/Service.java)、[Model.java](../../../engine/src/main/java/io/dbaligner/Model.java)与[Json.java](../../../engine/src/main/java/io/dbaligner/Json.java)。
 
 ## 操作流程
 

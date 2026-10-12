@@ -1,6 +1,6 @@
-package io.datasync;
+package io.dbaligner;
 
-import static io.datasync.Model.*;
+import static io.dbaligner.Model.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigInteger;

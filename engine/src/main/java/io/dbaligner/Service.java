@@ -1,6 +1,6 @@
-package io.datasync;
+package io.dbaligner;
 
-import static io.datasync.Model.*;
+import static io.dbaligner.Model.*;
 
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -194,7 +194,7 @@ public final class Service implements AutoCloseable {
       case "config.export" ->
           Map.of(
               "format",
-              "datasync-config-v1",
+              "dbaligner-config-v1",
               "connectionGroups",
               connectionGroups.groups(),
               "workspaces",
@@ -214,7 +214,7 @@ public final class Service implements AutoCloseable {
               store.list("template"));
       case "config.import" -> {
         JsonNode config = Json.read(p.path("content").asText(), JsonNode.class);
-        if (!config.path("format").asText().equals("datasync-config-v1"))
+        if (!config.path("format").asText().equals("dbaligner-config-v1"))
           throw new IllegalArgumentException("配置格式不正确");
         connectionGroups.importGroups(config.path("connectionGroups"));
         for (String kind : List.of("workspace", "connection", "template"))
@@ -351,7 +351,7 @@ public final class Service implements AutoCloseable {
     }
     var b =
         new StringBuilder(
-            "-- Data Sync / 仅表结构 / "
+            "-- DBAligner / 仅表结构 / "
                 + (opts.includeDrop() ? "包含 DROP（会删除已有表及数据）" : "不含 DROP")
                 + "\n"
                 + Sql.header());

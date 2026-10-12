@@ -1,13 +1,14 @@
 import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeTheme } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { promises as fs } from 'node:fs';
+import { mkdirSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { smoke } from './smoke.js';
 import { isThemeMode, readThemeMode, writeThemeMode } from './appearance.js';
 import type { Appearance, ThemeMode } from '../src/types.js';
 import { connectionTestError } from '../src/connection-validation.js';
+import { storagePaths } from './storage-paths.js';
 
 const repo = path.resolve(__dirname, '../..');
 let win: BrowserWindow, engine: ChildProcessWithoutNullStreams, ready: Promise<void>;
@@ -32,23 +33,19 @@ function updateAppearance() {
   win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#141414' : '#ffffff');
   if (process.platform === 'win32' || process.platform === 'linux')
     win.setTitleBarOverlay(overlayStyle());
-  win.webContents.send('datasync:event', { event: 'appearance-changed', appearance: appearance() });
+  win.webContents.send('dbaligner:event', {
+    event: 'appearance-changed',
+    appearance: appearance(),
+  });
 }
 const pending = new Map<
   string,
   { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
 >();
-const root =
-  process.env.DATA_SYNC_HOME ||
-  (process.env.DATA_SYNC_DEV === '1'
-    ? path.join(repo, '.local-data')
-    : path.join(app.getPath('userData'), 'data'));
 const smokeMode = app.commandLine.hasSwitch('smoke-test');
-if (smokeMode) {
-  if (!process.env.DATA_SYNC_HOME)
-    throw new Error('Smoke tests require an isolated DATA_SYNC_HOME');
-  app.setPath('userData', path.join(root, 'electron-profile'));
-}
+const { root, userData } = storagePaths(app.getPath('appData'), repo, process.env, smokeMode);
+mkdirSync(userData, { recursive: true });
+app.setPath('userData', userData);
 let encrypted: Record<string, string> = {};
 const importFiles = new Map<string, string>();
 const importPasswords = new Map<string, string>();
@@ -129,9 +126,9 @@ function startEngine() {
         '-Dfile.encoding=UTF-8',
         '-cp',
         path.join(location, 'engine.jar') + ';' + path.join(location, 'lib', '*'),
-        'io.datasync.EngineMain',
+        'io.dbaligner.EngineMain',
       ],
-      { env: { ...process.env, DATA_SYNC_HOME: root }, windowsHide: true },
+      { env: { ...process.env, DB_ALIGNER_HOME: root }, windowsHide: true },
     );
     const timeout = setTimeout(() => reject(new Error('Java 引擎启动超时，请查看诊断日志')), 60000);
     engine.stderr.on('data', (d: Buffer) => {
@@ -144,7 +141,7 @@ function startEngine() {
           clearTimeout(timeout);
           resolve();
         } else if (n.event) {
-          win?.webContents.send('datasync:event', n);
+          win?.webContents.send('dbaligner:event', n);
         } else if (pending.has(n.id)) {
           const p = pending.get(n.id)!;
           clearTimeout(p.timer);
@@ -170,7 +167,7 @@ function startEngine() {
       }
       pending.clear();
       if (!stopping)
-        win?.webContents.send('datasync:event', { event: 'engine-error', message: e.message });
+        win?.webContents.send('dbaligner:event', { event: 'engine-error', message: e.message });
     });
   });
   ready.catch(() => {});
@@ -264,7 +261,7 @@ async function invoke(method: string, params: Record<string, unknown> = {}) {
   }
   if (method === 'record.export') {
     const d = await dialog.showSaveDialog(win, {
-      defaultPath: String(params.name || 'datasync-scripts.zip'),
+      defaultPath: String(params.name || 'db-aligner-scripts.zip'),
       filters: [{ name: '脚本包', extensions: ['zip'] }],
     });
     if (d.canceled || !d.filePath) return null;
@@ -273,7 +270,7 @@ async function invoke(method: string, params: Record<string, unknown> = {}) {
   }
   if (method === 'backup.export') {
     const d = await dialog.showSaveDialog(win, {
-      defaultPath: 'datasync-backup.zip',
+      defaultPath: 'db-aligner-backup.zip',
       filters: [{ name: '本地备份', extensions: ['zip'] }],
     });
     if (d.canceled || !d.filePath) return null;
@@ -283,7 +280,7 @@ async function invoke(method: string, params: Record<string, unknown> = {}) {
   if (method === 'backup.import') {
     const d = await dialog.showOpenDialog(win, {
       properties: ['openFile'],
-      filters: [{ name: 'Data Sync 备份', extensions: ['zip'] }],
+      filters: [{ name: 'DBAligner 备份', extensions: ['zip'] }],
     });
     if (d.canceled) return null;
     await call('backup.export', {
@@ -400,7 +397,7 @@ app.whenReady().then(async () => {
     titleBarStyle: 'hidden',
     titleBarOverlay: overlayStyle(),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#141414' : '#ffffff',
-    title: 'Data Sync',
+    title: 'DBAligner',
     icon: app.isPackaged
       ? path.join(process.resourcesPath, 'app-icon.png')
       : path.join(repo, 'desktop/build/icon.png'),
@@ -438,7 +435,7 @@ app.whenReady().then(async () => {
       }
       return;
     }
-    win.webContents.send('datasync:event', { event: 'window-close-request' });
+    win.webContents.send('dbaligner:event', { event: 'window-close-request' });
   });
   win.on('closed', () => nativeTheme.removeListener('updated', updateAppearance));
   win.webContents.on('did-start-loading', () => {
@@ -452,7 +449,7 @@ app.whenReady().then(async () => {
   win.webContents.on('will-navigate', (e, url) => {
     if (url.split('#')[0] !== win.webContents.getURL().split('#')[0]) e.preventDefault();
   });
-  ipcMain.handle('datasync:invoke', (event, method: string, params: Record<string, unknown>) => {
+  ipcMain.handle('dbaligner:invoke', (event, method: string, params: Record<string, unknown>) => {
     if (
       event.sender.id !== win.webContents.id ||
       event.senderFrame?.url !== win.webContents.getURL() ||
@@ -461,7 +458,7 @@ app.whenReady().then(async () => {
       throw new Error('非法调用来源');
     return invoke(method, params);
   });
-  ipcMain.on('datasync:window', (event, action: string) => {
+  ipcMain.on('dbaligner:window', (event, action: string) => {
     if (
       event.sender.id !== win.webContents.id ||
       event.senderFrame?.url !== win.webContents.getURL() ||
@@ -476,7 +473,7 @@ app.whenReady().then(async () => {
     if (action === 'close-cancelled') closeRequested = false;
     if (action === 'close') win.close();
   });
-  if (process.env.DATA_SYNC_DEV === '1') await win.loadURL('http://127.0.0.1:4173/');
+  if (process.env.DB_ALIGNER_DEV === '1') await win.loadURL('http://127.0.0.1:4173/');
   else await win.loadFile(path.join(__dirname, '../dist/index.html'));
   if (smokeMode) {
     try {

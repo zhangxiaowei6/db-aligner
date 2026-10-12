@@ -1,6 +1,6 @@
-package io.datasync;
+package io.dbaligner;
 
-import static io.datasync.Model.*;
+import static io.dbaligner.Model.*;
 
 import java.io.*;
 import java.nio.file.*;
@@ -189,7 +189,7 @@ public final class Archives {
             .append(";\n");
       var reversed = new ArrayList<>(selected);
       Collections.reverse(reversed);
-      rollback.append("-- 请先在 Data Sync 核验恢复资料和后续变更；发生冲突时不要执行。\n");
+      rollback.append("-- 请先在 DBAligner 核验恢复资料和后续变更；发生冲突时不要执行。\n");
       for (var x : reversed) {
         var proof = r.results.stream().filter(t -> t.ref.equals(tp.ref)).findFirst().orElse(null);
         boolean manualRestore =
@@ -214,7 +214,7 @@ public final class Archives {
     }
     write(
         folder.resolve("README.txt"),
-        "Data Sync 脚本包\n记录："
+        "DBAligner 脚本包\n记录："
             + r.id
             + "\n模式："
             + r.mode
@@ -251,7 +251,7 @@ public final class Archives {
     var rollback = new StringBuilder(Sql.header());
     rollback
         .append("-- 包含已选计划的逆向 SQL，不证明所有步骤已执行。\n")
-        .append("-- 请先在 Data Sync 核验实际完成范围、恢复资料和后续修改，仅恢复实际完成项。\n");
+        .append("-- 请先在 DBAligner 核验实际完成范围、恢复资料和后续修改，仅恢复实际完成项。\n");
     var reversed = new ArrayList<>(chosen(r, tp));
     Collections.reverse(reversed);
     for (var x : reversed) {
@@ -299,7 +299,7 @@ public final class Archives {
           Json.write(
                   Map.of(
                       "format",
-                      "datasync-script-package-v1",
+                      "dbaligner-script-package-v1",
                       "recordIds",
                       recordIds,
                       "versions",

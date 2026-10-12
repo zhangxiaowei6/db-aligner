@@ -1,5 +1,7 @@
 # 本地协议 v1
 
+DBAligner 渲染进程通过 `window.dbAligner` 使用桥接，主进程通道为 `dbaligner:invoke`、`dbaligner:event` 和 `dbaligner:window`。引擎启动入口为 `io.dbaligner.EngineMain`，资料目录由 `DB_ALIGNER_HOME` 指定。配置导出标识为 `dbaligner-config-v1`，脚本包标识为 `dbaligner-script-package-v1`；改名前的配置格式标识不再作为导入入口，请在本版本重新配置或导出。
+
 所有消息为 UTF-8 单行 JSON，以换行分隔。不能在 stdout 输出日志。Java 启动发出 ready 事件；标准请求响应按 `id` 关联，长任务通过事件与记录详情追踪。
 
 ```json

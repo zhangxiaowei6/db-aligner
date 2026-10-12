@@ -1,5 +1,5 @@
 {
-  "name": "data-sync-desktop",
+  "name": "db-aligner-desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -39,8 +39,8 @@
     "vitest": "^3.2.4"
   },
   "build": {
-    "appId": "io.datasync.desktop",
-    "productName": "Data Sync",
+    "appId": "io.dbaligner.desktop",
+    "productName": "DBAligner",
     "directories": {
       "output": "../release"
     },
@@ -95,7 +95,7 @@
       "license": "../LICENSE"
     }
   },
-  "description": "Project workspaces and auditable MySQL schema/data synchronization",
-  "author": "Data Sync contributors",
+  "description": "DBAligner desktop tool for auditable MySQL schema and reference data alignment",
+  "author": "DBAligner contributors",
   "license": "Apache-2.0"
 }

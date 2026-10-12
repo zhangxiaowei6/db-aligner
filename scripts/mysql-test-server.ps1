@@ -11,7 +11,7 @@ if (!(Test-Path "$taskBinary/bin/mysqld.exe")) {
  $taskUrl="https://cdn.mysql.com/archives/mysql-$($Version.Substring(0,3))/mysql-$Version-winx64.zip"
  if (!(Test-Path $taskZip)) { Invoke-WebRequest $taskUrl -OutFile $taskZip }
  Expand-Archive -LiteralPath $taskZip -DestinationPath $taskBase -Force
- $taskHash=Get-DataSyncHash $taskZip SHA256
+ $taskHash=Get-DBAlignerHash $taskZip SHA256
  [IO.File]::WriteAllText((Join-Path $taskBase 'download.json'),(@{url=$taskUrl;sha256=$taskHash}|ConvertTo-Json))
 }
 $taskData=Join-Path $taskBase 'data'

@@ -14,7 +14,7 @@ description: 为本仓库的修改选择验证组合、执行检查并记录证�
 
 - 先读[仓库约定](../../../AGENTS.md)、[贡献说明](../../../CONTRIBUTING.md)与[README](../../../README.md)；文档合并、删除和证据维护遵循[文档规范](../../../CONTRIBUTING.md#文档规范)。
 - 命令来源：[根 package.json](../../../package.json)、[桌面 package.json](../../../desktop/package.json)、[Maven 入口](../../../scripts/mvn.ps1)与[引擎构建配置](../../../engine/pom.xml)。
-- 真库工具：[实例启动](../../../scripts/mysql-test-server.ps1)、[实例停止](../../../scripts/mysql-test-stop.ps1)与[集成测试目录](../../../engine/src/test/java/io/datasync)。
+- 真库工具：[实例启动](../../../scripts/mysql-test-server.ps1)、[实例停止](../../../scripts/mysql-test-stop.ps1)与[集成测试目录](../../../engine/src/test/java/io/dbaligner)。
 - UI 工具：[ui-qa.mjs](../../../desktop/scripts/ui-qa.mjs)、[tree-qa.mjs](../../../desktop/scripts/tree-qa.mjs)；结果说明见[验证记录](../../../docs/validation.md)和[设计 QA](../../../design-qa.md)。
 
 ## 操作流程
@@ -22,17 +22,17 @@ description: 为本仓库的修改选择验证组合、执行检查并记录证�
 1. 检查本次 diff，分清已有修改，记录实际 Node、npm、Java、数据库与浏览器环境；推荐 Node.js 24／npm 11 不等于当前实测环境。
 2. 按下表选择验证组合。多种影响叠加要求，文档中描述某功能不等于修改该功能的实现。
 
-| 修改范围                     | 必要检查与前置条件                                                                                                                     |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| 纯文档或技能说明             | 核对事实、命令、相对链接及格式；技能检查 frontmatter、元数据和任务选择边界。无需业务测试。                                             |
-| 前端、Electron 或引擎代码    | `npm run typecheck`、`npm test`，追加受影响行为的验证。默认引擎测试跳过真库入口，须如实记录。                                          |
-| UI 行为                      | 先 `npm run build`，再 `npm run qa:ui -w desktop`，查看相关浅色／深色截图并更新设计记录。                                              |
-| 连接树规模、刷新或组织拖拽   | 按影响追加 `npm run qa:tree -w desktop` 或 `npm run qa:ui -w desktop -- --tree-organization`。                                         |
-| 原生窗口、桌面外观或桥接     | 准备前端／Electron 与可用引擎构建，运行 `npm run qa:desktop -w desktop`，使用隔离资料目录。                                            |
-| 数据库比较、执行、归档或回滚 | 必须运行下述三个版本的隔离真库回归，不能由模拟对象或浏览器预览替代。                                                                   |
-| 打包客户端功能               | 先根目录 `npm run dist`，再启用 `datasync.electron.smoke`；当前测试代码只在 8.4.8 分支启动原生客户端，不能声称三个版本都做了原生验收。 |
-| 安装／升级发布               | 完成干净 Windows 安装验收；本机原生 smoke 与打包成功不能替代。                                                                         |
-| 添加依赖                     | 更新锁文件、第三方说明，运行 `npm run licenses`，核对驱动独立分发和许可材料。                                                          |
+| 修改范围                     | 必要检查与前置条件                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 纯文档或技能说明             | 核对事实、命令、相对链接及格式；技能检查 frontmatter、元数据和任务选择边界。无需业务测试。                                              |
+| 前端、Electron 或引擎代码    | `npm run typecheck`、`npm test`，追加受影响行为的验证。默认引擎测试跳过真库入口，须如实记录。                                           |
+| UI 行为                      | 先 `npm run build`，再 `npm run qa:ui -w desktop`，查看相关浅色／深色截图并更新设计记录。                                               |
+| 连接树规模、刷新或组织拖拽   | 按影响追加 `npm run qa:tree -w desktop` 或 `npm run qa:ui -w desktop -- --tree-organization`。                                          |
+| 原生窗口、桌面外观或桥接     | 准备前端／Electron 与可用引擎构建，运行 `npm run qa:desktop -w desktop`，使用隔离资料目录。                                             |
+| 数据库比较、执行、归档或回滚 | 必须运行下述三个版本的隔离真库回归，不能由模拟对象或浏览器预览替代。                                                                    |
+| 打包客户端功能               | 先根目录 `npm run dist`，再启用 `dbaligner.electron.smoke`；当前测试代码只在 8.4.8 分支启动原生客户端，不能声称三个版本都做了原生验收。 |
+| 安装／升级发布               | 完成干净 Windows 安装验收；本机原生 smoke 与打包成功不能替代。                                                                          |
+| 添加依赖                     | 更新锁文件、第三方说明，运行 `npm run licenses`，核对驱动独立分发和许可材料。                                                           |
 
 3. 检查每条命令退出码和测试报告中的失败、错误与跳过。失败后修复并重跑受影响检查；未再次完整通过时不能报告完整套件通过。
 4. 更新本次验证记录，保留历史条目的日期、环境和证明范围；交付通过项、跳过项及原因。
@@ -46,7 +46,7 @@ description: 为本仓库的修改选择验证组合、执行检查并记录证�
 ./scripts/mysql-test-server.ps1 -Version 8.0.45 -Port 33980
 ./scripts/mysql-test-server.ps1 -Version 8.4.8 -Port 33984
 try {
-  ./scripts/mvn.ps1 test '-Ddatasync.mysql.versions=5.7.44,8.0.45,8.4.8'
+  ./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8'
   if ($LASTEXITCODE -ne 0) { throw '三版本真库回归失败' }
 } finally {
   ./scripts/mysql-test-stop.ps1
@@ -60,10 +60,10 @@ SSL 回归的 OpenSSL 探测位置以启动脚本为准，当前为 `D:/Git/usr/
 打包客户端测试在完成 `npm run dist`、启动隔离实例后运行：
 
 ```powershell
-./scripts/mvn.ps1 test '-Ddatasync.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddatasync.electron.smoke=true'
+./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.electron.smoke=true'
 ```
 
-执行结束用项目停止脚本清理隔离实例。`DATA_SYNC_HOME` 隔离资料；测试随机凭据、SQL 档案和 SQLite 不提交。
+执行结束用项目停止脚本清理隔离实例。`DB_ALIGNER_HOME` 隔离资料；测试随机凭据、SQL 档案和 SQLite 不提交。
 浏览器开发预览使用 4173，生产 UI QA 使用 4183，树 QA 使用 4184；不要占用同一端口并行启动实例。
 
 ## 验证与交付

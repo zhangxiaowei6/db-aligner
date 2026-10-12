@@ -25,7 +25,7 @@ export async function recordConfirmationQA(
       await page.addInitScript({
         content: `${fixture.outputFiles[0].text}
         window.rollbackSubmissions = 0;
-        window.dataSync = {
+        window.dbAligner = {
           ...RecordFixture.previewBridge,
           async invoke(method, params) {
             if (method === 'rollback.execute') window.rollbackSubmissions++;

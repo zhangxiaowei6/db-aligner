@@ -6,7 +6,7 @@ const vite = spawn(
   { stdio: 'inherit' },
 );
 let child;
-const desktopEnv = { ...process.env, DATA_SYNC_DEV: '1' };
+const desktopEnv = { ...process.env, DB_ALIGNER_DEV: '1' };
 delete desktopEnv.ELECTRON_RUN_AS_NODE;
 for (let i = 0; i < 60; i++) {
   try {

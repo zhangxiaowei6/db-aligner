@@ -1,5 +1,5 @@
 /** Internal release validation. Runs only with an explicit --smoke-test flag and
- * an isolated DATA_SYNC_HOME; it never uses the normal user's configuration. */
+ * an isolated DB_ALIGNER_HOME; it never uses the normal user's configuration. */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { BrowserWindow } from 'electron';
@@ -17,13 +17,13 @@ export async function smoke(
   };
   assert(
     await win.webContents.executeJavaScript(
-      "typeof window.dataSync?.invoke === 'function' && typeof window.require === 'undefined' && typeof window.process === 'undefined'",
+      "typeof window.dbAligner?.invoke === 'function' && typeof window.require === 'undefined' && typeof window.process === 'undefined'",
     ),
     'isolated preload bridge',
   );
   assert(
     await win.webContents.executeJavaScript(
-      'window.dataSync.invoke("ping").then(value => value.protocol === 1)',
+      'window.dbAligner.invoke("ping").then(value => value.protocol === 1)',
     ),
     'real renderer IPC through trusted main frame',
   );

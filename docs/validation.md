@@ -1,5 +1,70 @@
 # 0.1.0 验证记录
 
+> 名称展示说明：2026-10-12 按改名要求将下方历史条目的产品名称、路径示例和命令标识映射为当前名称。历史日期、环境、结果、大小和哈希保持原值，不表示旧产物已重新构建或旧命令已重新执行；当前产物以本次验证条目和产物清单为准。
+
+## 2026-10-12：DBAligner 全面更名与最终产物验收
+
+产品统一为 DBAligner，副标题为“数据库结构与基础数据同步工具”，版本保持 0.1.0。
+npm 包名为 `db-aligner` 与 `db-aligner-desktop`；Java 包、Maven 坐标和安装标识使用
+`io.dbaligner`、`io.dbaligner:db-aligner-engine` 与 `io.dbaligner.desktop`。
+桥接、IPC、环境变量及配置／脚本包标识同步更名，未保留原标识别名。
+本地项目目录与远程仓库地址按用户确认保持原状。
+
+按最终范围，生产资料改用全新 `%APPDATA%/db-aligner-desktop/data`，需要重新配置连接；
+不读取、迁移、重写或删除旧应用资料与 SQL 档案。开发仍使用 `.local-data`；
+显式 `DB_ALIGNER_HOME` 优先，并将 Chromium 配置隔离到其中的 `electron-profile`。
+本次包含工作区已有的同步范围筛选、结构默认项、预览修复、测试、文档和 Git 规范技能。
+
+实际环境：Windows x64 10.0.26200、Node.js 24.9.0、npm 11.6.0、项目 Java 21.0.12.1、
+Chrome 155.0.8059.39、Electron 44.7.0、electron-builder 26.15.3。
+
+- `npm run typecheck`：最终退出 0。
+- `npm test`：全面更名后退出 0；前端 18 文件、199 项通过；引擎 25 项中 23 项通过、
+  2 个真库入口默认跳过。下面的真库运行覆盖这些入口。保留 jsdom 的既有 CSS 解析告警。
+- `npm run build` 与 `npm run engine:build`：最终退出 0；前端、Electron 与新 Java 包构建成功。
+  包名移动后先完成引擎 clean test，避免使用原包目录的残留 class；保留 Vite 主包大小提示。
+- `npm run qa:ui -w desktop`：119 项，退出 0；`--sync-modes`：10 项，退出 0；
+  `--record-confirmation`：10 项，退出 0；`--performance`：28 项，退出 0。
+  各报告 `errors` 为空，验证标题、关于信息、新桥接、模式草稿、已选筛选、结构默认、
+  记录确认及大 SQL／虚拟列表显示。
+  性能专项初次在启动页超时，原因是测试夹具缺少启动演示调用的 `sync.compare`；补齐后通过。
+  早期 UI 与打包并行时构建目录被替换导致资源加载失败，最终验收和打包顺序执行并通过。
+- `npm run qa:desktop -w desktop`：7 项，退出 0；使用独立资料目录，验证新窗口名、
+  桥接、系统凭据边界、主题持久化、关闭确认及 Electron 配置隔离。
+  新增 5 项路径单测覆盖生产默认、开发目录、显式目录优先与 smoke 强制隔离，未访问真实用户资料。
+- `npm run qa:tree -w desktop`：浅色／深色 1,000／5,000 表的 4 个场景通过，退出 0。
+  浏览器、桌面和连接树报告分别见 [UI](react-ui-qa.json)、[范围](sync-mode-ui-qa.json)、
+  [记录确认](record-confirmation-ui-qa.json)、[性能](performance-ui-qa.json)、
+  [原生桌面](react-desktop-qa.json)与[连接树](tree-qa.json)。已人工查看浅色、深色与最小窗口截图。
+- 根目录 `npm run dist`：最终完整运行退出 0，完成引擎、前端、Electron、裁剪运行时、
+  `npm run licenses` 和 NSIS 安装包生成。最终构建时间 2026-10-12 16:28:38 +08:00。
+  核对 `DBAligner.exe` 的 ProductName／FileDescription 为 DBAligner、版本为 0.1.0.0；
+  app.asar 内 npm 包、主进程入口、preload 通道和页面标题为新名称；
+  引擎 JAR 入口为 `io.dbaligner.EngineMain`，随附 26 个独立依赖、Java 21.0.12.1 运行时、
+  Java 法律材料、MariaDB 3.5.10 独立驱动与匹配源码、npm／Java 许可和运行时源码地址。
+- `./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.electron.smoke=true'`：
+  最终完整打包后退出 0，29 项通过，失败／错误／跳过均为 0。
+  只使用 `.tools/mysql-test` 下绑定 `127.0.0.1` 的隔离实例及测试自有数据库；
+  OpenSSL 探测可用，包含 SSL 回归。原生打包客户端仅在 8.4.8 分支运行，
+  [smoke 报告](native-smoke-result.json)于 16:31:19 +08:00 记录 16 项通过。
+  使用新 EXE、新桥接与隔离资料，覆盖真实 JDBC、精确数值、比较、保存、执行、归档、核验和回滚。
+  随后 `./scripts/mysql-test-stop.ps1` 退出 0，三个自有测试进程均已停止。
+- 修改文件 Prettier、Google Java Format 1.28.0 dry-run、PowerShell 语法与重命名辅助函数检查、
+  `git diff --check`：最终退出 0。新增与修改技能的 `quick_validate.py` 使用 UTF-8 通过，
+  中文元数据和相对链接已核对。沙箱内的部分子进程与写入检查曾返回 EPERM，获准后重跑通过；
+  生成 JSON 报告的格式警告修正后复查通过。
+- 项目内容全量扫描未发现退役产品名称、包名、环境变量、IPC、Java 路径或格式标识；
+  扫描排除 Git 历史、保留的项目目录／远程地址、第三方依赖与本地工具／资料。
+  未将安装包、依赖、工具链、凭据、SQLite 或本地档案纳入提交。
+
+最终安装包 `release/DBAligner Setup 0.1.0.exe` 为 **181,014,867 字节**，SHA-256：
+`c9eedcf1ae75e80f2ad4287da4f66b4911b7f3680eb3147ef85985580da62d1f`。
+产物清单见 [release-manifest.json](release-manifest.json)；直接运行须保留整个 `release/win-unpacked`。
+较早构建和更名前的真库结果仅作为过程日志，不用于替代上述最终产物和回归。
+
+当前安装包未签名。没有干净 Windows 测试环境，**干净安装／升级验收仍未完成**，
+本机原生与打包 smoke 不证明该项通过。历史截图和记录继续保留原有日期与证明范围。
+
 ## 2026-10-12：浏览器预览跟随当前交互与范围规则
 
 预览启动通过当前桥接生成单一结构模式计划，不再直接注入历史结构／数据混合样例。
@@ -221,7 +286,7 @@ Chrome 154.0.8037.98。以下为本次运行，保留之前条目的日期与证
   `.local-data/commit-validation-ui.log`，不作为真实数据库执行证据。
 - 修改源码、文档和 `.agents/skills` 的显式 Prettier 检查及 `git diff --check`：通过。
 - 三版本隔离真库：启动 MySQL 5.7.44／8.0.45／8.4.8 后运行
-  `./scripts/mvn.ps1 test '-Ddatasync.mysql.versions=5.7.44,8.0.45,8.4.8'`，退出码 1；
+  `./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8'`，退出码 1；
   28 项中 22 项通过、6 项错误、0 跳过。测试连接在加载 `server-cert.pem` 时失败；
   项目脚本指定的 `D:/Git/usr/bin/openssl.exe` 不存在，三个实例均缺少该测试证书。
   本次真库与 SSL 回归未通过；日志保存在忽略的 `.local-data/commit-validation-mysql.log`。
@@ -326,16 +391,16 @@ Chrome 154.0.8037.98。以下为本次运行，保留之前条目的日期与证
 
 接续已有未提交改动，完成新任务的目标库辅助对象移除、本地字段原值证据与摘要、缺失表范围、树拖拽和分组入口。新记录使用 `LOCAL_V1`；旧记录只读取和校验原有备份、收据及快照，未自动清理历史对象。没有新增协议方法或依赖。
 
-| 本轮检查                        | 实际结果                                                                                                                           |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run typecheck`             | 前端与 Electron 均通过                                                                                                             |
-| `npm test`                      | 前端 10 个文件、109 项通过；引擎 20 项单元测试通过，默认跳过 2 个未启用的真库入口                                                  |
-| 三版本隔离真库                  | `./scripts/mvn.ps1 package '-Ddatasync.mysql.versions=5.7.44,8.0.45,8.4.8'`：26 项通过，0 失败 / 错误 / 跳过，19:45:44 +08:00 完成 |
-| 最终错误提示复核                | `npm run test -w desktop -- --run src/controller.test.tsx -t 'clears failed refresh data'` 通过；提示显示连接名称与目标数据库      |
-| `npm run build`                 | 前端与 Electron 生产构建通过；引擎 JAR 由上述 Maven package 构建                                                                   |
-| `npm run qa:ui -w desktop`      | 浅色 / 深色 39 项检查通过，控制台 `errors` 为空；[浏览器报告](react-ui-qa.json)                                                    |
-| `npm run qa:desktop -w desktop` | 独立资料目录下 6 项原生检查通过，`errors` 为空；[原生报告](react-desktop-qa.json)                                                  |
-| `npm run format:check`          | Prettier 覆盖范围通过；修改的 Java 文件以 Google Java Format 1.28.0 格式化                                                         |
+| 本轮检查                        | 实际结果                                                                                                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`             | 前端与 Electron 均通过                                                                                                              |
+| `npm test`                      | 前端 10 个文件、109 项通过；引擎 20 项单元测试通过，默认跳过 2 个未启用的真库入口                                                   |
+| 三版本隔离真库                  | `./scripts/mvn.ps1 package '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8'`：26 项通过，0 失败 / 错误 / 跳过，19:45:44 +08:00 完成 |
+| 最终错误提示复核                | `npm run test -w desktop -- --run src/controller.test.tsx -t 'clears failed refresh data'` 通过；提示显示连接名称与目标数据库       |
+| `npm run build`                 | 前端与 Electron 生产构建通过；引擎 JAR 由上述 Maven package 构建                                                                    |
+| `npm run qa:ui -w desktop`      | 浅色 / 深色 39 项检查通过，控制台 `errors` 为空；[浏览器报告](react-ui-qa.json)                                                     |
+| `npm run qa:desktop -w desktop` | 独立资料目录下 6 项原生检查通过，`errors` 为空；[原生报告](react-desktop-qa.json)                                                   |
+| `npm run format:check`          | Prettier 覆盖范围通过；修改的 Java 文件以 Google Java Format 1.28.0 格式化                                                          |
 
 三版本分别覆盖源有目标无的表：完整结构选择后创建业务表并写入全部源数据；结构细项不足继续阻止。字段原值恢复测试覆盖空表、20,000 行、20,001 行超限、无主键阻止、恢复行篡改、摘要缺失，以及本地 `recovery.json` 写入失败必须先于有损字段变更停止。空数组明确代表完整零行证据。保留并复核部分执行、取消、中断、行冲突、外部执行声明与旧记录恢复路径；旧记录使用实际证据中的备份名称，旧外部记录仍需原收据和 `backupCompleted`。
 
@@ -351,14 +416,14 @@ Chrome 154.0.8037.98。以下为本次运行，保留之前条目的日期与证
 
 本轮基于已有未提交改动继续实现。比较使用 `sync.compare.start/get/cancel` 后台任务，旧 `sync.compare` 复用相同流程；范围确认、数据风险勾选、全局进度、跨页面停止、逐表结构细项及旧模板兼容均已加入。字段修改保存实际计划定义，差异查看、执行核验和回滚共同使用该定义。
 
-| 检查                     | 本轮结果与证据                                                                                               |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| 前端 / Electron 类型检查 | `npm run typecheck` 通过；生产构建另含前端 `tsc --noEmit`                                                    |
-| 前端完整回归             | `npm run test -w desktop -- --no-file-parallelism --testTimeout=15000`；8 个文件、67 项通过                  |
-| 引擎单元与三个版本真库   | `./scripts/mvn.ps1 package '-Ddatasync.mysql.versions=5.7.44,8.0.45,8.4.8'`；24 项通过，0 失败 / 错误 / 跳过 |
-| 生产构建                 | `npm run build` 通过；更新前端、Electron 产物和 `engine/target/engine.jar`                                   |
-| 浅色 / 深色浏览器验收    | 33 项通过，控制台 `errors` 为空；[界面报告](react-ui-qa.json)                                                |
-| Electron 原生界面验收    | 6 项通过，`errors` 为空；[原生报告](react-desktop-qa.json)                                                   |
+| 检查                     | 本轮结果与证据                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| 前端 / Electron 类型检查 | `npm run typecheck` 通过；生产构建另含前端 `tsc --noEmit`                                                     |
+| 前端完整回归             | `npm run test -w desktop -- --no-file-parallelism --testTimeout=15000`；8 个文件、67 项通过                   |
+| 引擎单元与三个版本真库   | `./scripts/mvn.ps1 package '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8'`；24 项通过，0 失败 / 错误 / 跳过 |
+| 生产构建                 | `npm run build` 通过；更新前端、Electron 产物和 `engine/target/engine.jar`                                    |
+| 浅色 / 深色浏览器验收    | 33 项通过，控制台 `errors` 为空；[界面报告](react-ui-qa.json)                                                 |
+| Electron 原生界面验收    | 6 项通过，`errors` 为空；[原生报告](react-desktop-qa.json)                                                    |
 
 引擎 24 项包含 `ComparisonTest` 7 项、原 `EngineTest` 11 项，以及 `ComparisonIntegrationTest` 和原 `MySqlIntegrationTest` 各三个动态版本测试。新真库测试在 MySQL 5.7.44、8.0.45、8.4.8 分别验证：只改注释保留目标类型 / 默认值 / 顺序并可与数据同时比较；字段定义不含注释时保留目标注释、新字段追加且无源注释；执行后状态核验和回滚一致；部分结构缺表及索引缺字段依赖明确阻止，其他表继续。
 
@@ -372,7 +437,7 @@ Chrome 154.0.8037.98。以下为本次运行，保留之前条目的日期与证
 
 ## 2026-10-09 18:24：重新生成 Windows 安装包
 
-按用户要求运行 `npm run dist`，已重新编译并生成 `release/Data Sync Setup 0.1.0.exe`（Windows x64 NSIS，180,963,158 字节，生成时间 18:23:38 +08:00）。版本号保持 0.1.0，包含当前用户样式和同步交互修复；样式源文件哈希与打包前相同。`release/SHA256SUMS.txt` 已更新，安装包 SHA-256 为 `7f1399fc0c5f8d076368e964a81372ba1fa016c169dbacf826f9d6107e2c73c3`。
+按用户要求运行 `npm run dist`，已重新编译并生成 `release/DBAligner Setup 0.1.0.exe`（Windows x64 NSIS，180,963,158 字节，生成时间 18:23:38 +08:00）。版本号保持 0.1.0，包含当前用户样式和同步交互修复；样式源文件哈希与打包前相同。`release/SHA256SUMS.txt` 已更新，安装包 SHA-256 为 `7f1399fc0c5f8d076368e964a81372ba1fa016c169dbacf826f9d6107e2c73c3`。
 
 核对 `app.asar` 中当前前端与 Electron 产物，以及随包引擎、Java 和图标，共 9 个文件哈希均与本次构建一致。新打包客户端再次通过 16 项真实 IPC、JDBC、仅保存、执行、归档、恢复和回滚检查，证据见 [本次原生测试结果](native-smoke-result.json)，完成时间 2026-10-09 18:24:10 +08:00。对应 MySQL 8.4.8 动态集成测试通过，0 失败／错误／跳过；测试仅使用项目隔离实例。此项为打包客户端功能验证，不包含干净 Windows 系统上的安装／升级验收。
 
@@ -424,8 +489,8 @@ Chrome 154.0.8037.98。以下为本次运行，保留之前条目的日期与证
 三版本引擎回归与最终封装程序检查命令：
 
 ```powershell
-./scripts/mvn.ps1 package '-Ddatasync.mysql.versions=5.7.44,8.0.45,8.4.8'
-./scripts/mvn.ps1 test '-Dtest=MySqlIntegrationTest' '-Ddatasync.mysql.versions=8.4.8' '-Ddatasync.electron.smoke=true'
+./scripts/mvn.ps1 package '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8'
+./scripts/mvn.ps1 test '-Dtest=MySqlIntegrationTest' '-Ddbaligner.mysql.versions=8.4.8' '-Ddbaligner.electron.smoke=true'
 ```
 
 最终引擎回归结果：14 个 JUnit 测试，0 失败、0 错误、0 跳过。11 个单元测试耗时 0.656 秒，三个版本动态测试合计 28.49 秒，Maven package 总耗时 34.605 秒，完成时间 2026-10-08 23:18:29 +08:00。此轮包含比较后修改目标地址的真实失败拦截、数值精度和清除旧凭据；随后对最终重新封装程序单独运行 MySQL 8.4.8 原生检查，时间与结果见 JSON。每个动态测试内部执行多个同步、备份、核验与恢复场景，不把测试计数当作场景数量。
@@ -447,7 +512,7 @@ Chrome 154.0.8037.98。以下为本次运行，保留之前条目的日期与证
 
 ## 打包原生验证
 
-由 MySQL 8.4.8 动态测试启动最终 `release/win-unpacked/Data Sync.exe`，资料目录独立，环境 PATH 只保留 System32，删除 JAVA_HOME / DATA_SYNC_DEV。程序加载正式前端、真实 preload、主进程和随附 Java。16 项检查全部通过：渲染隔离、可信主框架内实际 IPC、状态不泄露密码、系统加密密码文件、导入凭据隔离、真实 JDBC、BIGINT / DECIMAL 跨 IPC 精度、真实差异、保存 / 执行 / 恢复资料 / 回滚、中文建表 SQL、两种 DROP 导出及脚本归档。结果保存为 JSON，检查完成于 2026-10-08 23:33:17 +08:00，Maven 于 23:33:22 成功结束，测试数据库最终清理。
+由 MySQL 8.4.8 动态测试启动最终 `release/win-unpacked/DBAligner.exe`，资料目录独立，环境 PATH 只保留 System32，删除 JAVA_HOME / DB_ALIGNER_DEV。程序加载正式前端、真实 preload、主进程和随附 Java。16 项检查全部通过：渲染隔离、可信主框架内实际 IPC、状态不泄露密码、系统加密密码文件、导入凭据隔离、真实 JDBC、BIGINT / DECIMAL 跨 IPC 精度、真实差异、保存 / 执行 / 恢复资料 / 回滚、中文建表 SQL、两种 DROP 导出及脚本归档。结果保存为 JSON，检查完成于 2026-10-08 23:33:17 +08:00，Maven 于 23:33:22 成功结束，测试数据库最终清理。
 
 该测试使用应用内部发布验证入口 `--smoke-test`，不操作用户配置，不作为所有手动页面流程的替代。浏览器截图使用标明的虚构预览数据；真实数据库功能证明来自上述 JDBC 与打包链路。
 

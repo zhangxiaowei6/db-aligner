@@ -4,7 +4,7 @@
 
 ## 1. 项目概况与规范分工
 
-Data Sync 是按工作区组织的 MySQL 结构与基础数据同步桌面工具：比较一个源库与多个目标库，预览所选表的差异，保存脚本或执行同步，并保留记录、恢复资料和版本归档。当前面向 Windows x64。
+DBAligner 是按工作区组织的 MySQL 结构与基础数据同步桌面工具：比较一个源库与多个目标库，预览所选表的差异，保存脚本或执行同步，并保留记录、恢复资料和版本归档。当前面向 Windows x64。
 
 - 桌面端：Electron、React 19、TypeScript、Ant Design 6、Vite。
 - 引擎：Java 21、Spring Boot 4 非 Web 模式、JDBC；SQLite 保存本地配置与记录。
@@ -33,8 +33,8 @@ Data Sync 是按工作区组织的 MySQL 结构与基础数据同步桌面工具
 | `desktop/src`                        | React 页面、公共组件、控制器、类型、浏览器预览与前端测试             |
 | `desktop/electron`                   | 主进程、preload、受限 IPC、系统凭据加密、原生文件操作与引擎生命周期  |
 | `desktop/scripts`                    | 桌面开发启动与 UI／桌面验收                                          |
-| `engine/src/main/java/io/datasync`   | 协议入口、服务路由、连接、元数据、比较、执行、归档、核验、回滚与备份 |
-| `engine/src/test/java/io/datasync`   | 引擎单元测试、隔离 MySQL 集成测试与打包客户端测试                    |
+| `engine/src/main/java/io/dbaligner`  | 协议入口、服务路由、连接、元数据、比较、执行、归档、核验、回滚与备份 |
+| `engine/src/test/java/io/dbaligner`  | 引擎单元测试、隔离 MySQL 集成测试与打包客户端测试                    |
 | `scripts`                            | 项目内工具链、Maven、运行时、许可与隔离 MySQL 测试脚本               |
 | `docs`、`design-qa.md`               | 使用与技术文档、验收证据、截图和设计复核                             |
 | `.agents/skills`                     | 项目任务技能及中文界面元数据                                         |
@@ -43,7 +43,7 @@ Data Sync 是按工作区组织的 MySQL 结构与基础数据同步桌面工具
 修改协议时同时核对主进程允许方法及参数处理、preload 桥接、前端类型与预览、Java 路由与模型，并更新协议文档；定位入口见对应技能。
 
 - 使用 Windows x64、Node.js 24／npm 11，从仓库根目录执行命令；Java 21 与 Maven 使用 `.tools` 内的项目工具链。首次引导需网络下载，不修改系统 PATH、不注册 Windows 服务，Maven 脚本仅为本次运行设置环境。
-- 开发启动、工具链与命令详见 [README](README.md#开发)。`npm run desktop` 使用真实 Electron／Java 和 `.local-data`；生产资料位于 Electron `userData` 的 `data` 子目录，`DATA_SYNC_HOME` 用于指定隔离目录。
+- 开发启动、工具链与命令详见 [README](README.md#开发)。`npm run desktop` 使用真实 Electron／Java 和 `.local-data`；生产资料位于 Electron `userData` 的 `data` 子目录，`DB_ALIGNER_HOME` 用于指定隔离目录。
 - `npm run dev` 的 `http://127.0.0.1:4173/?preview=1` 只使用内存虚构数据，不连接数据库、不执行真实同步、不持久保存；不要与同端口的桌面开发实例同时启动。
 - `.tools`、`.local-data` 是工具与开发资料；`node_modules`、`desktop/dist`、`desktop/dist-electron`、`engine/target`、`release` 是依赖或生成产物。修改对应源码、配置或生成脚本，不将这些目录当作业务源码修改或提交。
 - 完整打包必须在根目录运行 `npm run dist`；`npm run build` 不构建引擎，`npm run dist -w desktop` 只调用 Electron 打包。版本、产物与许可核验见打包技能和 README，不能把已有产物当作本次完整构建证据。

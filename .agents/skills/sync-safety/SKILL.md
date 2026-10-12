@@ -14,9 +14,9 @@ description: 修改本仓库的数据库比较、执行、归档、外部核验�
 ## 阅读入口
 
 - 先读[仓库约定](../../../AGENTS.md)、[架构与证据模型](../../../docs/architecture.md)、[支持范围](../../../docs/limitations.md)与[本地协议](../../../docs/protocol.md)。
-- 比较与元数据：[Planner.java](../../../engine/src/main/java/io/datasync/Planner.java)、[Database.java](../../../engine/src/main/java/io/datasync/Database.java)、[Comparisons.java](../../../engine/src/main/java/io/datasync/Comparisons.java)与[ComparisonContext.java](../../../engine/src/main/java/io/datasync/ComparisonContext.java)。
-- 执行与证据：[Jobs.java](../../../engine/src/main/java/io/datasync/Jobs.java)、[Archives.java](../../../engine/src/main/java/io/datasync/Archives.java)、[External.java](../../../engine/src/main/java/io/datasync/External.java)与[Store.java](../../../engine/src/main/java/io/datasync/Store.java)。
-- SQL 与本地恢复：[Sql.java](../../../engine/src/main/java/io/datasync/Sql.java)、[Backup.java](../../../engine/src/main/java/io/datasync/Backup.java)及[主进程恢复流程](../../../desktop/electron/main.ts)。
+- 比较与元数据：[Planner.java](../../../engine/src/main/java/io/dbaligner/Planner.java)、[Database.java](../../../engine/src/main/java/io/dbaligner/Database.java)、[Comparisons.java](../../../engine/src/main/java/io/dbaligner/Comparisons.java)与[ComparisonContext.java](../../../engine/src/main/java/io/dbaligner/ComparisonContext.java)。
+- 执行与证据：[Jobs.java](../../../engine/src/main/java/io/dbaligner/Jobs.java)、[Archives.java](../../../engine/src/main/java/io/dbaligner/Archives.java)、[External.java](../../../engine/src/main/java/io/dbaligner/External.java)与[Store.java](../../../engine/src/main/java/io/dbaligner/Store.java)。
+- SQL 与本地恢复：[Sql.java](../../../engine/src/main/java/io/dbaligner/Sql.java)、[Backup.java](../../../engine/src/main/java/io/dbaligner/Backup.java)及[主进程恢复流程](../../../desktop/electron/main.ts)。
 - [架构中的回滚流程](../../../docs/architecture.md#回滚)与[实现入口](../../../docs/architecture.md#实现入口)用于定位证据链；结论须与当前源码复核。
 
 ## 操作流程

@@ -1,4 +1,6 @@
-# Data Sync
+# DBAligner
+
+数据库结构与基础数据同步工具。
 
 按项目组织的 MySQL 结构和基础数据同步桌面工具。选择表后比较一个源库与多个目标库，预览差异，保存脚本或直接执行，保留每次操作的记录、恢复资料和版本归档。
 
@@ -8,7 +10,7 @@
 
 ## 安装与使用
 
-本地构建结果在 `release/Data Sync Setup 0.1.0.exe`。也可以直接运行 `release/win-unpacked/Data Sync.exe`。安装包随附 Java 运行时；首版没有代码签名。卸载默认保留应用资料。
+本地构建结果在 `release/DBAligner Setup 0.1.0.exe`。也可以直接运行 `release/win-unpacked/DBAligner.exe`。安装包随附 Java 运行时；首版没有代码签名。卸载默认保留应用资料。
 
 1. 新建项目工作区；创建连接或导入 Navicat `.ncx`、DBeaver `data-sources.json`、DataGrip `dataSources.xml` / XML 文本。导入先预览，选择工作区与重复项处理方式，补充缺失密码。
 2. 展开左侧连接与数据库。双击表名查看字段、索引、外键、属性和建表 SQL；右键表或数据库进入同步结构、同步数据或导出结构。
@@ -30,7 +32,7 @@ npm run engine:build
 npm run desktop
 ```
 
-`npm run desktop` 启动开发用 Vite 与真实 Electron / Java 引擎，使用项目内 `.local-data`。不要同时启动占用 4173 端口的预览实例。正式安装的资料位于 Electron `userData` 下的 `data` 子目录（通常 `%APPDATA%/data-sync-desktop/data`）；可以通过 `DATA_SYNC_HOME` 指定隔离资料目录。
+`npm run desktop` 启动开发用 Vite 与真实 Electron / Java 引擎，使用项目内 `.local-data`。不要同时启动占用 4173 端口的预览实例。正式安装的资料位于全新的 `%APPDATA%/db-aligner-desktop/data`，需要重新配置连接；旧应用资料保留在原目录，不自动迁移或删除。可以通过 `DB_ALIGNER_HOME` 指定隔离资料目录，指定后 Electron 配置也隔离在该目录的 `electron-profile` 中。
 
 仅看界面时运行 `npm run dev`，打开 `http://127.0.0.1:4173/?preview=1`。浏览器预览带有明确提示，只使用内存中的虚构示例数据，不连接数据库、不执行同步，关闭后不保存。真实功能必须使用桌面客户端。
 
@@ -47,7 +49,7 @@ npm run dist
 
 `npm test` 运行前端和引擎默认测试，默认跳过真库；`npm run build` 构建前端与 Electron，不构建引擎。Maven 入口为 `mvnw.cmd` 或 `scripts/mvn.ps1`。
 
-界面验收先运行 `npm run build`，原生桌面验收还需可用引擎构建。脚本使用本机 Chrome／Edge，可通过 `DATA_SYNC_QA_BROWSER` 指定程序；浏览器验收用虚构数据，原生验收用隔离资料目录。
+界面验收先运行 `npm run build`，原生桌面验收还需可用引擎构建。脚本使用本机 Chrome／Edge，可通过 `DB_ALIGNER_QA_BROWSER` 指定程序；浏览器验收用虚构数据，原生验收用隔离资料目录。
 
 | 验收命令（仓库根目录）                              | 主要用途                                  | 报告                                                  |
 | --------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------- |
@@ -82,8 +84,8 @@ npm run dist
 
 产物保存在项目根目录的 `release` 中，当前版本为 0.1.0：
 
-- 安装包：`release/Data Sync Setup 0.1.0.exe`。
-- 无需安装的程序：`release/win-unpacked/Data Sync.exe`；直接运行或分发时需保留完整 `win-unpacked` 目录及其资源。
+- 安装包：`release/DBAligner Setup 0.1.0.exe`。
+- 无需安装的程序：`release/win-unpacked/DBAligner.exe`；直接运行或分发时需保留完整 `win-unpacked` 目录及其资源。
 
 安装包版本取自 `desktop/package.json`，升级版本后以实际生成的文件名为准。安装包附带 Java 运行时，用户机器无需预装 Java；当前未配置代码签名。打包成功不能替代前端、真库及干净 Windows 环境的安装验收，相关要求见[贡献说明](CONTRIBUTING.md)和下方真库回归。
 
@@ -95,7 +97,7 @@ npm run dist
 ./scripts/mysql-test-server.ps1 -Version 5.7.44 -Port 33957
 ./scripts/mysql-test-server.ps1 -Version 8.0.45 -Port 33980
 ./scripts/mysql-test-server.ps1 -Version 8.4.8 -Port 33984
-./scripts/mvn.ps1 test '-Ddatasync.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddatasync.electron.smoke=true'
+./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.electron.smoke=true'
 ./scripts/mysql-test-stop.ps1
 ```
 
@@ -104,7 +106,7 @@ npm run dist
 ## 工程结构
 
 - `desktop/src`：页面、交互和类型；`desktop/electron`：受限 IPC、凭据、文件对话框和引擎生命周期。
-- `engine/src/main/java/io/datasync`：连接、元数据、比较、执行、归档、版本、核验、回滚和本地备份。
+- `engine/src/main/java/io/dbaligner`：连接、元数据、比较、执行、归档、版本、核验、回滚和本地备份。
 - `scripts`：工具链、构建、许可与隔离真库测试；`docs`：使用、协议、架构和验收证据。
 - `licenses`：第三方许可、驱动源码 JAR 与依赖清单；`design-qa.md`：设计复核。
 

@@ -1,5 +1,25 @@
 # 设计 QA 记录
 
+> 下方历史文字中的产品名称已统一为当前名称；历史截图、日期和验证范围仍保留原始证据，不据此声称本次验收通过。
+
+## 2026-10-12：DBAligner 名称与最终界面验收
+
+应用标题栏、浏览器标题、Electron 窗口和设置关于信息使用 DBAligner，
+关于副标题为“数据库结构与基础数据同步工具”。沿用原数据库图标和白／灰／蓝配色。
+
+最终完整浏览器 119 项、范围专项 10 项、记录确认 10 项和性能专项 28 项通过；
+原生桌面 7 项与连接树 4 个规模／主题场景通过，报告均无错误。
+人工复核了[浅色差异页](docs/screenshots/react-ant-design/diff-light.png)、
+[深色差异页](docs/screenshots/react-ant-design/diff-dark.png)、
+[原生深色设置](docs/screenshots/react-ant-design/native-settings-dark.png)、
+[最小窗口已选筛选](docs/screenshots/react-ant-design/scope-selected-filter-minimum-dark.png)与
+[最小窗口数据说明](docs/screenshots/react-ant-design/scope-data-minimum-light.png)。
+标题清晰、筛选与选择数量一致、模式草稿独立，结构默认和底部操作均保持可达；主题切换及重启持久化已验收。
+
+本次根目录完整打包和三版本隔离 MySQL 回归另行通过，打包客户端在 8.4.8 分支的原生 smoke 通过 16 项。
+截图中的浏览器资料仍为虚构数据；干净 Windows 安装／升级未验收，安装包未签名。
+命令、环境、失败重跑、产物哈希和各验证的证明范围见[本次验证记录](docs/validation.md)。
+
 ## 2026-10-12：浏览器预览跟随当前交互与范围规则
 
 默认演示根据当前选表范围和结构默认选项生成单一结构计划，返回“上一步”后保留对应范围。
@@ -232,7 +252,7 @@ final result: passed
 
 ---
 
-## Data Sync 设计实现 QA（既有记录保留）
+## DBAligner 设计实现 QA（既有记录保留）
 
 2026-10-09 已完成 React + Ant Design 迁移。最新结果见 [验证记录](docs/validation.md)、[界面自动验收](docs/react-ui-qa.json)、[原生窗口验收](docs/react-desktop-qa.json)。最新截图使用 Ant Design 默认控件与主题，位于 [截图目录](docs/screenshots/react-ant-design)。
 

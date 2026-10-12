@@ -35,7 +35,7 @@ description: 在 Windows x64 构建或核验本仓库安装包时使用，完成
 ## 关键约束
 
 - `npm run build` 只构建前端与 Electron，不构建 Java 引擎；根目录 `npm run dist` 的完整成功必须有本次日志和对应产物。
-- 安装包版本取自 `desktop/package.json`，不要在技能内固定版本号和文件名。输出为 `release/Data Sync Setup <版本>.exe`；直接运行程序为 `release/win-unpacked/Data Sync.exe`。
+- 安装包版本取自 `desktop/package.json`，不要在技能内固定版本号和文件名。输出为 `release/DBAligner Setup <版本>.exe`；直接运行程序为 `release/win-unpacked/DBAligner.exe`。
 - 无需安装的分发必须保留完整 `win-unpacked` 目录及资源，不能只分发 EXE。客户端应使用随附 Java，不依赖用户系统 Java／Maven。
 - MariaDB Connector/J 使用独立、未修改 JAR，不打进引擎单一 JAR；驱动版本变化同时核对许可脚本内的版本与匹配源码，保留 LGPL 材料。
 - Java 运行时保留法律文件及对应源码地址，项目代码采用 Apache-2.0；MySQL 服务端不随客户端分发。

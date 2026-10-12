@@ -18,7 +18,7 @@ const report = { browser: [], desktop: [], errors: [] };
 await fs.mkdir(screenshots, { recursive: true });
 const native = process.argv.includes('--desktop');
 const executablePath =
-  process.env.DATA_SYNC_QA_BROWSER ||
+  process.env.DB_ALIGNER_QA_BROWSER ||
   [
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -122,7 +122,7 @@ async function longDiffQA(browser, theme) {
         target.before = Object.fromEntries(names.map((name, index) => [name, snapshot(beforeTable, name, index)]));
         plan.targets = [target];
         window.diffFixturePending = 0;
-        window.dataSync = {
+        window.dbAligner = {
           ...DiffFixture.previewBridge,
           invoke(method, params) {
             if (method === 'sync.compare.start') return Promise.resolve({ compareId: params.compareId });
@@ -370,7 +370,7 @@ async function selectedScopeQA(browser, theme) {
   try {
     await page.addInitScript({
       content: `${fixture.outputFiles[0].text}
-        window.dataSync = {
+        window.dbAligner = {
           ...ScopeFixture.previewBridge,
           invoke(method, params) {
             if (method === 'sync.compare') return Promise.resolve(structuredClone(ScopeFixture.previewPlan));
@@ -1521,6 +1521,10 @@ async function browserQA() {
       await page.goto('http://127.0.0.1:4183/?preview=1');
       await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
       await page.getByText('remark', { exact: true }).first().waitFor();
+      assert.equal(await page.title(), 'DBAligner');
+      assert(
+        await page.locator('.titlebar-content').getByText('DBAligner', { exact: true }).isVisible(),
+      );
       await shot(page, `diff-${mode}`);
       const first = page.getByRole('checkbox', { name: '选择 remark', exact: true });
       await first.uncheck();
@@ -1536,6 +1540,13 @@ async function browserQA() {
       await page.getByRole('heading', { level: 1, name: '设置', exact: true }).waitFor();
       await page.getByText(mode === 'dark' ? '深色' : '浅色', { exact: true }).click();
       await page.locator(`[data-theme="${mode}"]`).waitFor();
+      assert(
+        await page
+          .getByText('DBAligner · 数据库结构与基础数据同步工具 · 开源许可 Apache-2.0', {
+            exact: true,
+          })
+          .isVisible(),
+      );
       const input = page.getByRole('spinbutton', { name: '最大并行目标库' });
       await input.fill('7');
       await input.blur();
@@ -1936,20 +1947,26 @@ async function browserQA() {
 }
 async function desktopQA() {
   const root = await fs.mkdtemp(path.join(repo, '.local-data', 'react-native-qa-'));
-  const env = { ...process.env, DATA_SYNC_HOME: root };
-  delete env.DATA_SYNC_DEV;
+  const env = { ...process.env, DB_ALIGNER_HOME: root };
+  delete env.DB_ALIGNER_DEV;
   delete env.ELECTRON_RUN_AS_NODE;
   let application;
   async function launch() {
     application = await electron.launch({
-      executablePath: process.env.DATA_SYNC_QA_APP || require('electron'),
-      args: process.env.DATA_SYNC_QA_APP ? [] : [path.join(desktop, 'dist-electron', 'main.cjs')],
+      executablePath: process.env.DB_ALIGNER_QA_APP || require('electron'),
+      args: process.env.DB_ALIGNER_QA_APP ? [] : [path.join(desktop, 'dist-electron', 'main.cjs')],
       env,
     });
     const page = await application.firstWindow();
     observe(page);
     await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
     await page.getByText('我的项目', { exact: true }).first().waitFor();
+    assert.equal(await page.title(), 'DBAligner');
+    assert(
+      await page.locator('.titlebar-content').getByText('DBAligner', { exact: true }).isVisible(),
+    );
+    const profile = await application.evaluate(({ app }) => app.getPath('userData'));
+    assert.equal(profile, path.join(root, 'electron-profile'));
     return page;
   }
   try {
@@ -1962,10 +1979,12 @@ async function desktopQA() {
       false,
     );
     const deletedGroupId = await page.evaluate(async () => {
-      const group = await window.dataSync.invoke('connectionGroups.save', { name: 'QA 删除分组' });
-      const result = await window.dataSync.invoke('connectionGroups.delete', { groupId: group.id });
+      const group = await window.dbAligner.invoke('connectionGroups.save', { name: 'QA 删除分组' });
+      const result = await window.dbAligner.invoke('connectionGroups.delete', {
+        groupId: group.id,
+      });
       if (!result.ok) throw new Error('删除分组失败');
-      const state = await window.dataSync.invoke('state.load');
+      const state = await window.dbAligner.invoke('state.load');
       if (state.connectionGroups.some((value) => value.id === group.id))
         throw new Error('分组仍存在');
       return group.id;
@@ -2043,14 +2062,14 @@ async function desktopQA() {
     page = await launch();
     assert(
       await page.evaluate(async (id) => {
-        const state = await window.dataSync.invoke('state.load');
+        const state = await window.dbAligner.invoke('state.load');
         return !state.connectionGroups.some((value) => value.id === id);
       }, deletedGroupId),
     );
     await page.locator('[data-theme="dark"]').waitFor();
     report.desktop.push({ check: 'theme-restart-persistence', passed: true });
     await page.evaluate(async () => {
-      await window.dataSync.invoke('appearance.set', { themeMode: 'system' });
+      await window.dbAligner.invoke('appearance.set', { themeMode: 'system' });
     });
     await application.evaluate(({ nativeTheme }) => {
       nativeTheme.themeSource = 'dark';

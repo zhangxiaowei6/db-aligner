@@ -220,6 +220,6 @@ export interface Appearance {
 }
 declare global {
   interface Window {
-    dataSync?: DesktopBridge;
+    dbAligner?: DesktopBridge;
   }
 }

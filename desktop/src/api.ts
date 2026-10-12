@@ -2,7 +2,7 @@ import type { DesktopBridge } from './types';
 import { previewBridge } from './preview';
 import { copyModel } from './copy';
 export const preview = new URLSearchParams(location.search).get('preview') === '1';
-const bridge: DesktopBridge | undefined = window.dataSync || (preview ? previewBridge : undefined);
+const bridge: DesktopBridge | undefined = window.dbAligner || (preview ? previewBridge : undefined);
 export async function api<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},

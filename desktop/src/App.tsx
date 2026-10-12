@@ -355,7 +355,7 @@ function Shell() {
       <header className={`titlebar ${preview ? 'preview-titlebar' : ''}`}>
         <div className="titlebar-content">
           <img className="brand-icon" src={appLogo} alt="" />
-          <span>Data Sync</span>
+          <span>DBAligner</span>
           {preview && (
             <span className="preview-label">浏览器设计预览 · 执行操作请使用桌面客户端</span>
           )}

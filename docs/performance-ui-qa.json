@@ -12,13 +12,13 @@
       "check": "bounded-sql-performance",
       "theme": "light",
       "tables": 298,
-      "displayMs": 133.39999997615814,
+      "displayMs": 103,
       "sqlCharacters": 529325,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
       "domNodes": 615,
-      "pageMs": 15,
-      "heapBytes": 20844064
+      "pageMs": 8.300000011920929,
+      "heapBytes": 28097564
     },
     {
       "check": "performance-export-1000-0-light",
@@ -32,13 +32,13 @@
       "check": "bounded-sql-performance",
       "theme": "light",
       "tables": 1000,
-      "displayMs": 117.29999995231628,
+      "displayMs": 72.30000001192093,
       "sqlCharacters": 1776779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
       "domNodes": 632,
-      "pageMs": 15.699999928474426,
-      "heapBytes": 27462408
+      "pageMs": 8.300000011920929,
+      "heapBytes": 34738316
     },
     {
       "check": "performance-export-5000-0-light",
@@ -52,13 +52,13 @@
       "check": "bounded-sql-performance",
       "theme": "light",
       "tables": 5000,
-      "displayMs": 143.29999995231628,
+      "displayMs": 72.40000003576279,
       "sqlCharacters": 8892779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 645,
-      "pageMs": 13.600000023841858,
-      "heapBytes": 59656260
+      "domNodes": 644,
+      "pageMs": 9.600000023841858,
+      "heapBytes": 66972444
     },
     {
       "check": "performance-export-298-10485760-light",
@@ -73,13 +73,13 @@
       "theme": "light",
       "tables": 298,
       "bytes": 10485760,
-      "displayMs": 123,
+      "displayMs": 129.69999998807907,
       "sqlCharacters": 10485760,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
       "domNodes": 646,
-      "pageMs": 12.100000023841858,
-      "heapBytes": 58862876
+      "pageMs": 12.900000035762787,
+      "heapBytes": 66069120
     },
     {
       "check": "sql-replacement-memory",
@@ -87,21 +87,15 @@
       "cycles": 5,
       "beforeCycles": {
         "documents": 1,
-        "nodes": 974,
+        "nodes": 972,
         "jsEventListeners": 852
       },
       "afterCycles": {
         "documents": 1,
-        "nodes": 982,
-        "jsEventListeners": 1577
+        "nodes": 973,
+        "jsEventListeners": 1573
       },
-      "cycleHeaps": [
-        48414656,
-        39025288,
-        48518328,
-        39136348,
-        48560544
-      ]
+      "cycleHeaps": [55599356, 46245972, 55712532, 46321916, 55779200]
     },
     {
       "check": "performance-diff-light",
@@ -116,8 +110,8 @@
       "theme": "light",
       "changes": 20000,
       "mountedRows": 4,
-      "selectionMs": 25.600000023841858,
-      "filterMs": 82.70000004768372
+      "selectionMs": 38.799999952316284,
+      "filterMs": 137.19999998807907
     },
     {
       "check": "performance-rollback-light",
@@ -132,7 +126,7 @@
       "theme": "light",
       "items": 20000,
       "mountedRows": 8,
-      "selectionMs": 33.799999952316284
+      "selectionMs": 48.90000003576279
     },
     {
       "check": "performance-rollback-narrow-light",
@@ -154,13 +148,13 @@
       "check": "bounded-sql-performance",
       "theme": "dark",
       "tables": 298,
-      "displayMs": 125.19999992847443,
+      "displayMs": 100.5,
       "sqlCharacters": 529325,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 615,
-      "pageMs": 17.800000071525574,
-      "heapBytes": 20991412
+      "domNodes": 611,
+      "pageMs": 9.300000011920929,
+      "heapBytes": 28073672
     },
     {
       "check": "performance-export-1000-0-dark",
@@ -174,13 +168,13 @@
       "check": "bounded-sql-performance",
       "theme": "dark",
       "tables": 1000,
-      "displayMs": 131.30000007152557,
+      "displayMs": 80.20000004768372,
       "sqlCharacters": 1776779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
       "domNodes": 632,
-      "pageMs": 14,
-      "heapBytes": 27451968
+      "pageMs": 8,
+      "heapBytes": 34686200
     },
     {
       "check": "performance-export-5000-0-dark",
@@ -194,13 +188,13 @@
       "check": "bounded-sql-performance",
       "theme": "dark",
       "tables": 5000,
-      "displayMs": 129.29999995231628,
+      "displayMs": 124.89999997615814,
       "sqlCharacters": 8892779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
       "domNodes": 645,
-      "pageMs": 17.5,
-      "heapBytes": 59802048
+      "pageMs": 13.900000035762787,
+      "heapBytes": 67019060
     },
     {
       "check": "performance-export-298-10485760-dark",
@@ -215,13 +209,13 @@
       "theme": "dark",
       "tables": 298,
       "bytes": 10485760,
-      "displayMs": 122.19999992847443,
+      "displayMs": 116,
       "sqlCharacters": 10485760,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 646,
-      "pageMs": 12.600000023841858,
-      "heapBytes": 58867004
+      "domNodes": 639,
+      "pageMs": 15,
+      "heapBytes": 66062488
     },
     {
       "check": "sql-replacement-memory",
@@ -237,13 +231,7 @@
         "nodes": 973,
         "jsEventListeners": 1575
       },
-      "cycleHeaps": [
-        48388776,
-        39036344,
-        48503072,
-        39078356,
-        48527980
-      ]
+      "cycleHeaps": [55677400, 46268604, 55648384, 46253172, 55732120]
     },
     {
       "check": "performance-diff-dark",
@@ -258,8 +246,8 @@
       "theme": "dark",
       "changes": 20000,
       "mountedRows": 4,
-      "selectionMs": 24.700000047683716,
-      "filterMs": 86.20000004768372
+      "selectionMs": 42.80000001192093,
+      "filterMs": 127.19999998807907
     },
     {
       "check": "performance-rollback-dark",
@@ -274,7 +262,7 @@
       "theme": "dark",
       "items": 20000,
       "mountedRows": 8,
-      "selectionMs": 27.300000071525574
+      "selectionMs": 38.39999997615814
     },
     {
       "check": "performance-rollback-narrow-dark",
@@ -288,9 +276,9 @@
   "desktop": [],
   "errors": [],
   "environment": {
-    "node": "v22.22.2",
+    "node": "v24.9.0",
     "platform": "win32",
-    "browser": "154.0.8037.98",
+    "browser": "155.0.8059.39",
     "fixture": "production frontend with isolated in-memory data; no database operations"
   }
 }

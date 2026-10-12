@@ -41,7 +41,7 @@ export async function performanceQA(browser, { repo, report, observe, shot, foot
           sql: 'ALTER TABLE qa_table ADD COLUMN qa_column_' + index + ' INT;'
         }));
         window.performanceFixture = { tables: 298, bytes: 0, saved: '', source: '', delivered: 0, calls: [], sql: '' };
-        window.dataSync = {
+        window.dbAligner = {
           ...PerformanceFixture.previewBridge,
           async invoke(method, params) {
             const fixture = window.performanceFixture;

@@ -1,6 +1,6 @@
-package io.datasync;
+package io.dbaligner;
 
-import static io.datasync.Model.*;
+import static io.dbaligner.Model.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.*;
@@ -14,14 +14,14 @@ class MySqlIntegrationTest {
 
   @TestFactory
   Collection<DynamicTest> supportedServers() {
-    String versions = System.getProperty("datasync.mysql.versions", "");
+    String versions = System.getProperty("dbaligner.mysql.versions", "");
     if (versions.isBlank())
       return List.of(
           DynamicTest.dynamicTest(
               "Real database tests not requested",
               () ->
                   Assumptions.assumeTrue(
-                      false, "Set datasync.mysql.versions and start project test servers")));
+                      false, "Set dbaligner.mysql.versions and start project test servers")));
     return Arrays.stream(versions.split(","))
         .map(v -> DynamicTest.dynamicTest("MySQL " + v, () -> run(v)))
         .toList();
@@ -465,7 +465,7 @@ class MySqlIntegrationTest {
           assertTrue(nullKey.targets.getFirst().changes.stream().anyMatch(x -> x.blocked));
           // The release executable drives its real isolated preload/main/Java stack without system
           // Java.
-          if (Boolean.getBoolean("datasync.electron.smoke") && version.equals("8.4.8")) {
+          if (Boolean.getBoolean("dbaligner.electron.smoke") && version.equals("8.4.8")) {
             for (var ref : List.of(src, a)) {
               db.execute(
                   admin,
@@ -483,7 +483,7 @@ class MySqlIntegrationTest {
                       + ")");
             }
             Path release =
-                Path.of("..", "release", "win-unpacked", "Data Sync.exe")
+                Path.of("..", "release", "win-unpacked", "DBAligner.exe")
                     .toAbsolutePath()
                     .normalize();
             assertTrue(Files.exists(release), "Build the release before enabling native smoke");
@@ -512,8 +512,8 @@ class MySqlIntegrationTest {
                 new ProcessBuilder(release.toString(), "--smoke-test", "--smoke-fixture=" + fixture)
                     .redirectErrorStream(true)
                     .redirectOutput(nativeRoot.resolve("native.log").toFile());
-            process.environment().put("DATA_SYNC_HOME", nativeRoot.toString());
-            process.environment().remove("DATA_SYNC_DEV");
+            process.environment().put("DB_ALIGNER_HOME", nativeRoot.toString());
+            process.environment().remove("DB_ALIGNER_DEV");
             process.environment().remove("JAVA_HOME");
             process.environment().put("PATH", System.getenv("SystemRoot") + "\\System32");
             var running = process.start();

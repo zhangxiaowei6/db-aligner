@@ -1,11 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
-contextBridge.exposeInMainWorld('dataSync', {
+contextBridge.exposeInMainWorld('dbAligner', {
   invoke: (method: string, params: Record<string, unknown> = {}) =>
-    ipcRenderer.invoke('datasync:invoke', method, params),
+    ipcRenderer.invoke('dbaligner:invoke', method, params),
   onEvent: (callback: (event: unknown) => void) => {
     const listener = (_e: unknown, event: unknown) => callback(event);
-    ipcRenderer.on('datasync:event', listener);
-    return () => ipcRenderer.removeListener('datasync:event', listener);
+    ipcRenderer.on('dbaligner:event', listener);
+    return () => ipcRenderer.removeListener('dbaligner:event', listener);
   },
-  window: (action: string) => ipcRenderer.send('datasync:window', action),
+  window: (action: string) => ipcRenderer.send('dbaligner:window', action),
 });

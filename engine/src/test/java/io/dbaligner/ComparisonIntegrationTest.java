@@ -1,6 +1,6 @@
-package io.datasync;
+package io.dbaligner;
 
-import static io.datasync.Model.*;
+import static io.dbaligner.Model.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,7 +17,7 @@ class ComparisonIntegrationTest {
 
   @TestFactory
   Collection<DynamicTest> supportedServers() {
-    String versions = System.getProperty("datasync.mysql.versions", "");
+    String versions = System.getProperty("dbaligner.mysql.versions", "");
     if (versions.isBlank())
       return List.of(
           DynamicTest.dynamicTest(

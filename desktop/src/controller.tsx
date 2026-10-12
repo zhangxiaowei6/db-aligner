@@ -2540,7 +2540,7 @@ function useBusinessController() {
     await action(async () => {
       const config = await api('config.export');
       await api('files.save', {
-        name: 'datasync-config.json',
+        name: 'db-aligner-config.json',
         content: JSON.stringify(config, null, 2),
       });
     });

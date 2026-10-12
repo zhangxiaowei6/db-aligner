@@ -13,7 +13,7 @@ const repo = path.resolve(desktop, '..');
 const baseline = process.argv.includes('--baseline');
 const output = path.join(repo, baseline ? '.local-data/tree-baseline.json' : 'docs/tree-qa.json');
 const executablePath =
-  process.env.DATA_SYNC_QA_BROWSER ||
+  process.env.DB_ALIGNER_QA_BROWSER ||
   [
     'C:/Program Files/Google/Chrome/Application/chrome.exe',
     'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -77,13 +77,13 @@ try {
         content: `${fixture.outputFiles[0].text}
           window.treeTableLoads = 0;
           window.treeRevision = 0;
-          window.dataSync = {
+          window.dbAligner = {
             ...TreeFixture.previewBridge,
             invoke(method, params) {
               if (window.treeLoadDelay && ['databases.list', 'tables.list'].includes(method)) {
                 return new Promise(resolve => { window.treeLoadRelease = resolve; }).then(() => {
                   window.treeLoadDelay = false;
-                  return window.dataSync.invoke(method, params);
+                  return window.dbAligner.invoke(method, params);
                 });
               }
               if (method === 'tables.list') {

@@ -625,7 +625,7 @@ const state: State = {
     concurrency: 4,
     perHost: 1,
     batchSize: 500,
-    archivePath: 'D:\\DataSync\\archives',
+    archivePath: 'D:\\DBAligner\\archives',
     retention: 'forever',
   },
   external: [],

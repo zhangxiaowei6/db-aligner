@@ -1,8 +1,8 @@
 {
-  "bytes": 177369002,
-  "builtAt": "2026-10-08T15:31:37.3646339Z",
-  "installer": "Data Sync Setup 0.1.0.exe",
-  "sha256": "1086e5a37f13560173894a39ebd3f26f70c47ab9ebe925a62feaeb009bef54e4",
+  "bytes": 181014867,
+  "builtAt": "2026-10-12T08:28:38.2981245Z",
+  "installer": "DBAligner Setup 0.1.0.exe",
+  "sha256": "c9eedcf1ae75e80f2ad4287da4f66b4911b7f3680eb3147ef85985580da62d1f",
   "version": "0.1.0",
   "signed": false
 }
