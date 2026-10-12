@@ -1,5 +1,27 @@
 # 0.1.0 验证记录
 
+## 2026-10-12：中文 Git 提交规范技能
+
+新增 `git-commit-convention` 仓库技能及中文界面元数据，在 AGENTS 的任务索引登记入口。
+采用 Conventional Commits 1.0.0，类型与范围保留英文标识，主题、正文及脚注说明使用中文；
+区分规范要求和本技能约定，并保留按实际差异选择提交范围与用户提交授权的边界。
+
+实际环境：Windows、Node.js 24.9.0、Python 3.11.8。
+
+- `python -X utf8 C:/Users/admin/.codex/skills/.system/skill-creator/scripts/quick_validate.py .agents/skills/git-commit-convention`：
+  退出 0。首次未启用 UTF-8 时因默认 GBK 解码失败，启用后通过。
+- `node node_modules/prettier/bin/prettier.cjs --check .agents/skills/git-commit-convention`：
+  退出 0，新技能正文与界面元数据通过。
+- 全技能目录 Prettier 初查退出 1：新增技能表格已修正，另有 10 个既有技能文件格式警告，
+  本轮未修改这些文件。
+- `git diff --check`：退出 0；新增文件的差异检查无空白错误。
+- `node node_modules/prettier/bin/prettier.cjs --check AGENTS.md docs/validation.md`：
+  初查因新增表格对齐及混合换行退出 1，修正并统一为 LF 后复查。
+- 核对技能目录、中文元数据、默认提示中的 `$git-commit-convention` 及 AGENTS 索引目标；
+  未实际查看客户端技能选择器，不据此声明客户端已加载技能。
+
+本轮仅修改技能与文档，未运行业务测试、数据库回归、UI 验收或打包；未创建 Git 提交。
+
 ## 2026-10-12：连接表单保持原页与删除分组选项
 
 新建连接从差异预览、新建同步、同步历史和设置打开时保持当前页面；取消、保存成功和保存失败均保留原页面及业务草稿。删除分组后，新建连接下拉不再显示已删名称；没有分组时必须通过下拉框显式新增后才能保存，避免保存连接自动恢复已删分组。连接树右键编辑同样不再触发连接管理导航。

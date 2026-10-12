@@ -21,6 +21,7 @@ Data Sync 是按工作区组织的 MySQL 结构与基础数据同步桌面工具
 | 比较、执行、归档、核验、回滚、本地备份恢复    | [数据库同步与恢复](.agents/skills/sync-safety/SKILL.md)            | [架构与证据模型](docs/architecture.md)、[支持范围](docs/limitations.md)、[本地协议](docs/protocol.md)          |
 | 修改后检查、验收与验证报告                    | [修改验证与证据记录](.agents/skills/verification/SKILL.md)         | [贡献说明](CONTRIBUTING.md)、[README](README.md)、[验证记录](docs/validation.md)                               |
 | Windows 工具链、完整打包、产物与许可核验      | [Windows 构建与打包](.agents/skills/windows-packaging/SKILL.md)    | [README 手动打包](README.md#手动构建安装包)、[贡献说明](CONTRIBUTING.md)、[第三方说明](THIRD_PARTY_NOTICES.md) |
+| Git 提交消息、提交拆分与提交前范围检查        | [Git 提交规范](.agents/skills/git-commit-convention/SKILL.md)      | [贡献说明](CONTRIBUTING.md)、[仓库约定](AGENTS.md)                                                             |
 
 跨层修改使用对应技能的组合；文档维护、合并与删除遵循[文档规范](CONTRIBUTING.md#文档规范)，仅文档修改核对相关事实与格式，不触发文档所描述功能的执行或验收。
 各技能正文、触发说明和界面元数据使用中文，目录名与技能标识使用无项目前缀的小写英文及连字符。
