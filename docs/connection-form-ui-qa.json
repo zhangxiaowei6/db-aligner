@@ -1,8 +1,56 @@
 {
   "browser": [
     {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "差异预览",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "新建同步",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "同步历史",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "light",
+      "page": "设置",
+      "passed": true
+    },
+    {
       "check": "connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete",
       "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "差异预览",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "新建同步",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "同步历史",
+      "passed": true
+    },
+    {
+      "check": "new-connection-preserves-page-cancel-save-and-excludes-deleted-groups",
+      "theme": "dark",
+      "page": "设置",
       "passed": true
     },
     {

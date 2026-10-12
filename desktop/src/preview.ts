@@ -12,7 +12,7 @@ import type {
 } from './types';
 import { connectionTestError } from './connection-validation';
 import { executionScript } from './sync-scripts';
-import { commentOnly, fullStructure } from './structure-options';
+import { effectiveOptions, fullStructure } from './structure-options';
 import { previewStructureChange } from './preview-structure';
 import { connectionGroupName, orderedConnections } from './connection-organization';
 const listeners = new Set<(event: Record<string, unknown>) => void>();
@@ -165,6 +165,7 @@ const change = (
   reason: '',
 });
 export const previewPlan: SyncPlan = {
+  // Historical mixed fixture for archive compatibility and synthetic test scenarios.
   id: 'PREVIEW-PLAN',
   workspaceId: 'default',
   createdAt: time,
@@ -348,18 +349,71 @@ for (const target of previewPlan.targets) {
     change.rollbackSql = previewRollback[change.id] ? [previewRollback[change.id]] : [];
   }
 }
-export function buildPreviewPlan(source: DbRef, targets: DbRef[], tables: TableChoice[]): SyncPlan {
+const previewTables = [
+  { name: 'sys_dict', comment: '系统字典' },
+  { name: 'sys_menu', comment: '菜单表' },
+  { name: 'sys_user', comment: '用户表' },
+  { name: 'orders', comment: '订单表' },
+  { name: 'order_items', comment: '订单明细表' },
+  { name: 'order_refund_schedule_with_a_long_table_name', comment: '长表名截断示例' },
+];
+function previewSnapshot(ref: DbRef, name: string): Table {
+  const target = previewPlan.targets.find(
+    (item) => item.ref.connectionId === ref.connectionId && item.ref.database === ref.database,
+  );
+  const source = previewPlan.sourceSnapshot[name] || previewTable;
+  const snapshot = structuredClone(target?.before[name] || source);
+  // Current examples share one catalog across browsing, scope selection and comparison.
+  if (ref.connectionId === 'target1' && ref.database === 'shop_b') {
+    if (name === 'sys_dict') Object.assign(snapshot, structuredClone(source));
+    if (['sys_menu', 'orders'].includes(name)) {
+      Object.assign(snapshot, {
+        exists: false,
+        columns: [],
+        indexes: [],
+        foreignKeys: [],
+        rows: [],
+      });
+    }
+  }
+  snapshot.name = name;
+  if (!target?.before[name])
+    snapshot.comment = previewTables.find((t) => t.name === name)?.comment || '';
+  snapshot.createSql = snapshot.exists
+    ? `CREATE TABLE \`${name}\` (\n  ${[
+        ...snapshot.columns.map((column) => column.definition),
+        ...snapshot.indexes.map((index) => index.definition),
+      ].join(
+        ',\n  ',
+      )}\n) ENGINE=${snapshot.engine} DEFAULT CHARSET=${snapshot.charset} COLLATE=${snapshot.collation} COMMENT='${snapshot.comment.replaceAll("'", "''")}';`
+    : '';
+  return snapshot;
+}
+export function buildPreviewPlan(
+  source: DbRef,
+  targets: DbRef[],
+  tables: TableChoice[],
+  workspaceId = 'default',
+): SyncPlan {
+  tables = structuredClone(tables.filter((table) => table.structure || table.data));
+  if (!tables.length) throw new Error('请选择需要同步的表');
   if (tables.some((table) => table.structure) && tables.some((table) => table.data))
     throw new Error('每次只能同步结构或数据，请选择一种同步类型');
+  if (
+    tables.some(
+      (table) =>
+        table.structure && !Object.values(effectiveOptions(table.structureOptions)).some(Boolean),
+    )
+  )
+    throw new Error('请至少选择一项结构细项');
   const plan = structuredClone(previewPlan);
   plan.id = 'PREVIEW-PLAN-' + crypto.randomUUID();
-  plan.source = source;
+  plan.createdAt = new Date().toISOString();
+  plan.workspaceId = workspaceId;
+  plan.source = structuredClone(source);
   plan.tables = tables;
   plan.sourceSnapshot = Object.fromEntries(
-    tables.map((table) => [
-      table.name,
-      plan.sourceSnapshot[table.name] || { ...structuredClone(previewTable), name: table.name },
-    ]),
+    tables.map((table) => [table.name, previewSnapshot(source, table.name)]),
   );
   plan.targets = targets.map((ref) => {
     const fixture = structuredClone(
@@ -369,14 +423,22 @@ export function buildPreviewPlan(source: DbRef, targets: DbRef[], tables: TableC
       ) || previewPlan.targets[0],
     );
     const originalDatabase = fixture.ref.database;
-    fixture.ref = ref;
+    fixture.ref = structuredClone(ref);
     fixture.label = ref.database;
     fixture.before = Object.fromEntries(
-      tables.map((table) => [
-        table.name,
-        fixture.before[table.name] || { ...structuredClone(previewTable), name: table.name },
-      ]),
+      tables.map((table) => [table.name, previewSnapshot(ref, table.name)]),
     );
+    // shop_b provides compatible data differences; shop_a demonstrates missing source columns.
+    if (ref.connectionId === 'target1' && ref.database === 'shop_b')
+      fixture.changes.push(
+        ...previewPlan.targets[0].changes
+          .filter((item) => item.kind.endsWith('_ROW'))
+          .map((item) => ({
+            ...structuredClone(item),
+            sql: item.sql.replaceAll('`shop_a`', '`shop_b`'),
+            rollbackSql: item.rollbackSql.map((sql) => sql.replaceAll('`shop_a`', '`shop_b`')),
+          })),
+      );
     fixture.changes = fixture.changes
       .flatMap((change) => {
         const choice = tables.find((table) => table.name === change.table);
@@ -405,22 +467,45 @@ export function buildPreviewPlan(source: DbRef, targets: DbRef[], tables: TableC
       }));
     fixture.skippedTables = [];
     for (const choice of tables) {
+      const sourceTable = plan.sourceSnapshot[choice.name];
+      const targetTable = fixture.before[choice.name];
+      if (choice.structure && !targetTable.exists && fullStructure(choice.structureOptions)) {
+        fixture.changes = fixture.changes.filter((item) => item.table !== choice.name);
+        fixture.changes.push({
+          ...change(
+            `${ref.connectionId}/${ref.database}/${choice.name}/create`,
+            choice.name,
+            'CREATE_TABLE',
+            '创建表',
+            sourceTable.createSql.replace(
+              `\`${choice.name}\``,
+              `\`${ref.database}\`.\`${choice.name}\``,
+            ),
+          ),
+          targetKey: `${ref.connectionId}/${ref.database}`,
+          rollbackSql: [`DROP TABLE \`${ref.database}\`.\`${choice.name}\`;`],
+        });
+      }
       if (choice.data && !fixture.before[choice.name].exists) {
         fixture.changes = fixture.changes.filter((item) => item.table !== choice.name);
         fixture.skippedTables.push(choice.name);
         continue;
       }
-      if (
-        choice.data &&
-        choice.structure &&
-        fixture.before[choice.name].exists &&
-        fixture.changes.some(
-          (item) =>
-            item.table === choice.name &&
-            ['ADD_COLUMN', 'DROP_COLUMN', 'MODIFY_COLUMN'].includes(item.kind) &&
-            !commentOnly(item),
-        )
-      ) {
+      const keys = choice.keyColumns.length
+        ? choice.keyColumns
+        : sourceTable.indexes.find((index) => index.name === 'PRIMARY')?.columns || [];
+      const missingColumn = sourceTable.columns.some(
+        (column) => !targetTable.columns.some((item) => item.name === column.name),
+      );
+      const invalidKey = keys.find(
+        (key) => !sourceTable.columns.some((column) => column.name === key),
+      );
+      const collationKey = keys.find(
+        (key) =>
+          sourceTable.columns.find((column) => column.name === key)?.collation !==
+          targetTable.columns.find((column) => column.name === key)?.collation,
+      );
+      if (choice.data && (missingColumn || !keys.length || invalidKey || collationKey)) {
         fixture.changes = fixture.changes.filter(
           (item) => item.table !== choice.name || !item.kind.endsWith('_ROW'),
         );
@@ -436,7 +521,13 @@ export function buildPreviewPlan(source: DbRef, targets: DbRef[], tables: TableC
           targetKey: `${ref.connectionId}/${ref.database}`,
           blocked: true,
           selected: false,
-          reason: '该表字段定义发生变化，请先同步结构，再重新比较基础数据',
+          reason: missingColumn
+            ? '目标表缺少源字段，请先同步结构'
+            : invalidKey
+              ? `匹配键包含不存在的字段：${invalidKey}`
+              : collationKey
+                ? `匹配键排序规则不同，请先同步字段结构：${collationKey}`
+                : '表无主键，请指定唯一业务键',
         });
       }
       if (
@@ -540,6 +631,8 @@ const state: State = {
   external: [],
 };
 const comparedPlans = new Map<string, SyncPlan>([[previewPlan.id, structuredClone(previewPlan)]]);
+// Only retain the failure switch used by the fictional connection tests, never password text.
+const connectionFailures = new Map<string, boolean>();
 const compareTasks = new Map<string, CompareTask>();
 const previewEvent = (task: CompareTask) =>
   listeners.forEach((fn) =>
@@ -547,6 +640,7 @@ const previewEvent = (task: CompareTask) =>
       event: 'compare-progress',
       compareId: task.compareId,
       status: task.status,
+      error: task.error,
       progress: task.progress,
     }),
   );
@@ -580,8 +674,12 @@ export const previewBridge: DesktopBridge = {
         const config = p.config ?? state.connections.find((c) => c.id === p.id);
         const validation = connectionTestError(config);
         if (validation) throw new Error(validation);
-        await new Promise((resolve) => window.setTimeout(resolve, 350));
-        if ((config as ConnectionInfo)?.password === 'preview-fail')
+        await new Promise((resolve) => setTimeout(resolve, 350));
+        const value = config as ConnectionInfo;
+        if (
+          value.password === 'preview-fail' ||
+          (!value.password && connectionFailures.get(value.id))
+        )
           throw new Error('密码验证失败（虚构预览数据）');
         result = { serverVersion: '8.4.8 · 虚构预览数据' };
         break;
@@ -595,35 +693,29 @@ export const previewBridge: DesktopBridge = {
       case 'databases.list': {
         await new Promise((resolve) => setTimeout(resolve, 200));
         const connection = state.connections.find((c) => c.id === p.connectionId);
-        if ((connection as ConnectionInfo & { password?: string })?.password === 'preview-fail')
+        if (connectionFailures.get(connection?.id || ''))
           throw new Error('密码验证失败（虚构预览数据）');
         result = connection?.databases || [];
         break;
       }
       case 'tables.list': {
         await new Promise((resolve) => setTimeout(resolve, 150));
-        const database = (p.ref as DbRef | undefined)?.database || '';
-        const all = [
-          { name: 'sys_dict', comment: '系统字典' },
-          { name: 'sys_menu', comment: '菜单表' },
-          { name: 'sys_user', comment: '用户表' },
-          { name: 'orders', comment: '订单表' },
-          { name: 'order_items', comment: '订单明细表' },
-          { name: 'order_refund_schedule_with_a_long_table_name', comment: '长表名截断示例' },
-        ];
-        // 示例目标库 shop_b 缺少部分表，用于演示缺表标注与数据同步自动跳过。
-        result =
-          database === 'shop_b' ? all.filter((t) => !['orders', 'sys_menu'].includes(t.name)) : all;
+        const ref = p.ref as DbRef;
+        result = previewTables.flatMap((table) => {
+          const snapshot = previewSnapshot(ref, table.name);
+          return snapshot.exists ? [{ name: table.name, comment: snapshot.comment }] : [];
+        });
         break;
       }
       case 'table.get':
-        result = { ...previewTable, name: p.table };
+        result = previewSnapshot(p.ref as DbRef, String(p.table));
         break;
       case 'sync.compare': {
         result = buildPreviewPlan(
           p.source as DbRef,
           p.targets as DbRef[],
           p.tables as TableChoice[],
+          String(p.workspaceId || 'default'),
         );
         comparedPlans.set((result as SyncPlan).id, result as SyncPlan);
         break;
@@ -658,9 +750,19 @@ export const previewBridge: DesktopBridge = {
               : targets[Math.floor((task.progress.completed - tables.length - 1) / tables.length)];
           task.progress.phase = '比较表（虚构预览）';
           if (task.progress.completed >= task.progress.total) {
-            task.plan = buildPreviewPlan(p.source as DbRef, targets, tables);
-            task.status = 'COMPLETED';
-            comparedPlans.set(task.plan.id, task.plan);
+            try {
+              task.plan = buildPreviewPlan(
+                p.source as DbRef,
+                targets,
+                tables,
+                String(p.workspaceId || 'default'),
+              );
+              task.status = 'COMPLETED';
+              comparedPlans.set(task.plan.id, task.plan);
+            } catch (error) {
+              task.status = 'FAILED';
+              task.error = error instanceof Error ? error.message : String(error);
+            }
           }
           previewEvent(task);
           if (task.status === 'RUNNING') setTimeout(tick, 350);
@@ -691,8 +793,12 @@ export const previewBridge: DesktopBridge = {
         break;
       }
       case 'entity.save': {
+        const value = structuredClone(p.value) as ConnectionInfo & {
+          clearPassword?: boolean;
+          importCredentialId?: string;
+        };
+        value.id ||= crypto.randomUUID();
         if (p.kind === 'connection') {
-          const value = p.value as ConnectionInfo;
           const validation = connectionTestError(value);
           if (validation) throw new Error(validation);
           const group = connectionGroupName(value);
@@ -703,6 +809,13 @@ export const previewBridge: DesktopBridge = {
               sortOrder: state.connectionGroups.length,
             });
           const old = state.connections.find((connection) => connection.id === value.id);
+          if (value.password) connectionFailures.set(value.id, value.password === 'preview-fail');
+          if (value.clearPassword) connectionFailures.delete(value.id);
+          value.hasPassword = value.clearPassword ? false : !!value.password || !!old?.hasPassword;
+          delete value.password;
+          delete value.certificatePassword;
+          delete value.clearPassword;
+          delete value.importCredentialId;
           value.group = group;
           value.sortOrder =
             old && connectionGroupName(old) === group
@@ -722,15 +835,16 @@ export const previewBridge: DesktopBridge = {
             settings: 'settings',
           } as const
         )[p.kind as 'workspace' | 'connection' | 'template' | 'settings'];
-        if (key === 'settings') state.settings = p.value as State['settings'];
+        if (key === 'settings')
+          state.settings = { ...(value as unknown as State['settings']), id: 'global' };
         else if (key) {
           const list = state[key] as { id: string }[];
-          const v = p.value as { id: string };
+          const v = value;
           const i = list.findIndex((x) => x.id === v.id);
           if (i >= 0) list[i] = structuredClone(v);
           else list.push(structuredClone(v));
         }
-        result = p.value;
+        result = value;
         break;
       }
       case 'connectionGroups.save': {
@@ -823,6 +937,7 @@ export const previewBridge: DesktopBridge = {
           const list = state[key] as { id: string }[];
           const i = list.findIndex((v) => v.id === p.id);
           if (i >= 0) list.splice(i, 1);
+          if (p.kind === 'connection') connectionFailures.delete(String(p.id));
         }
         result = { ok: true };
         break;
@@ -832,9 +947,23 @@ export const previewBridge: DesktopBridge = {
           throw new Error('浏览器预览不会执行数据库操作，请使用桌面客户端');
         const plan = comparedPlans.get(String(p.planId));
         if (!plan) throw new Error('比较结果已失效，请重新比较');
+        const selectedIds = [...new Set(p.selectedIds as string[])];
+        if (
+          !selectedIds.length ||
+          selectedIds.some(
+            (id) =>
+              !plan.targets.some((target) =>
+                target.changes.some((change) => change.id === id && !change.blocked),
+              ),
+          )
+        )
+          throw new Error('请选择有效且未被阻止的变更');
         result = {
-          ...state.records[0],
-          id: 'PREVIEW-' + Date.now(),
+          id: 'PREVIEW-' + crypto.randomUUID(),
+          workspaceId: plan.workspaceId,
+          parentId: '',
+          archivePath: '',
+          recoveryFormat: 'LOCAL_V1',
           plan: structuredClone(plan),
           source: plan.source,
           tables: plan.tables,
@@ -843,14 +972,14 @@ export const previewBridge: DesktopBridge = {
           mode: 'SAVE_ONLY',
           status: 'UNEXECUTED',
           results: [],
-          selectedIds: p.selectedIds,
-          remark: p.remark,
+          selectedIds,
+          remark: String(p.remark || ''),
         };
         state.records.unshift(result as State['records'][number]);
         break;
       }
       case 'schema.export': {
-        const opts = p as { includeDrop: boolean; tables: string[] };
+        const opts = p as { source: DbRef; includeDrop: boolean; tables: string[] };
         // Simulate an async database read so the browser preview shows the loading state.
         await new Promise((resolve) => setTimeout(resolve, 800));
         result = {
@@ -860,8 +989,7 @@ export const previewBridge: DesktopBridge = {
               .map(
                 (t) =>
                   (opts.includeDrop ? 'DROP TABLE IF EXISTS `' + t + '`;\n' : '') +
-                  previewTable.createSql.replaceAll('sys_dict', t) +
-                  ';',
+                  previewSnapshot(opts.source, t).createSql,
               )
               .join('\n\n'),
         };
@@ -869,6 +997,7 @@ export const previewBridge: DesktopBridge = {
       }
       case 'record.get': {
         const record = state.records.find((r) => r.id === p.id);
+        if (!record) throw new Error('同步记录不存在');
         result = {
           record,
           events: [],
@@ -889,6 +1018,7 @@ export const previewBridge: DesktopBridge = {
       }
       case 'record.file': {
         const record = state.records.find((r) => r.id === p.id);
+        if (!record) throw new Error('同步记录不存在');
         const file = String(p.file);
         const target = record?.plan?.targets.find((item) =>
           file.startsWith(item.ref.database + '/'),
@@ -926,40 +1056,50 @@ export const previewBridge: DesktopBridge = {
         result = v;
         break;
       }
-      case 'rollback.preview':
+      case 'rollback.preview': {
+        const record = state.records.find((r) => r.id === p.id);
+        if (!record) throw new Error('同步记录不存在');
         result = {
           id: 'PREVIEW-ROLLBACK',
           recordId: p.id,
-          items: [
-            {
-              id: 'r1',
-              targetKey: 'target0/shop_a',
-              table: 'sys_dict',
-              label: 'ORDER_STATUS',
-              reason: '',
-              eligible: true,
-              selected: true,
-              sql: [
-                "UPDATE shop_a.sys_dict SET dict_name='订单状态配置' WHERE code='ORDER_STATUS';",
-              ],
-            },
-            {
-              id: 'r2',
-              targetKey: 'target1/shop_b',
-              table: 'sys_dict',
-              label: 'ORDER_STATUS',
-              reason: '存在后续结构或数据修改',
-              eligible: false,
-              selected: false,
-              sql: [],
-            },
-          ],
+          items: (record.plan?.targets || []).flatMap((target) => {
+            const completed = new Set(
+              record.results
+                .find(
+                  (result) =>
+                    result.ref.connectionId === target.ref.connectionId &&
+                    result.ref.database === target.ref.database,
+                )
+                ?.steps.filter((step) => step.status === 'DONE')
+                .map((step) => step.changeId),
+            );
+            return [...target.changes]
+              .reverse()
+              .filter(
+                (change) => record.selectedIds.includes(change.id) && completed.has(change.id),
+              )
+              .map((change) => ({
+                id: change.id,
+                targetKey: `${target.ref.connectionId}/${target.ref.database}`,
+                table: change.table,
+                label: change.label,
+                eligible: !change.blocked && change.rollbackSql.length > 0,
+                selected: !change.blocked && change.rollbackSql.length > 0,
+                reason: change.blocked
+                  ? change.reason
+                  : change.rollbackSql.length
+                    ? ''
+                    : '缺少可信恢复资料（虚构预览）',
+                sql: change.rollbackSql,
+              }));
+          }),
         };
         break;
+      }
       default:
         throw new Error('此操作需要桌面客户端，浏览器仅用于界面预览');
     }
-    return result as T;
+    return structuredClone(result) as T;
   },
   onEvent(fn) {
     listeners.add(fn);

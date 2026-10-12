@@ -10,7 +10,6 @@ import {
 import { App, Input, Radio } from 'antd';
 import { mixedSyncModes, syncModeOf, tablesForMode, type SyncMode } from './sync-mode';
 import { api, onEvent, preview, windowAction } from './api';
-import { previewPlan } from './preview';
 import { copyModel } from './copy';
 import { connectionTestError } from './connection-validation';
 import {
@@ -2706,14 +2705,22 @@ function useBusinessController() {
               : t,
           ),
         }));
-        // The initial browser showcase is a static fixture, not a user-triggered comparison.
-        const plan = copyModel(previewPlan);
+        // Generate the showcase through the same bridge and current scope as a fresh comparison.
+        const scope = latest.current;
+        const startedAt = Date.now();
+        const plan = await api<SyncPlan>('sync.compare', {
+          workspaceId: scope.workspaceId,
+          source: fromKey(scope.sourceKey),
+          targets: scope.targetKeys.map(fromKey),
+          tables: choices(scope.scopeTables),
+        });
+        if (!active) return;
         commit((s) => ({
           ...s,
           plan,
           page: 'diff',
           compareScope: copyModel(compareSelection(s)),
-          compareStartedAt: Date.now() - 57_000,
+          compareStartedAt: startedAt,
           compareFinishedAt: Date.now(),
           compareTask: {
             compareId: 'PREVIEW-SHOWCASE',

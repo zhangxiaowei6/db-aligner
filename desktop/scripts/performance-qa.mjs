@@ -53,6 +53,7 @@ export async function performanceQA(browser, { repo, report, observe, shot, foot
               return { sql: fixture.sql };
             }
             if (method === 'files.save') { fixture.saved = params.content; return true; }
+            if (method === 'sync.compare') return structuredClone(fixturePlan);
             if (method === 'sync.compare.start') return { compareId: params.compareId };
             if (method === 'sync.compare.get') return { compareId: params.compareId, status: 'COMPLETED', plan: fixturePlan };
             if (method === 'rollback.preview') return { id: 'performance-rollback', recordId: params.id,

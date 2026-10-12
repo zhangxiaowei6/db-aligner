@@ -43,6 +43,10 @@
       "passed": true
     },
     {
+      "check": "preview-showcase-current-structure-defaults-light",
+      "passed": true
+    },
+    {
       "check": "settings-light",
       "scrollBottom": 991,
       "footerTop": 991,
@@ -55,9 +59,9 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.9277954101562,
+        "x": 848.4857177734375,
         "y": 0,
-        "width": 639.9999389648438,
+        "width": 640,
         "height": 1056
       }
     },
@@ -148,6 +152,10 @@
       "passed": true
     },
     {
+      "check": "preview-showcase-current-structure-defaults-dark",
+      "passed": true
+    },
+    {
       "check": "settings-dark",
       "scrollBottom": 991,
       "footerTop": 991,
@@ -160,9 +168,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.9192504882812,
+        "x": 848.4853515625,
         "y": 0,
-        "width": 639.9999389648438,
+        "width": 640,
         "height": 1056
       }
     },
@@ -292,7 +300,7 @@
       "theme": "light"
     },
     {
-      "check": "rollback-selection-blocked-and-cancel-confirmation",
+      "check": "record-bound-rollback-selection-and-cancel-confirmation",
       "passed": true,
       "theme": "light"
     },
@@ -354,9 +362,17 @@
       "theme": "dark"
     },
     {
-      "check": "rollback-selection-blocked-and-cancel-confirmation",
+      "check": "record-bound-rollback-selection-and-cancel-confirmation",
       "passed": true,
       "theme": "dark"
+    },
+    {
+      "check": "scope-data-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
     },
     {
       "check": "scope-data-mode-light",
@@ -368,6 +384,19 @@
     },
     {
       "check": "exclusive-sync-mode-and-per-target-missing-data-skip",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "scope-selected-filter-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "scope-search-and-selected-filter-pagination",
       "theme": "light",
       "passed": true
     },
@@ -392,6 +421,14 @@
       "passed": true
     },
     {
+      "check": "scope-data-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
       "check": "scope-data-mode-dark",
       "scrollBottom": 991,
       "footerTop": 991,
@@ -401,6 +438,19 @@
     },
     {
       "check": "exclusive-sync-mode-and-per-target-missing-data-skip",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "scope-selected-filter-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "scope-search-and-selected-filter-pagination",
       "theme": "dark",
       "passed": true
     },

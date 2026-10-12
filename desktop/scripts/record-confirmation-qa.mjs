@@ -36,6 +36,9 @@ export async function recordConfirmationQA(
             if (method === 'rollback.preview') result.items.push({
               ...result.items[0], id: 'qa-other-target', targetKey: 'target2/shop_c',
               sql: Array.from({ length: 80 }, (_, index) => "UPDATE shop_c.sys_dict SET dict_name='恢复配置' WHERE id=" + index + ';')
+            }, {
+              ...result.items[0], id: 'qa-conflict', targetKey: 'target1/shop_b',
+              eligible: false, selected: false, reason: '存在后续结构或数据修改', sql: []
             });
             return result;
           }

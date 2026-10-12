@@ -670,10 +670,15 @@ async function organizationQA(browser, theme) {
     await page.locator('.ant-select-content').filter({ hasText: 'QA 下拉新增' }).waitFor();
     await page.keyboard.press('Escape');
     await editor.getByRole('button', { name: /取\s*消/ }).click();
+    await editor.waitFor({ state: 'hidden' });
     report.browser.push({ check: 'group-edit-icon-and-dropdown-create', theme, passed: true });
     await page.getByRole('menuitem', { name: /新建同步/ }).click();
-    await page.getByRole('combobox', { name: '来源数据库', exact: true }).click();
+    await page.getByText('正在检查目标库表清单…', { exact: true }).waitFor({ state: 'hidden' });
+    const sourcePicker = page.getByRole('combobox', { name: '来源数据库', exact: true });
+    await sourcePicker.focus();
+    await sourcePicker.press('ArrowDown');
     await page.locator('.ant-select-dropdown:visible .ant-select-item-option').first().waitFor();
+    await motionSettled(page, '.ant-select-dropdown');
     assert.deepEqual(
       await page.locator('.ant-select-dropdown:visible .ant-select-item-option').allTextContents(),
       [
@@ -753,6 +758,7 @@ async function connectionFormQA(browser, theme) {
     assert(saveBounds && saveBounds.y + saveBounds.height <= 760);
     await shot(page, `connection-ssl-minimum-${theme}`);
     await editor.getByRole('button', { name: /取\s*消/ }).click();
+    await editor.waitFor({ state: 'hidden' });
     assert.equal(await page.locator('h1').innerText(), '差异预览');
     const group = page.locator('.tree-label[data-node-type="group"]').first();
     await group.click({ button: 'right' });
@@ -789,6 +795,7 @@ async function connectionFormQA(browser, theme) {
     await page.getByRole('menuitem', { name: '删除分组', exact: true }).click();
     await confirmation.getByRole('button', { name: /^删\s*除$/ }).click();
     await defaultGroup.waitFor({ state: 'detached' });
+    await confirmation.waitFor({ state: 'hidden' });
     for (const heading of ['差异预览', '新建同步', '同步历史', '设置']) {
       if (heading !== '差异预览')
         await page.getByRole('menuitem', { name: new RegExp(heading) }).click();
@@ -797,13 +804,17 @@ async function connectionFormQA(browser, theme) {
       await editor.waitFor();
       await modalSettled(page);
       assert.equal(await page.locator('h1').innerText(), originalHeading);
-      await editor.getByRole('combobox', { name: '连接分组', exact: true }).click();
+      const groupPicker = editor.getByRole('combobox', { name: '连接分组', exact: true });
+      await groupPicker.focus();
+      await groupPicker.press('ArrowDown');
       const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
       await options.first().waitFor();
+      await motionSettled(page, '.ant-select-dropdown');
       assert.deepEqual(await options.allTextContents(), ['测试环境', '目标环境']);
       await shot(page, `connection-new-in-place-${heading}-${theme}`);
       await page.keyboard.press('Escape');
       await editor.getByRole('button', { name: /取\s*消/ }).click();
+      await editor.waitFor({ state: 'hidden' });
       assert.equal(await page.locator('h1').innerText(), originalHeading);
       await page.locator('aside').getByRole('button', { name: '新建连接', exact: true }).click();
       await editor.waitFor();
@@ -1513,17 +1524,14 @@ async function browserQA() {
       await shot(page, `diff-${mode}`);
       const first = page.getByRole('checkbox', { name: '选择 remark', exact: true });
       await first.uncheck();
-      assert(
-        (await page.locator('.ant-checkbox-indeterminate').count()) > 0,
-        'group half-selection is missing',
-      );
+      assert(!(await first.isChecked()), 'remark selection did not clear');
       await first.check();
-      await page.getByRole('tab', { name: '基础数据', exact: true }).click();
-      await page.getByText('字段值对比', { exact: true }).waitFor();
-      assert(
-        (await page.locator('.diff-inspector').innerText()).includes('ORDER_STATUS'),
-        'data inspector has stale structure details',
-      );
+      assert.equal(await page.getByRole('tab', { name: '基础数据', exact: true }).count(), 0);
+      assert.equal(await page.getByText('idx_code', { exact: true }).count(), 0);
+      report.browser.push({
+        check: `preview-showcase-current-structure-defaults-${mode}`,
+        passed: true,
+      });
       await page.getByRole('menuitem', { name: /设置/ }).click();
       await page.getByRole('heading', { level: 1, name: '设置', exact: true }).waitFor();
       await page.getByText(mode === 'dark' ? '深色' : '浅色', { exact: true }).click();
@@ -1724,7 +1732,7 @@ async function browserQA() {
       await page.getByRole('button', { name: '开始比较', exact: true }).click();
       const comparison = page.getByRole('dialog', { name: '确认比较范围', exact: true });
       await comparison.waitFor();
-      await comparison.getByText('逐表设置', { exact: true }).waitFor();
+      await comparison.getByText('逐表设置', { exact: true }).first().waitFor();
       assert.equal(await comparison.getByRole('checkbox', { name: /性能影响/ }).count(), 0);
       await shot(page, `compare-confirmation-${workflowTheme}`);
       await comparison.getByRole('button', { name: '确认并开始比较' }).click();
@@ -1850,9 +1858,9 @@ async function browserQA() {
       await page.getByRole('heading', { name: '同步记录详情', exact: true }).waitFor();
       await page.getByRole('button', { name: '回滚预览', exact: true }).click();
       await page.getByRole('heading', { name: '回滚预览', exact: true }).waitFor();
-      const rollback = page.getByRole('checkbox', { name: '恢复 ORDER_STATUS', exact: true });
+      const rollback = page.getByRole('checkbox', { name: '恢复 idx_code', exact: true });
       assert(await rollback.nth(0).isChecked());
-      assert(await rollback.nth(1).isDisabled());
+      assert.equal(await rollback.count(), 1);
       await rollback.nth(0).uncheck();
       assert(await page.getByRole('button', { name: '执行所选回滚', exact: true }).isDisabled());
       await rollback.nth(0).check();
@@ -1878,7 +1886,7 @@ async function browserQA() {
       assert((await confirmation.innerText()).includes('共恢复 1 项已选变更'));
       assert(
         (await confirmation.getByRole('region', { name: '本次执行脚本' }).innerText()).includes(
-          "UPDATE shop_a.sys_dict SET dict_name='订单状态配置'",
+          'ALTER TABLE `shop_a`.`sys_menu` DROP INDEX `idx_code`;',
         ),
       );
       await shot(page, `rollback-execution-confirmation-${workflowTheme}`);
@@ -1892,7 +1900,7 @@ async function browserQA() {
       await confirmation.waitFor({ state: 'hidden' });
       await footerCheck(page, `rollback-${workflowTheme}`);
       report.browser.push({
-        check: 'rollback-selection-blocked-and-cancel-confirmation',
+        check: 'record-bound-rollback-selection-and-cancel-confirmation',
         passed: true,
       });
       for (const item of report.browser.slice(reportStart)) item.theme = workflowTheme;
@@ -1900,6 +1908,7 @@ async function browserQA() {
     }
     for (const theme of ['light', 'dark']) {
       await syncModeQA(browser, theme);
+      await selectedScopeQA(browser, theme);
       await organizationQA(browser, theme);
     }
     for (const theme of ['light', 'dark']) await connectionFormQA(browser, theme);

@@ -67,6 +67,16 @@ export function previewStructureChange(
   const options = effectiveOptions(choice.structureOptions);
   if (!target.exists && !fullStructure(options)) return undefined;
   const kind = change.kind;
+  if (kind === 'CREATE_TABLE' && target.exists) return undefined;
+  if (kind === 'TABLE_COMMENT' && source.comment === target.comment) return undefined;
+  if (kind === 'ADD_INDEX' && target.indexes.some((index) => index.name === change.label))
+    return undefined;
+  if (
+    kind === 'DROP_COLUMN' &&
+    (!target.columns.some((column) => column.name === change.label) ||
+      source.columns.some((column) => column.name === change.label))
+  )
+    return undefined;
   if (
     (kind === 'TABLE_COMMENT' && !options.tableComment) ||
     (kind === 'TABLE_COLLATION' && !options.tableCollation) ||
@@ -78,7 +88,7 @@ export function previewStructureChange(
   if (!['MODIFY_COLUMN', 'ADD_COLUMN'].includes(kind)) return change;
   const column = source.columns.find((item) => item.name === change.label);
   const old = target.columns.find((item) => item.name === change.label);
-  if (!column) return change;
+  if (!column || (kind === 'ADD_COLUMN' && old)) return undefined;
   const base = kind === 'ADD_COLUMN' || options.columns ? column : old;
   if (!base) return undefined;
   const parts: string[] = [];
