@@ -71,7 +71,7 @@ class MySqlIntegrationTest {
               "INSERT INTO "
                   + Sql.qualified(src, table)
                   + " VALUES(1,'A',"
-                  + Sql.value("新值'\\中文")
+                  + Sql.value("新值'中文")
                   + "),(2,'B','新增')");
           for (var ref : List.of(a, b))
             db.execute(
@@ -98,7 +98,22 @@ class MySqlIntegrationTest {
           assertEquals(3, plan.targets.getFirst().changes.size());
           assertTrue(
               plan.targets.getFirst().changes.stream()
-                  .anyMatch(x -> x.sql.contains("_utf8mb4'新增' COLLATE utf8mb4_bin")));
+                  .filter(x -> x.kind.equals("ADD_ROW"))
+                  .anyMatch(x -> x.sql.endsWith("'B','新增')") && !x.sql.contains("utf8mb4")));
+          assertTrue(
+              plan.targets.getFirst().changes.stream()
+                  .filter(x -> x.kind.equals("UPDATE_ROW"))
+                  .allMatch(
+                      x ->
+                          x.sql.contains("SET `value`='新值''中文'")
+                              && x.sql.contains("`value` <=> '旧值'")
+                              && !x.sql.contains("COLLATE")
+                              && !x.sql.contains("utf8mb4")
+                              && x.rollbackSql.stream().noneMatch(sql -> sql.contains("COLLATE"))));
+          assertTrue(
+              plan.targets.getFirst().changes.stream()
+                  .filter(x -> x.kind.equals("DELETE_ROW"))
+                  .allMatch(x -> !x.sql.contains("utf8mb4") && !x.sql.contains("COLLATE")));
           assertEquals(
               10,
               ((Number)
@@ -583,14 +598,12 @@ class MySqlIntegrationTest {
             var result =
                 statement.executeQuery(
                     "SELECT "
-                        + Sql.value("A")
-                        + " = "
-                        + Sql.value("a")
+                        + Sql.where(Map.of("name", "a"), List.of("name"))
                         + ", HEX("
                         + Sql.value(Map.of("$binary", "00ff"))
-                        + ")")) {
+                        + ") FROM (SELECT 'A' COLLATE utf8mb4_general_ci AS name) AS sample")) {
           assertTrue(result.next());
-          assertEquals(0, result.getInt(1));
+          assertEquals(1, result.getInt(1));
           assertEquals("00FF", result.getString(2));
         }
       }

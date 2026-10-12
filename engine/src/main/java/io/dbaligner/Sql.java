@@ -38,10 +38,10 @@ public final class Sql {
     if (v instanceof Boolean b) return b ? "1" : "0";
     String text = v.toString();
     if (text.codePoints().noneMatch(c -> c == '\\' || Character.isISOControl(c)))
-      return "_utf8mb4'" + text.replace("'", "''") + "' COLLATE utf8mb4_bin";
+      return "'" + text.replace("'", "''") + "'";
     return "CONVERT(X'"
         + HexFormat.of().formatHex(text.getBytes(java.nio.charset.StandardCharsets.UTF_8))
-        + "' USING utf8mb4) COLLATE utf8mb4_bin";
+        + "' USING utf8mb4)";
   }
 
   public static String where(Map<String, Object> row, List<String> fields) {

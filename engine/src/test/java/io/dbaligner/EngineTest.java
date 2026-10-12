@@ -14,14 +14,16 @@ class EngineTest {
   @Test
   void sqlHandlesNamesAndValues() {
     assertEquals("`含``特殊字`", Sql.id("含`特殊字"));
-    assertEquals(
-        "_utf8mb4'myData:outworkMedia' COLLATE utf8mb4_bin", Sql.value("myData:outworkMedia"));
-    assertEquals("_utf8mb4'中文''菜单😀' COLLATE utf8mb4_bin", Sql.value("中文'菜单😀"));
-    assertEquals("_utf8mb4'' COLLATE utf8mb4_bin", Sql.value(""));
+    assertEquals("'myData:outworkMedia'", Sql.value("myData:outworkMedia"));
+    assertEquals("'中文''菜单😀'", Sql.value("中文'菜单😀"));
+    assertEquals("''", Sql.value(""));
     assertTrue(Sql.value("a'\\\n中文").startsWith("CONVERT(X'"));
     assertTrue(Sql.value("a\0b").startsWith("CONVERT(X'"));
     assertEquals("X'00ff'", Sql.value(Map.of("$binary", "00ff")));
     assertEquals("NULL", Sql.value(null));
+    assertEquals(
+        "`name` <=> 'A' AND `id` <=> 600",
+        Sql.where(Map.of("name", "A", "id", 600), List.of("name", "id")));
     assertEquals(
         3,
         Sql.splitDefinitions(
