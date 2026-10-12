@@ -85,6 +85,99 @@ async function motionSettled(page, selector) {
 async function modalSettled(page) {
   await motionSettled(page, '.ant-modal');
 }
+async function assertFreshSync(page) {
+  await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
+  const databases = await page.locator('.source-target-form').innerText();
+  assert(databases.includes('选择来源数据库'));
+  assert(databases.includes('选择目标库'));
+  assert(!databases.includes('shop_'));
+  assert.equal(await page.getByRole('checkbox', { name: / 表结构$| 基础数据$/ }).count(), 0);
+  assert.equal(await page.getByRole('textbox', { name: '搜索表', exact: true }).inputValue(), '');
+  assert(await page.getByRole('radio', { name: '全部表', exact: true }).isChecked());
+  assert(
+    (await page
+      .getByRole('tab', { name: '同步结构', exact: true })
+      .getAttribute('aria-selected')) === 'true',
+  );
+  assert(await page.getByRole('button', { name: '开始比较', exact: true }).isDisabled());
+  assert(await page.getByRole('button', { name: '应用模板', exact: true }).isDisabled());
+  assert.equal(await page.getByText(/已应用：/).count(), 0);
+  assert.equal(await page.getByRole('region', { name: '比较进度' }).count(), 0);
+  assert.equal(
+    await page.locator('.scope-panel .anticon-check, .scope-panel .anticon-close').count(),
+    0,
+  );
+  for (const name of ['普通 / 唯一索引', '外键', '表字符集与排序规则']) {
+    assert(
+      !(await page
+        .locator('.structure-defaults')
+        .getByRole('checkbox', { name, exact: true })
+        .isChecked()),
+    );
+  }
+}
+async function applyScopeTemplate(page) {
+  await page.getByRole('combobox', { name: '选择同步模板', exact: true }).click();
+  await page
+    .locator('.ant-select-dropdown:visible .ant-select-item-option')
+    .filter({
+      hasText: '基础字典与菜单',
+    })
+    .click();
+  await page.getByRole('button', { name: '应用模板', exact: true }).click();
+  await page.getByText('已应用：基础字典与菜单', { exact: true }).waitFor();
+}
+async function newSyncQA(browser, theme) {
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await assertFreshSync(page);
+    await shot(page, `new-sync-empty-${theme}`);
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await footerCheck(page, `new-sync-empty-minimum-${theme}`);
+    await shot(page, `new-sync-empty-minimum-${theme}`);
+    await page.setViewportSize({ width: 1488, height: 1056 });
+    report.browser.push({ check: 'new-sync-sidebar-clears-completed-plan', theme, passed: true });
+    for (const origin of ['scope', 'settings', 'history']) {
+      await applyScopeTemplate(page);
+      await page.getByRole('textbox', { name: '搜索表', exact: true }).fill('sysdict');
+      await page.locator('.scope-table-search').getByText('已选表', { exact: true }).click();
+      await page.getByRole('tab', { name: '同步数据', exact: true }).click();
+      await page.getByRole('checkbox', { name: 'sys_dict 基础数据', exact: true }).check();
+      await page.getByRole('textbox', { name: 'sys_dict 匹配键', exact: true }).fill('code');
+      await page.getByRole('textbox', { name: '搜索表', exact: true }).fill('sysdict');
+      if (origin !== 'scope') {
+        await page
+          .getByRole('menuitem', { name: origin === 'settings' ? /设置/ : /同步历史/ })
+          .click();
+      }
+      await page.getByRole('menuitem', { name: /新建同步/ }).click();
+      await assertFreshSync(page);
+      await page.getByRole('tab', { name: '同步数据', exact: true }).click();
+      assert.equal(await page.getByRole('checkbox', { name: / 基础数据$/ }).count(), 0);
+      assert.equal(
+        await page.getByRole('textbox', { name: '搜索表', exact: true }).inputValue(),
+        '',
+      );
+      await page.getByRole('tab', { name: '同步结构', exact: true }).click();
+      report.browser.push({
+        check: 'new-sync-sidebar-clears-both-mode-drafts',
+        origin,
+        theme,
+        passed: true,
+      });
+    }
+  } finally {
+    await context.close();
+  }
+}
 async function longDiffQA(browser, theme) {
   const fixture = await build({
     entryPoints: [path.join(desktop, 'src/preview.ts')],
@@ -137,7 +230,7 @@ async function longDiffQA(browser, theme) {
     });
     await page.goto('http://127.0.0.1:4183/?preview=1');
     await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
-    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByRole('button', { name: '上一步', exact: true }).click();
     await page.getByText('显示 6 / 6 张表', { exact: false }).waitFor();
     await page.waitForFunction(() => window.diffFixturePending === 0);
     await page.getByRole('button', { name: '开始比较', exact: true }).click();
@@ -202,7 +295,7 @@ async function syncModeQA(browser, theme) {
   try {
     await page.goto('http://127.0.0.1:4183/?preview=1');
     await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
-    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByRole('button', { name: '上一步', exact: true }).click();
     assert.equal(await page.getByRole('radio', { name: /同步结构|同步数据/ }).count(), 0);
     await page.getByRole('tab', { name: '同步结构', exact: true }).click();
     const search = page.getByRole('textbox', { name: '搜索表', exact: true });
@@ -386,7 +479,7 @@ async function selectedScopeQA(browser, theme) {
     });
     await page.goto('http://127.0.0.1:4183/?preview=1');
     await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
-    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByRole('button', { name: '上一步', exact: true }).click();
     await page.getByRole('button', { name: '全选所有表', exact: true }).click();
     const summary = page.locator('.scope-table-search');
     assert((await summary.innerText()).includes('当前类型已选 32 张'));
@@ -1193,7 +1286,8 @@ async function contextFeedbackQA(browser, theme) {
     await menu.waitFor({ state: 'hidden' });
     // Edit in place in both the difference view and the scope view.
     for (const heading of ['差异预览', '新建同步']) {
-      if (heading === '新建同步') await page.getByRole('menuitem', { name: /新建同步/ }).click();
+      if (heading === '新建同步')
+        await page.getByRole('button', { name: '上一步', exact: true }).click();
       await open(connection);
       await item('编辑连接').click();
       const editor = page.getByRole('dialog', { name: '编辑连接', exact: true });
@@ -1309,7 +1403,7 @@ async function refreshAndTemplateQA(browser, theme) {
   try {
     await page.goto('http://127.0.0.1:4183/?preview=1');
     await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
-    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByRole('button', { name: '上一步', exact: true }).click();
     const refresh = page.getByRole('button', { name: '刷新数据库', exact: true });
     for (let i = 0; i < 2; i++) {
       await refresh.click();
@@ -1760,8 +1854,14 @@ async function browserQA() {
       await page.getByText('比较已停止', { exact: true }).waitFor();
       await shot(page, `compare-stopped-${workflowTheme}`);
       await page.getByRole('menuitem', { name: /新建同步/ }).click();
-      assert.equal(await page.getByRole('textbox', { name: 'sys_dict 匹配键' }).count(), 0);
-      assert((await dictRow.innerText()).includes('6 / 7 项'));
+      await assertFreshSync(page);
+      await shot(page, `new-sync-after-stop-${workflowTheme}`);
+      report.browser.push({ check: 'new-sync-sidebar-clears-stopped-comparison', passed: true });
+      await applyScopeTemplate(page);
+      await dictRow.getByRole('button', { name: /7 \/ 7 项/ }).click();
+      await dictOptions.getByRole('checkbox', { name: '字段顺序', exact: true }).uncheck();
+      await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).click();
+      await dictOptions.waitFor({ state: 'hidden' });
       await shot(page, `scope-options-${workflowTheme}`);
       await page.getByRole('button', { name: '开始比较', exact: true }).click();
       await comparison.waitFor();
@@ -1918,6 +2018,7 @@ async function browserQA() {
       await context.close();
     }
     for (const theme of ['light', 'dark']) {
+      await newSyncQA(browser, theme);
       await syncModeQA(browser, theme);
       await selectedScopeQA(browser, theme);
       await organizationQA(browser, theme);

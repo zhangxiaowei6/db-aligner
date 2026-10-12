@@ -1993,6 +1993,192 @@ describe('React business state and protocol', () => {
 });
 
 describe('new sync sessions and progress summaries', () => {
+  it.each(['COMPLETED', 'FAILED', 'CANCELLED'] as const)(
+    'clears the entire sync session after a %s comparison',
+    async (status) => {
+      await ready();
+      await act(async () => controller.applyTemplate(state.templates[0]));
+      act(() => {
+        controller.updateScope('dict', { structure: true });
+        controller.set('tableSearch', 'structure search');
+        controller.set('scopeTableFilter', 'selected');
+        controller.setScopeMode('data');
+        controller.updateScope('dict', { data: true, keyText: 'code' });
+        controller.commit((s) => ({
+          ...s,
+          page: 'diff',
+          structureDefaults: { ...allStructureOptions },
+          tableSearch: 'data search',
+          scopeTableFilter: 'selected',
+          scopeRemark: 'old remark',
+          templateApplyError: 'old error',
+          plan: structuredClone(previewPlan),
+          selectedIds: ['c1'],
+          currentChangeId: 'c1',
+          diffSearch: 'old difference',
+          diffTab: 'data',
+          compareScope: {
+            workspaceId: s.workspaceId,
+            sourceKey: s.sourceKey,
+            targetKeys: s.targetKeys,
+            tables: s.scopeTables,
+            structureDefaults: s.structureDefaults,
+          },
+          compareTask: {
+            compareId: 'old',
+            status,
+            progress: { table: 'dict', phase: 'old', completed: 1, total: 1, rows: 1 },
+          },
+          compareStartedAt: 100,
+          compareFinishedAt: 200,
+          compareTransportError: 'old transport error',
+          refreshing: { 'targetTables:old': true, 'sync:databases:old': true },
+          refreshResults: {
+            'targetTables:old': { status: 'success', message: 'old target refresh' },
+            'sync:databases:old': { status: 'error', message: 'old database refresh' },
+            'database:source/a': { status: 'success', message: 'tree refresh' },
+          },
+        }));
+      });
+      const saved = controller.m.state;
+      await act(async () => controller.beginSync());
+      expect(controller.m).toMatchObject({
+        page: 'scope',
+        sourceKey: '',
+        targetKeys: [],
+        targetTables: {},
+        targetTablesLoading: {},
+        targetTablesErrors: {},
+        scopeMode: 'structure',
+        scopeTables: [],
+        scopeDrafts: {},
+        structureDefaults: defaultStructureOptions,
+        tableSearch: '',
+        scopeTableFilter: 'all',
+        scopeRemark: '',
+        scopeTemplateId: '',
+        applyingTemplateId: '',
+        templateApplyError: '',
+        selectedIds: [],
+        currentChangeId: '',
+        diffSearch: '',
+        diffTab: 'structure',
+        compareStartedAt: 0,
+        compareFinishedAt: 0,
+        compareTransportError: '',
+        refreshing: {},
+        refreshResults: {
+          'database:source/a': { status: 'success', message: 'tree refresh' },
+        },
+      });
+      for (const key of [
+        'plan',
+        'appliedTemplate',
+        'compareScope',
+        'compareTask',
+        'compareConfirmation',
+      ] as const)
+        expect(controller.m[key]).toBeUndefined();
+      expect(controller.m.state).toBe(saved);
+      act(() => controller.setScopeMode('data'));
+      expect(controller.m.scopeTables).toEqual([]);
+      expect(controller.m.tableSearch).toBe('');
+      expect(controller.m.scopeTableFilter).toBe('all');
+    },
+  );
+  it.each(['RUNNING', 'CANCELLING'] as const)(
+    'returns to the scope without resetting a %s comparison',
+    async (status) => {
+      await ready();
+      await act(async () => controller.applyTemplate(state.templates[0]));
+      bridge.invoke.mockImplementation(async () => new Promise(() => {}));
+      act(() =>
+        controller.commit((s) => ({
+          ...s,
+          page: 'settings',
+          compareTask: {
+            compareId: 'active',
+            status,
+            progress: { table: 'dict', phase: '读取数据', completed: 0, total: 1, rows: 1 },
+          },
+        })),
+      );
+      const previous = controller.m;
+      await act(async () => controller.beginSync());
+      expect(controller.m.page).toBe('scope');
+      expect(controller.m.compareTask).toBe(previous.compareTask);
+      expect(controller.m.sourceKey).toBe(previous.sourceKey);
+      expect(controller.m.targetKeys).toBe(previous.targetKeys);
+      expect(controller.m.scopeTables).toBe(previous.scopeTables);
+      expect(bridge.invoke.mock.calls.some(([method]) => method === 'sync.compare.cancel')).toBe(
+        false,
+      );
+    },
+  );
+  it('keeps the existing scope when returning with the previous-step button', async () => {
+    await ready(<DiffPage />);
+    await act(async () => controller.applyTemplate(state.templates[0]));
+    act(() =>
+      controller.commit((s) => ({ ...s, page: 'diff', plan: structuredClone(previewPlan) })),
+    );
+    const previous = controller.m;
+    await userEvent.click(screen.getByRole('button', { name: '上一步' }));
+    expect(controller.m.page).toBe('scope');
+    expect(controller.m.sourceKey).toBe(previous.sourceKey);
+    expect(controller.m.targetKeys).toBe(previous.targetKeys);
+    expect(controller.m.scopeTables).toBe(previous.scopeTables);
+    expect(controller.m.plan).toBe(previous.plan);
+  });
+  it('discards an old template application even after selecting the same source and targets again', async () => {
+    await ready();
+    const delayed = deferred<{ name: string; comment: string }[]>();
+    bridge.invoke.mockReturnValueOnce(delayed.promise);
+    let applying!: ReturnType<Controller['applyTemplate']>;
+    act(() => {
+      applying = controller.applyTemplate(state.templates[0]);
+    });
+    await act(async () => controller.beginSync());
+    expect(controller.m.applyingTemplateId).toBe('');
+    await act(async () => controller.loadScope('source/a'));
+    await act(async () => controller.setTargets(['source/b']));
+    act(() => controller.navigate('history'));
+    await act(async () => {
+      delayed.resolve([{ name: 'dict', comment: 'stale template' }]);
+      await applying;
+    });
+    expect(controller.m.page).toBe('history');
+    expect(controller.m.scopeTables[0]).toMatchObject({ comment: '字典', structure: false });
+    expect(controller.m.appliedTemplate).toBeUndefined();
+    expect(controller.m.scopeTemplateId).toBe('');
+    expect(controller.m.templateApplyError).toBe('');
+    await act(async () => controller.applyTemplate(state.templates[0]));
+    expect(controller.m.page).toBe('scope');
+    expect(controller.m.appliedTemplate?.id).toBe('template');
+    expect(controller.m.scopeTables[0].structure).toBe(true);
+  });
+  it('ignores old target loads and refresh feedback after restarting with the same databases', async () => {
+    await ready();
+    await act(async () => controller.loadScope('source/a'));
+    await act(async () => controller.setTargets(['source/b']));
+    const delayed = deferred<{ name: string }[]>();
+    bridge.invoke.mockReturnValueOnce(delayed.promise);
+    let refreshing!: ReturnType<Controller['refreshTargetTables']>;
+    act(() => {
+      refreshing = controller.refreshTargetTables();
+    });
+    const oldView = controller.m.scopeView;
+    await act(async () => controller.beginSync());
+    await act(async () => controller.loadScope('source/a'));
+    await act(async () => controller.setTargets(['source/b']));
+    expect(controller.m.scopeView).toBeGreaterThan(oldView);
+    await act(async () => {
+      delayed.resolve([{ name: 'stale' }]);
+      await refreshing;
+    });
+    expect(controller.m.targetTables['source/b']).toEqual(['dict']);
+    expect(controller.m.refreshResults).toEqual({});
+    expect(controller.m.refreshing).toEqual({});
+  });
   it('resets temporary state without removing saved history and ignores old scope responses', async () => {
     await ready();
     const delayed = deferred<{ name: string; comment: string }[]>();

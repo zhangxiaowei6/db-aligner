@@ -59,9 +59,9 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.4837646484375,
+        "x": 848.4818725585938,
         "y": 0,
-        "width": 640,
+        "width": 640.0000610351562,
         "height": 1056
       }
     },
@@ -168,9 +168,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.472900390625,
+        "x": 848.4757690429688,
         "y": 0,
-        "width": 640,
+        "width": 640.0000610351562,
         "height": 1056
       }
     },
@@ -258,6 +258,11 @@
       "theme": "light"
     },
     {
+      "check": "new-sync-sidebar-clears-stopped-comparison",
+      "passed": true,
+      "theme": "light"
+    },
+    {
       "check": "record-all-targets-执行脚本-light",
       "scrollBottom": 991,
       "footerTop": 991,
@@ -320,6 +325,11 @@
       "theme": "dark"
     },
     {
+      "check": "new-sync-sidebar-clears-stopped-comparison",
+      "passed": true,
+      "theme": "dark"
+    },
+    {
       "check": "record-all-targets-执行脚本-dark",
       "scrollBottom": 991,
       "footerTop": 991,
@@ -365,6 +375,37 @@
       "check": "record-bound-rollback-selection-and-cancel-confirmation",
       "passed": true,
       "theme": "dark"
+    },
+    {
+      "check": "new-sync-empty-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-completed-plan",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-both-mode-drafts",
+      "origin": "scope",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-both-mode-drafts",
+      "origin": "settings",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-both-mode-drafts",
+      "origin": "history",
+      "theme": "light",
+      "passed": true
     },
     {
       "check": "scope-data-minimum-light",
@@ -418,6 +459,37 @@
     {
       "check": "database-options-follow-persisted-group-and-member-order",
       "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "new-sync-empty-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-completed-plan",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-both-mode-drafts",
+      "origin": "scope",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-both-mode-drafts",
+      "origin": "settings",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "new-sync-sidebar-clears-both-mode-drafts",
+      "origin": "history",
+      "theme": "dark",
       "passed": true
     },
     {
@@ -555,7 +627,11 @@
     {
       "check": "connection-actions-testing",
       "theme": "light",
-      "tops": [263.796875, 263.796875, 263.796875],
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -564,7 +640,11 @@
     {
       "check": "connection-actions-success-1488",
       "theme": "light",
-      "tops": [263.796875, 263.796875, 263.796875],
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -573,7 +653,11 @@
     {
       "check": "connection-actions-success-1180",
       "theme": "light",
-      "tops": [259.796875, 259.796875, 259.796875],
+      "tops": [
+        259.796875,
+        259.796875,
+        259.796875
+      ],
       "bottom": 283.796875,
       "scrollBottom": 283.796875,
       "clippedInsideCell": true,
@@ -582,7 +666,11 @@
     {
       "check": "connection-actions-success-900",
       "theme": "light",
-      "tops": [279.796875, 279.796875, 279.796875],
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -591,7 +679,11 @@
     {
       "check": "connection-actions-narrow-column",
       "theme": "light",
-      "tops": [279.796875, 279.796875, 279.796875],
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -600,7 +692,11 @@
     {
       "check": "connection-actions-failure",
       "theme": "light",
-      "tops": [279.796875, 279.796875, 279.796875],
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -639,7 +735,11 @@
     {
       "check": "connection-actions-testing",
       "theme": "dark",
-      "tops": [263.796875, 263.796875, 263.796875],
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -648,7 +748,11 @@
     {
       "check": "connection-actions-success-1488",
       "theme": "dark",
-      "tops": [263.796875, 263.796875, 263.796875],
+      "tops": [
+        263.796875,
+        263.796875,
+        263.796875
+      ],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -657,7 +761,11 @@
     {
       "check": "connection-actions-success-1180",
       "theme": "dark",
-      "tops": [259.796875, 259.796875, 259.796875],
+      "tops": [
+        259.796875,
+        259.796875,
+        259.796875
+      ],
       "bottom": 283.796875,
       "scrollBottom": 283.796875,
       "clippedInsideCell": true,
@@ -666,7 +774,11 @@
     {
       "check": "connection-actions-success-900",
       "theme": "dark",
-      "tops": [279.796875, 279.796875, 279.796875],
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -675,7 +787,11 @@
     {
       "check": "connection-actions-narrow-column",
       "theme": "dark",
-      "tops": [279.796875, 279.796875, 279.796875],
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -684,7 +800,11 @@
     {
       "check": "connection-actions-failure",
       "theme": "dark",
-      "tops": [279.796875, 279.796875, 279.796875],
+      "tops": [
+        279.796875,
+        279.796875,
+        279.796875
+      ],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,

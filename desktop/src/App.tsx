@@ -383,7 +383,7 @@ function Shell() {
           ]}
           onClick={({ key }) => {
             if (key === 'templates') c.navigate('templates');
-            else if (key === 'scope') c.navigate('scope');
+            else if (key === 'scope') void c.beginSync();
             else c.navigate('history');
           }}
         />

@@ -927,13 +927,20 @@ function useBusinessController() {
     await loadTargetTables();
   }
   function resetSync() {
-    for (const key of ['scope', 'beginSync', 'templateScope']) requests.current.delete(key);
+    for (const key of ['scope', 'beginSync', 'templateScope', 'applyTemplate'])
+      requests.current.delete(key);
     targetTableLoads.current.clear();
     for (const key of requests.current.keys())
-      if (key.startsWith('targetTables:')) requests.current.delete(key);
+      if (
+        key.startsWith('targetTables:') ||
+        key.startsWith('refresh:targetTables:') ||
+        key.startsWith('refresh:sync:databases:')
+      )
+        requests.current.delete(key);
     const initial = initialModel();
     commit((s) => ({
       ...s,
+      scopeView: s.scopeView + 1,
       sourceKey: '',
       targetKeys: [],
       targetTables: {},
@@ -946,6 +953,20 @@ function useBusinessController() {
       tableSearch: '',
       scopeTableFilter: 'all',
       scopeRemark: '',
+      scopeTemplateId: '',
+      applyingTemplateId: '',
+      appliedTemplate: undefined,
+      templateApplyError: '',
+      refreshing: Object.fromEntries(
+        Object.entries(s.refreshing).filter(
+          ([key]) => !key.startsWith('targetTables:') && !key.startsWith('sync:databases:'),
+        ),
+      ),
+      refreshResults: Object.fromEntries(
+        Object.entries(s.refreshResults).filter(
+          ([key]) => !key.startsWith('targetTables:') && !key.startsWith('sync:databases:'),
+        ),
+      ),
       plan: undefined,
       selectedIds: [],
       currentChangeId: '',
@@ -960,7 +981,10 @@ function useBusinessController() {
     }));
   }
   async function beginSync(node?: TreeNode, mode: 'structure' | 'data' = 'structure') {
-    if (comparisonActive()) return;
+    if (comparisonActive()) {
+      if (!node) navigate('scope');
+      return;
+    }
     resetSync();
     navigate('scope');
     if (!node?.ref) return;
@@ -1987,6 +2011,7 @@ function useBusinessController() {
       return;
     if (mixedSyncModes(t.tables) && !chosenMode) {
       let mode: SyncMode = latest.current.scopeMode;
+      const valid = request('applyTemplate');
       const signature = selectionSignature(compareSelection(latest.current));
       modal.confirm({
         title: '请选择旧模板的同步类型',
@@ -2008,7 +2033,7 @@ function useBusinessController() {
         okText: '应用所选类型',
         cancelText: '取消',
         onOk: () => {
-          if (signature !== selectionSignature(compareSelection(latest.current))) {
+          if (!valid() || signature !== selectionSignature(compareSelection(latest.current))) {
             void message.warning('同步范围已改变，请重新应用模板');
             return;
           }
@@ -2024,15 +2049,16 @@ function useBusinessController() {
       structure: mode === 'structure' && table.structure,
       data: mode === 'data' && table.data,
     }));
+    resetSync();
     const valid = request('applyTemplate');
     commit((s) => ({
       ...s,
+      scopeTemplateId: template.id,
       applyingTemplateId: template.id,
       templateApplyError: '',
       appliedTemplate: undefined,
     }));
     try {
-      resetSync();
       const source = refKey(template.source);
       set('sourceKey', source);
       set('targetKeys', template.targets.map(refKey));

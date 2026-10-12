@@ -2,6 +2,21 @@
 
 > 下方历史文字中的产品名称已统一为当前名称；历史截图、日期和验证范围仍保留原始证据，不据此声称本次验收通过。
 
+## 2026-10-12：新建同步清空旧会话
+
+侧栏“新建同步”在没有运行中比较时清空来源、目标、结构／数据双草稿、
+模板选择、差异计划和比较状态，恢复默认结构模式。
+比较运行或正在停止时仍返回当前比较并保留范围锁定；差异页“上一步”保留原范围。
+
+已查看[深色停止后新建](docs/screenshots/react-ant-design/new-sync-after-stop-dark.png)、
+[浅色最小窗口空白范围](docs/screenshots/react-ant-design/new-sync-empty-minimum-light.png)和
+[深色最小窗口空白范围](docs/screenshots/react-ant-design/new-sync-empty-minimum-dark.png)：
+来源／目标及模板选择为空，表清单显示 0 张，比较进度不残留，
+结构默认只勾选字段定义、字段顺序和表／字段注释。
+1180 × 760 窗口底部保存模板与开始比较按钮保持可达，空范围下正确禁用。
+完整浏览器 131 项检查通过，报告无错误；本次使用浏览器虚构资料，
+实际命令、重跑及最终结果见[验证记录](docs/validation.md)。
+
 ## 2026-10-12：DBAligner 名称与最终界面验收
 
 应用标题栏、浏览器标题、Electron 窗口和设置关于信息使用 DBAligner，
