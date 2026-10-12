@@ -18,6 +18,12 @@ export const allStructureOptions: StructureOptions = {
   foreignKeys: true,
   tableCollation: true,
 };
+export const defaultStructureOptions: StructureOptions = {
+  ...allStructureOptions,
+  indexes: false,
+  foreignKeys: false,
+  tableCollation: false,
+};
 export const effectiveOptions = (options?: StructureOptions) => options ?? allStructureOptions;
 export const structureSummary = (options?: StructureOptions) =>
   Object.entries(effectiveOptions(options))

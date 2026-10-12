@@ -1,0 +1,74 @@
+{
+  "browser": [
+    {
+      "check": "scope-data-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "scope-data-mode-light",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "exclusive-sync-mode-and-per-target-missing-data-skip",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "scope-selected-filter-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "scope-search-and-selected-filter-pagination",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "scope-data-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "scope-data-mode-dark",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "exclusive-sync-mode-and-per-target-missing-data-skip",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "scope-selected-filter-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "scope-search-and-selected-filter-pagination",
+      "theme": "dark",
+      "passed": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

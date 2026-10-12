@@ -8,6 +8,7 @@ import {
   Form,
   Input,
   Popover,
+  Radio,
   Select,
   Space,
   Tabs,
@@ -38,6 +39,7 @@ import {
   reviewCounts,
   rollbackLeaves,
   selection,
+  scopeTableMatches,
   type ReviewNode,
   type ScopeTable,
 } from '../model';
@@ -73,20 +75,28 @@ export function ScopePage() {
       </div>
     );
   const options = dbOptions(m);
-  const filtered = m.scopeTables.filter((t) =>
-    t.name.toLowerCase().includes(m.tableSearch.toLowerCase()),
+  const filtered = m.scopeTables.filter(
+    (table) =>
+      scopeTableMatches(table, m.tableSearch) &&
+      (m.scopeTableFilter === 'all' || table[m.scopeMode]),
   );
+  const selectedTables = m.scopeTables.filter((table) => table[m.scopeMode]);
   const templates = m.state.templates.filter((t) => t.workspaceId === m.workspaceId);
   const selectedTemplate = templates.find((t) => t.id === m.scopeTemplateId);
   const filteredSelected = filtered.filter((table) => table[m.scopeMode]).length;
   const allFilteredSelected = filtered.length > 0 && filteredSelected === filtered.length;
-  const selectionLabel = m.tableSearch
-    ? allFilteredSelected
-      ? '取消选择搜索结果'
-      : '全选搜索结果'
-    : allFilteredSelected
-      ? '取消全选'
-      : '全选所有表';
+  const selectionLabel =
+    m.scopeTableFilter === 'selected'
+      ? allFilteredSelected
+        ? '取消选择筛选结果'
+        : '全选筛选结果'
+      : m.tableSearch.trim()
+        ? allFilteredSelected
+          ? '取消选择搜索结果'
+          : '全选搜索结果'
+        : allFilteredSelected
+          ? '取消全选'
+          : '全选所有表';
   return (
     <>
       <div className="scope-layout">
@@ -198,7 +208,7 @@ export function ScopePage() {
             ]}
           />
           <div className="scope-toolbar">
-            <span className="hint">每次只同步一种类型；两种类型分别保留选表和搜索</span>
+            <span className="hint">每次只同步一种类型；两种类型分别保留选表、搜索和筛选</span>
             <RefreshButton
               key={targetRefreshKey(m)}
               size="small"
@@ -269,9 +279,19 @@ export function ScopePage() {
               id="scope-table-search"
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="输入表名，筛选下方表格"
+              placeholder="表名或说明，表名搜索可忽略 _"
               value={m.tableSearch}
               onChange={(e) => c.set('tableSearch', e.target.value)}
+            />
+            <Radio.Group
+              aria-label="表筛选"
+              optionType="button"
+              value={m.scopeTableFilter}
+              options={[
+                { label: '全部表', value: 'all' },
+                { label: '已选表', value: 'selected' },
+              ]}
+              onChange={(event) => c.set('scopeTableFilter', event.target.value)}
             />
             <Button
               icon={
@@ -289,7 +309,7 @@ export function ScopePage() {
             </Button>
             <span className="hint" role="status">
               显示 {filtered.length} / {m.scopeTables.length} 张表 · 当前类型已选{' '}
-              {m.scopeTables.filter((table) => table[m.scopeMode]).length} 张
+              {selectedTables.length} 张
             </span>
           </div>
           <DataTable<ScopeTable>
@@ -298,7 +318,11 @@ export function ScopePage() {
             rowKey="name"
             dataSource={filtered}
             locale={{
-              emptyText: m.tableSearch ? '没有匹配的表，请调整搜索内容' : '选择源库后加载表名',
+              emptyText: !m.scopeTables.length
+                ? '选择源库后加载表名'
+                : m.scopeTableFilter === 'selected'
+                  ? '没有符合条件的已选表，请调整搜索或切换到全部表'
+                  : '没有匹配的表，请调整搜索内容',
             }}
             columns={[
               {
@@ -385,6 +409,16 @@ export function ScopePage() {
               <p className="hint">
                 业务键匹配保留目标主键，不自动映射关联表
                 ID。已有表的字段定义或顺序变化时，请先同步结构，再重新比较数据。
+              </p>
+              <p className="hint">
+                数据量限制：源库和每个目标库的每张表最多 20,000 行；超过上限会阻止该表的数据同步，
+                不会只同步前 20,000 行。工具适用于基础字典等中小规模数据， 不适合全量迁移、CDC
+                或大表持续复制。
+              </p>
+              <p className="hint">
+                多表或多目标比较会读取源库和目标库数据，增加数据库负载、网络传输和客户端内存占用；
+                即使每表未超限也需注意总量。建议只选择必要表，按表分批、避开业务高峰，
+                并确认源库与目标库容量、匹配键索引及网络条件；分批选表不能绕过单表行数上限。
               </p>
             </>
           )}

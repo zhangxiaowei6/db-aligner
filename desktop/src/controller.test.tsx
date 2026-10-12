@@ -27,7 +27,7 @@ import { HistoryPage, RecordPage } from './pages/Records';
 import type { Appearance, State, SyncTemplate } from './types';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
-import { allStructureOptions } from './structure-options';
+import { allStructureOptions, defaultStructureOptions } from './structure-options';
 import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
 import { DatabaseOptionsStatus } from './components/DatabaseOptionsStatus';
 import { recordScriptFiles } from './sync-scripts';
@@ -2286,6 +2286,34 @@ describe('export preview retention', () => {
 });
 
 describe('missing target tables in the sync scope', () => {
+  it('uses conservative defaults for new scope and template tables and resets new sessions', async () => {
+    await scope();
+    expect(controller.m.structureDefaults).toEqual(defaultStructureOptions);
+    expect(controller.m.templateStructureDefaults).toEqual(defaultStructureOptions);
+    for (const label of ['普通 / 唯一索引', '外键', '表字符集与排序规则']) {
+      expect((screen.getByRole('checkbox', { name: label }) as HTMLInputElement).checked).toBe(
+        false,
+      );
+    }
+    await act(async () => controller.loadScope('source/a'));
+    expect(
+      controller.m.scopeTables.every(
+        (table) =>
+          JSON.stringify(table.structureOptions) === JSON.stringify(defaultStructureOptions),
+      ),
+    ).toBe(true);
+    act(() => controller.set('structureDefaults', { ...allStructureOptions }));
+    await act(async () => controller.beginSync());
+    expect(controller.m.structureDefaults).toEqual(defaultStructureOptions);
+    act(() => controller.editTemplate());
+    await act(async () => controller.templateSourceChanged('source/a'));
+    expect(
+      controller.m.templateForm.tables.every(
+        (table) =>
+          JSON.stringify(table.structureOptions) === JSON.stringify(defaultStructureOptions),
+      ),
+    ).toBe(true);
+  });
   it('keeps separate selections, search, keys and refresh feedback for each scope tab', async () => {
     await scope();
     act(() => {
@@ -2396,9 +2424,11 @@ describe('missing target tables in the sync scope', () => {
     act(() => {
       controller.updateScope('dict', { structure: true });
       controller.set('tableSearch', 'dict');
+      controller.set('scopeTableFilter', 'selected');
       controller.setScopeMode('data');
       controller.updateScope('orders', { data: true });
       controller.set('tableSearch', 'orders');
+      controller.set('scopeTableFilter', 'selected');
     });
     const pending = deferred<{ name: string; comment: string }[]>();
     bridge.invoke.mockReturnValueOnce(pending.promise);
@@ -2417,14 +2447,92 @@ describe('missing target tables in the sync scope', () => {
     });
     expect(controller.m.scopeTables.map((table) => table.name)).toEqual(['new_table']);
     expect(controller.m.tableSearch).toBe('');
+    expect(controller.m.scopeTableFilter).toBe('all');
     act(() => controller.setScopeMode('data'));
     expect(controller.m.scopeTables.map((table) => table.name)).toEqual(['new_table']);
     expect(controller.m.scopeTables.every((table) => !table.structure && !table.data)).toBe(true);
     expect(controller.m.tableSearch).toBe('');
+    expect(controller.m.scopeTableFilter).toBe('all');
     await act(async () => controller.switchWorkspace('second'));
     expect(controller.m.scopeDrafts).toEqual({});
     act(() => controller.setScopeMode('structure'));
     expect(controller.m.scopeTables).toEqual([]);
+    expect(controller.m.scopeTableFilter).toBe('all');
+  });
+
+  it('matches names without underscores and comments while selecting only matching rows', async () => {
+    await scope();
+    act(() =>
+      controller.set('scopeTables', [
+        { ...controller.m.scopeTables[0], name: 'sys_dict', comment: '基础字典' },
+        { ...controller.m.scopeTables[1], name: 'sys_orders', comment: 'Order_Data 订单' },
+      ]),
+    );
+    for (const search of ['sysdict', 'sys_dict', '  SYSDICT  ', '基础字典']) {
+      fireEvent.change(screen.getByLabelText('搜索表'), { target: { value: search } });
+      expect(screen.getByLabelText('sys_dict 表结构')).toBeTruthy();
+      expect(screen.queryByLabelText('sys_orders 表结构')).toBeNull();
+    }
+    fireEvent.click(screen.getByRole('button', { name: '全选搜索结果' }));
+    expect(controller.m.scopeTables.map((table) => table.structure)).toEqual([true, false]);
+    fireEvent.change(screen.getByLabelText('搜索表'), { target: { value: 'orderdata' } });
+    expect(screen.queryByLabelText('sys_orders 表结构')).toBeNull();
+    fireEvent.change(screen.getByLabelText('搜索表'), { target: { value: '  ORDER_DATA ' } });
+    fireEvent.click(screen.getAllByLabelText('选择当前列表全部表')[0]);
+    expect(controller.m.scopeTables.every((table) => table.structure)).toBe(true);
+  });
+
+  it('combines selected filtering with search and restores each mode draft', async () => {
+    await scope();
+    act(() => controller.updateScope('dict', { structure: true }));
+    fireEvent.click(screen.getByRole('radio', { name: '已选表' }));
+    expect(screen.queryByLabelText('orders 表结构')).toBeNull();
+    expect(controller.m.scopeTables.map((table) => table.structure)).toEqual([true, false]);
+    fireEvent.change(screen.getByLabelText('搜索表'), { target: { value: 'orders' } });
+    expect(
+      (screen.getByRole('button', { name: '全选筛选结果' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(screen.getByText(/显示 0 \/ 2 张表 · 当前类型已选 1 张/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('搜索表'), { target: { value: 'dict' } });
+    act(() => controller.setScopeMode('data'));
+    expect(controller.m.scopeTableFilter).toBe('all');
+    act(() => {
+      controller.updateScope('orders', { data: true });
+      controller.set('tableSearch', 'orders');
+    });
+    act(() => controller.setScopeMode('structure'));
+    expect(controller.m.scopeTableFilter).toBe('selected');
+    expect(controller.m.tableSearch).toBe('dict');
+    fireEvent.click(screen.getAllByLabelText('选择当前列表全部表')[0]);
+    expect(controller.m.scopeTables.every((table) => !table.structure)).toBe(true);
+    expect(screen.getByText('没有符合条件的已选表，请调整搜索或切换到全部表')).toBeTruthy();
+    act(() => controller.setScopeMode('data'));
+    expect(controller.m.tableSearch).toBe('orders');
+    expect(controller.m.scopeTableFilter).toBe('all');
+    expect((screen.getByLabelText('orders 基础数据') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/数据量限制：源库和每个目标库/)).toBeTruthy();
+  });
+
+  it('filters all selected pages without an extra selected list and preserves hidden rows', async () => {
+    await scope();
+    act(() =>
+      controller.set(
+        'scopeTables',
+        Array.from({ length: 32 }, (_, index) => ({
+          ...controller.m.scopeTables[0],
+          name: `selected_${index}`,
+          structure: true,
+        })),
+      ),
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '已选表' }));
+    expect(screen.queryByRole('button', { name: '查看全部已选表' })).toBeNull();
+    expect(screen.getByText(/显示 32 \/ 32 张表 · 当前类型已选 32 张/)).toBeTruthy();
+    expect(document.querySelector('.scope-table .ant-pagination')).not.toBeNull();
+    fireEvent.change(screen.getByLabelText('搜索表'), { target: { value: 'selected31' } });
+    fireEvent.click(screen.getAllByLabelText('选择当前列表全部表')[0]);
+    expect(controller.m.scopeTables[31].structure).toBe(false);
+    expect(controller.m.scopeTables.slice(0, 31).every((table) => table.structure)).toBe(true);
   });
 
   it('keeps structure options without auto-enabling structure for missing data tables', async () => {
@@ -2437,7 +2545,7 @@ describe('missing target tables in the sync scope', () => {
       }),
     );
     act(() => controller.updateScope('orders', { data: true }));
-    expect(controller.m.scopeTables[1].structureOptions).toEqual(allStructureOptions);
+    expect(controller.m.scopeTables[1].structureOptions).toEqual(defaultStructureOptions);
     act(() => controller.setScopeMode('structure'));
     expect(controller.m.scopeTables[1].structureOptions).toEqual({
       ...allStructureOptions,
@@ -2608,7 +2716,7 @@ describe('missing target tables in the sync scope', () => {
     });
     const orders = controller.m.scopeTables.find((t) => t.name === 'orders')!;
     expect(orders.structure).toBe(false);
-    expect(orders.structureOptions).toEqual(allStructureOptions);
+    expect(orders.structureOptions).toEqual(defaultStructureOptions);
     // 目标库存在该表时不自动扩展范围。
     await act(async () => {
       controller.updateScope('dict', { data: true });

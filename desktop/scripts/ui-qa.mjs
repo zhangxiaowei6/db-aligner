@@ -66,7 +66,7 @@ async function shot(page, name) {
     await fs.rm(temporary, { force: true });
   }
 }
-async function modalSettled(page) {
+async function motionSettled(page, selector) {
   // Motion registers its entrance on animation frames after mounting the dialog.
   await page.evaluate(
     () =>
@@ -74,11 +74,16 @@ async function modalSettled(page) {
         requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))),
       ),
   );
-  await page.waitForFunction(() =>
-    [...document.querySelectorAll('.ant-modal')].every((element) =>
-      element.getAnimations().every((animation) => animation.playState !== 'running'),
-    ),
+  await page.waitForFunction(
+    (target) =>
+      [...document.querySelectorAll(target)].every((element) =>
+        element.getAnimations().every((animation) => animation.playState !== 'running'),
+      ),
+    selector,
   );
+}
+async function modalSettled(page) {
+  await motionSettled(page, '.ant-modal');
 }
 async function longDiffQA(browser, theme) {
   const fixture = await build({
@@ -201,10 +206,28 @@ async function syncModeQA(browser, theme) {
     assert.equal(await page.getByRole('radio', { name: /同步结构|同步数据/ }).count(), 0);
     await page.getByRole('tab', { name: '同步结构', exact: true }).click();
     const search = page.getByRole('textbox', { name: '搜索表', exact: true });
+    for (const name of ['普通 / 唯一索引', '外键', '表字符集与排序规则']) {
+      assert(
+        !(await page
+          .locator('.structure-defaults')
+          .getByRole('checkbox', { name, exact: true })
+          .isChecked()),
+      );
+    }
     await search.fill('sys_dict');
     assert.equal(await page.getByRole('checkbox', { name: / 表结构$/ }).count(), 1);
     assert(await page.getByText('显示 1 / 6 张表', { exact: false }).isVisible());
     assert(await page.getByRole('button', { name: '取消选择搜索结果', exact: true }).isVisible());
+    await search.fill('  SYSDICT  ');
+    assert.equal(await page.getByRole('checkbox', { name: / 表结构$/ }).count(), 1);
+    assert(await page.getByRole('checkbox', { name: 'sys_dict 表结构', exact: true }).isVisible());
+    assert((await page.locator('.scope-table-search').innerText()).includes('当前类型已选 3 张'));
+    await page.locator('.scope-table-search').getByText('已选表', { exact: true }).click();
+    await search.fill('');
+    assert.equal(await page.getByRole('checkbox', { name: / 表结构$/ }).count(), 3);
+    await page.locator('.scope-table').scrollIntoViewIfNeeded();
+    await shot(page, `scope-selected-filter-${theme}`);
+    await page.locator('.scope-table-search').getByText('全部表', { exact: true }).click();
     await search.fill('');
     assert.equal(await page.getByText(/数据同步仅处理源库/).count(), 0);
     assert(
@@ -216,6 +239,13 @@ async function syncModeQA(browser, theme) {
     await shot(page, `scope-structure-mode-${theme}`);
     await page.getByRole('tab', { name: '同步数据', exact: true }).click();
     assert(await page.getByText(/数据同步仅处理源库/).isVisible());
+    assert(await page.getByRole('radio', { name: '全部表', exact: true }).isChecked());
+    assert((await page.getByText(/数据量限制：源库和每个目标库/).innerText()).includes('20,000'));
+    assert(
+      (await page.getByText(/多表或多目标比较会读取/).innerText()).includes(
+        '分批选表不能绕过单表行数上限',
+      ),
+    );
     assert.equal(
       await page.getByText('删除与高风险结构变更默认不选中，在差异预览中逐项确认。').count(),
       0,
@@ -236,6 +266,20 @@ async function syncModeQA(browser, theme) {
       await page.getByRole('checkbox', { name: `${name} 基础数据`, exact: true }).check();
     }
     await key.fill('code');
+    await page.locator('.scope-table-search').getByText('已选表', { exact: true }).click();
+    await search.fill('sysuser');
+    assert.equal(await page.getByRole('checkbox', { name: / 基础数据$/ }).count(), 1);
+    await page.getByRole('tab', { name: '同步结构', exact: true }).click();
+    assert(await page.getByRole('radio', { name: '全部表', exact: true }).isChecked());
+    await page.getByRole('tab', { name: '同步数据', exact: true }).click();
+    assert(await page.getByRole('radio', { name: '已选表', exact: true }).isChecked());
+    assert.equal(await search.inputValue(), 'sysuser');
+    await page.locator('.scope-table-search').getByText('全部表', { exact: true }).click();
+    await search.fill('');
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await footerCheck(page, `scope-data-minimum-${theme}`);
+    await shot(page, `scope-data-minimum-${theme}`);
+    await page.setViewportSize({ width: 1488, height: 1056 });
     await page.locator('.page-scroll').evaluate((el) => {
       el.scrollTop = el.scrollHeight;
     });
@@ -265,6 +309,15 @@ async function syncModeQA(browser, theme) {
       await page.getByRole('tab', { name: '基础数据', exact: true }).getAttribute('aria-selected'),
       'true',
     );
+    await page.getByText('code = ORDER_STATUS', { exact: true }).first().click();
+    await page.getByText('字段值对比', { exact: true }).waitFor();
+    assert((await page.locator('.diff-inspector').innerText()).includes('ORDER_STATUS'));
+    await shot(page, `diff-data-compatible-${theme}`);
+    await page.getByText('先同步字段结构', { exact: true }).first().click();
+    await page
+      .locator('.diff-inspector')
+      .getByText('目标表缺少源字段，请先同步结构', { exact: true })
+      .waitFor();
     await shot(page, `diff-data-skip-${theme}`);
     await page.getByRole('button', { name: '上一步', exact: true }).click();
     await page.getByRole('tab', { name: '同步结构', exact: true }).click();
@@ -296,6 +349,78 @@ async function syncModeQA(browser, theme) {
       await page.locator('body').innerText(),
     );
     throw error;
+  } finally {
+    await context.close();
+  }
+}
+async function selectedScopeQA(browser, theme) {
+  const fixture = await build({
+    entryPoints: [path.join(desktop, 'src/preview.ts')],
+    bundle: true,
+    format: 'iife',
+    globalName: 'ScopeFixture',
+    write: false,
+  });
+  const context = await browser.newContext({
+    viewport: { width: 1180, height: 760 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.addInitScript({
+      content: `${fixture.outputFiles[0].text}
+        window.dataSync = {
+          ...ScopeFixture.previewBridge,
+          invoke(method, params) {
+            if (method === 'sync.compare') return Promise.resolve(structuredClone(ScopeFixture.previewPlan));
+            if (method === 'tables.list') return Promise.resolve(
+              Array.from({ length: 32 }, (_, index) => ({
+                name: 'qa_selected_' + String(index).padStart(3, '0') + '_long_table_name_for_scope_review',
+                comment: index === 31 ? '订单说明' : '测试表说明'
+              }))
+            );
+            return ScopeFixture.previewBridge.invoke(method, params);
+          }
+        };`,
+    });
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page.getByRole('menuitem', { name: /新建同步/ }).click();
+    await page.getByRole('button', { name: '全选所有表', exact: true }).click();
+    const summary = page.locator('.scope-table-search');
+    assert((await summary.innerText()).includes('当前类型已选 32 张'));
+    assert.equal(
+      await page.getByRole('button', { name: '查看全部已选表', exact: true }).count(),
+      0,
+    );
+    const search = page.getByRole('textbox', { name: '搜索表', exact: true });
+    await search.fill('订单');
+    assert.equal(await page.getByRole('checkbox', { name: / 表结构$/ }).count(), 1);
+    assert((await summary.innerText()).includes('当前类型已选 32 张'));
+    await search.fill('no-match');
+    assert(await page.getByRole('button', { name: '全选搜索结果', exact: true }).isDisabled());
+    await page.locator('.scope-table-search').getByText('已选表', { exact: true }).click();
+    assert(await page.getByText('没有符合条件的已选表，请调整搜索或切换到全部表').isVisible());
+    await search.fill('');
+    const list = page.locator('.scope-table');
+    await list.locator('.ant-pagination-item').last().click();
+    assert((await list.innerText()).includes('qa_selected_031'));
+    await page
+      .getByRole('checkbox', {
+        name: 'qa_selected_031_long_table_name_for_scope_review 表结构',
+        exact: true,
+      })
+      .click();
+    assert.equal(await page.getByRole('checkbox', { name: / 表结构$/, checked: true }).count(), 11);
+    assert((await summary.innerText()).includes('当前类型已选 31 张'));
+    await footerCheck(page, `scope-selected-filter-minimum-${theme}`);
+    await shot(page, `scope-selected-filter-minimum-${theme}`);
+    report.browser.push({
+      check: 'scope-search-and-selected-filter-pagination',
+      theme,
+      passed: true,
+    });
   } finally {
     await context.close();
   }
@@ -1367,7 +1492,10 @@ async function browserQA() {
       return;
     }
     if (process.argv.includes('--sync-modes')) {
-      for (const theme of ['light', 'dark']) await syncModeQA(browser, theme);
+      for (const theme of ['light', 'dark']) {
+        await syncModeQA(browser, theme);
+        await selectedScopeQA(browser, theme);
+      }
       return;
     }
     for (const mode of ['light', 'dark']) {

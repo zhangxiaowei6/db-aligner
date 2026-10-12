@@ -35,6 +35,7 @@ import {
   targetRefreshKey,
   recordRefreshKey,
   rollbackRefreshKey,
+  scopeTableMatches,
   tableRefreshKey,
   type ConnectionTestResult,
   type CompareSelection,
@@ -67,7 +68,11 @@ function scopeForMode(s: Model, mode: SyncMode): Model {
     ...s,
     scopeDrafts: {
       ...s.scopeDrafts,
-      [s.scopeMode]: { tables: copyModel(s.scopeTables), search: s.tableSearch },
+      [s.scopeMode]: {
+        tables: copyModel(s.scopeTables),
+        search: s.tableSearch,
+        filter: s.scopeTableFilter,
+      },
     },
     scopeMode: mode,
     scopeTables: draft
@@ -81,6 +86,7 @@ function scopeForMode(s: Model, mode: SyncMode): Model {
           structureOptions: { ...s.structureDefaults },
         })),
     tableSearch: draft?.search || '',
+    scopeTableFilter: draft?.filter || 'all',
   };
 }
 
@@ -453,6 +459,7 @@ function useBusinessController() {
       scopeTables: [],
       scopeDrafts: {},
       tableSearch: '',
+      scopeTableFilter: 'all',
       scopeMode: 'structure',
       plan: undefined,
       selectedIds: [],
@@ -810,6 +817,7 @@ function useBusinessController() {
       scopeTables: [],
       scopeDrafts: {},
       tableSearch: '',
+      scopeTableFilter: 'all',
       scopeMode: mode,
       refreshResults: Object.fromEntries(
         Object.entries(s.refreshResults).filter(([key]) => !key.startsWith('targetTables:')),
@@ -937,6 +945,7 @@ function useBusinessController() {
       scopeMode: 'structure',
       structureDefaults: initial.structureDefaults,
       tableSearch: '',
+      scopeTableFilter: 'all',
       scopeRemark: '',
       plan: undefined,
       selectedIds: [],
@@ -971,7 +980,7 @@ function useBusinessController() {
     commit((current) => {
       const s = scopeForMode(current, type);
       const matches = (table: ScopeTable) =>
-        table.name.toLowerCase().includes(s.tableSearch.toLowerCase());
+        scopeTableMatches(table, s.tableSearch) && (s.scopeTableFilter === 'all' || table[type]);
       const visible = s.scopeTables.filter(matches);
       if (!visible.length) return s;
       const selected = s.scopeMode !== type || !visible.every((table) => table[type]);

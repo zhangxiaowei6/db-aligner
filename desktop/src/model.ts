@@ -15,7 +15,7 @@ import type {
   TableChoice,
   Workspace,
 } from './types';
-import { allStructureOptions } from './structure-options';
+import { defaultStructureOptions } from './structure-options';
 import { organizedConnections } from './connection-organization';
 
 export type Page =
@@ -72,6 +72,15 @@ export interface RecordDetail {
   files: string[];
 }
 export type ScopeTable = TableChoice & { comment: string; missingTargets?: string[] };
+export type ScopeTableFilter = 'all' | 'selected';
+export function scopeTableMatches(table: ScopeTable, search: string) {
+  const query = search.trim().toLowerCase();
+  if (!query) return true;
+  return (
+    table.name.toLowerCase().replaceAll('_', '').includes(query.replaceAll('_', '')) ||
+    table.comment.toLowerCase().includes(query)
+  );
+}
 export interface CompareSelection {
   workspaceId: string;
   sourceKey: string;
@@ -116,7 +125,9 @@ export interface Model {
   targetTablesErrors: Record<string, string>;
   scopeTables: ScopeTable[];
   scopeMode: 'structure' | 'data';
-  scopeDrafts: Partial<Record<'structure' | 'data', { tables: ScopeTable[]; search: string }>>;
+  scopeDrafts: Partial<
+    Record<'structure' | 'data', { tables: ScopeTable[]; search: string; filter: ScopeTableFilter }>
+  >;
   templateMode: 'structure' | 'data';
   scopeTemplateId: string;
   applyingTemplateId: string;
@@ -131,6 +142,7 @@ export interface Model {
   compareFinishedAt: number;
   compareTransportError: string;
   tableSearch: string;
+  scopeTableFilter: ScopeTableFilter;
   scopeRemark: string;
   plan?: SyncPlan;
   selectedIds: string[];
@@ -266,12 +278,13 @@ export function initialModel(): Model {
     scopeTemplateId: '',
     applyingTemplateId: '',
     templateApplyError: '',
-    structureDefaults: { ...allStructureOptions },
-    templateStructureDefaults: { ...allStructureOptions },
+    structureDefaults: { ...defaultStructureOptions },
+    templateStructureDefaults: { ...defaultStructureOptions },
     compareStartedAt: 0,
     compareFinishedAt: 0,
     compareTransportError: '',
     tableSearch: '',
+    scopeTableFilter: 'all',
     scopeRemark: '',
     selectedIds: [],
     diffTab: 'structure',
