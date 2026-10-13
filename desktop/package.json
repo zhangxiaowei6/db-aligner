@@ -10,7 +10,7 @@
     "build:electron": "esbuild electron/main.ts --bundle --platform=node --external:electron --external:electron-updater --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs",
     "build": "tsc --noEmit && vite build && npm run build:electron",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=15000",
     "qa:ui": "node scripts/ui-qa.mjs",
     "qa:tree": "node scripts/tree-qa.mjs",
     "qa:desktop": "node scripts/ui-qa.mjs --desktop",

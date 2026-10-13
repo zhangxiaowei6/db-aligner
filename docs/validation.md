@@ -671,3 +671,11 @@ Chrome 154.0.8037.98。以下为本次运行，保留之前条目的日期与证
 最终本次安装包：`release/DBAligner-Setup-0.1.0.exe`（本地原文件为 `DBAligner Setup 0.1.0.exe`），181,347,412字节，SHA-256：`4c1cc950a3d3cf10a9c131cd516ccc86ceb02839821f97afe943479c5b03bdec`，未签名。GitHub更新元数据使用带连字符的安全文件名，发布整理脚本复制对应安装包与 blockmap；避免远程文件名与元数据不一致。原 [2026-10-12产物清单](release-manifest.json)继续作为历史证据，不表示本次产物。
 
 未完成项：干净 Windows 10／11安装、覆盖升级和两个递增正式版本的完整自动更新。未完成前保持 Release草稿，不公开推送客户端更新。
+
+### 首次 GitHub 运行补充
+
+源码与原历史已推送，`master` 为默认分支，`v0.1.0` 标签指向发布准备提交 `6a1ff13`。GitHub私密漏洞报告、秘密扫描和推送保护已启用；令牌通过已有 Git Credential Manager在内存中使用，没有写入源码或客户端。
+
+[首次主分支工作流](https://github.com/zhangxiaowei6/db-aligner/actions/runs/38372409811)的干净检出、依赖、工具链和类型检查通过；完整测试中，既有 `export.test.tsx` 的重新生成／失败重试场景触及 5秒总时限，219项通过、1项超时。[首个标签工作流](https://github.com/zhangxiaowei6/db-aligner/actions/runs/38372662656)通过相同套件并进入完整打包。前端运行总时限统一为 15秒以适应共享 Windows runner，原断言与测试内显式业务期限保持原要求，后续结果按实际运行补充。
+
+首次 HTTPS推送在代理传输中停滞；停止后确认远端没有分支，使用仅对本次命令生效的 HTTP/1.1、缓冲和低速时限重试成功。没有禁用 TLS检查、重写历史或公开正式 Release。
