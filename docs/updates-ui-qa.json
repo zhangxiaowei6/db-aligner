@@ -1,0 +1,58 @@
+{
+  "browser": [
+    {
+      "check": "updates-light-1488",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "update-download-and-cancel-light-1488",
+      "passed": true,
+      "scope": "fictional preview; no network or installer"
+    },
+    {
+      "check": "updates-light-1180",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "update-download-and-cancel-light-1180",
+      "passed": true,
+      "scope": "fictional preview; no network or installer"
+    },
+    {
+      "check": "updates-dark-1488",
+      "scrollBottom": 991,
+      "footerTop": 991,
+      "footerBottom": 1056,
+      "windowHeight": 1056,
+      "hitFooter": true
+    },
+    {
+      "check": "update-download-and-cancel-dark-1488",
+      "passed": true,
+      "scope": "fictional preview; no network or installer"
+    },
+    {
+      "check": "updates-dark-1180",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "update-download-and-cancel-dark-1180",
+      "passed": true,
+      "scope": "fictional preview; no network or installer"
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

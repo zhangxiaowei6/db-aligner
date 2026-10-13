@@ -9,6 +9,7 @@ import { DataTable, Field, Footer, Panel, SelectionToggle } from '../components/
 import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import SqlView from '../components/SqlView';
 import type { ThemeMode } from '../types';
+import { UpdateSection } from '../updates';
 
 export function SettingsPage() {
   const c = useController();
@@ -126,6 +127,7 @@ export function SettingsPage() {
         <section className="settings-section">
           <h2>关于</h2>
           <p>DBAligner · 数据库结构与基础数据同步工具 · 开源许可 Apache-2.0</p>
+          <UpdateSection />
           <p className="hint">
             数据库驱动、Java 运行时及其他依赖的许可见项目 THIRD_PARTY_NOTICES.md。
           </p>

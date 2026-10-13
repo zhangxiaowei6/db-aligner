@@ -55,7 +55,7 @@ try {
 
 测试只使用 `.tools/mysql-test` 内绑定 `127.0.0.1` 的项目实例和随机 `ds_it_*` 数据库，不注册服务。
 启动失败时检查已启动实例并用项目停止脚本清理；不能连接或停止其他用户数据库进程。
-SSL 回归的 OpenSSL 探测位置以启动脚本为准，当前为 `D:/Git/usr/bin/openssl.exe`，缺失时不能声称 SSL 已验证。
+SSL 回归必须使用可用 OpenSSL；启动脚本支持 `-OpenSsl`／`DB_ALIGNER_OPENSSL`，随后探测 PATH 与 Git for Windows 安装位置。缺失或不可用时失败，不能声称 SSL 已验证。MySQL 8 使用 `--no-monitor`，停止脚本只清理路径与配置均匹配项目隔离目录的进程，兼容旧启动遗留的子进程。
 
 打包客户端测试在完成 `npm run dist`、启动隔离实例后运行：
 

@@ -1,0 +1,55 @@
+name: 检查与 Windows 构建
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tools/npm-cache
+            .tools/m2
+          key: windows-dependencies-${{ hashFiles('package-lock.json', 'engine/pom.xml') }}
+      - run: npm ci
+      - run: npm run bootstrap
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run release:check
+      - run: npm run build
+      - name: 完整构建安装包
+        if: github.event_name != 'pull_request'
+        run: npm run dist
+      - name: 核验与整理分发文件
+        if: github.event_name != 'pull_request'
+        run: npm run release:files
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: DBAligner-windows-x64-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/DBAligner-Setup-*.exe
+            release/DBAligner-Setup-*.exe.blockmap
+            release/latest.yml
+            release/DBAligner-*-win-x64.zip
+            release/SHA256SUMS.txt

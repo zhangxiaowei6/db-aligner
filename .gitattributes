@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.ico -text
+*.jar -text
+# Upstream license text is retained verbatim, including its original whitespace.
+licenses/** -whitespace

@@ -454,6 +454,9 @@ class ComparisonIntegrationTest {
             while (processCount(admin, source.database()) == 0 && System.nanoTime() < waitDeadline)
               Thread.sleep(20);
             assertTrue(processCount(admin, source.database()) > 0);
+            assertThrows(
+                IllegalArgumentException.class,
+                () -> service.handle("engine.prepareUpdate", Json.node(Map.of())));
             long started = System.nanoTime();
             service.handle("sync.compare.cancel", Json.node(Map.of("compareId", id)));
             var stopped = waitTask(service, id);

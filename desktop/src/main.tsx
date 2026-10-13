@@ -5,6 +5,7 @@ import App from './App';
 import { AppearanceProvider } from './appearance';
 import { api } from './api';
 import type { Appearance } from './types';
+import { UpdateProvider } from './updates';
 
 async function bootstrap() {
   const initial = await api<Appearance>('appearance.get').catch(
@@ -16,7 +17,9 @@ async function bootstrap() {
   );
   createRoot(document.getElementById('app')!).render(
     <AppearanceProvider initial={initial}>
-      <App />
+      <UpdateProvider>
+        <App />
+      </UpdateProvider>
     </AppearanceProvider>,
   );
 }

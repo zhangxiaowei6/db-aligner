@@ -1,0 +1,27 @@
+name: 缺陷报告
+description: 报告可复现的错误，提交前请脱敏
+body:
+  - type: markdown
+    attributes:
+      value: 疑似安全漏洞请使用 SECURITY.md 中的私密报告入口。疑似数据丢失先保留原记录与恢复资料，不反复执行。
+  - type: input
+    id: version
+    attributes:
+      label: 客户端版本与 Windows 版本
+    validations:
+      required: true
+  - type: input
+    id: database
+    attributes:
+      label: MySQL 版本
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤、预期与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏证据
+      description: 不上传密码、私钥、真实连接导出、SQL 档案、SQLite 或包含业务数据的本地备份。

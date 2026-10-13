@@ -1,5 +1,17 @@
 # 本地协议 v1
 
+## 客户端更新
+
+`updates.get`、`updates.check`、`updates.download`、`updates.install` 由 Electron 主进程处理，参数必须为空对象；沿用可信发送方验证，不接收更新 URL、文件路径、Token 或命令。preload 沿用限定 invoke／事件桥接，Java 不负责下载软件。
+
+返回 `UpdateState`：`version` 为客户端实际版本，`enabled` 表示当前运行方式支持更新，`revision` 单调递增，`status` 为 `disabled | idle | checking | current | available | downloading | downloaded | installing | error`，另有 `message`、可选 `nextVersion` 和 `percent`。主进程通过 `{event: 'update-state', state}` 广播状态，前端忽略旧 revision 并在卸载时取消订阅。重复检查和下载复用同一 Promise。
+
+只检查更高的正式版本；下载与安装均需用户操作，普通退出不安装。网络／下载／校验失败返回可重试状态，不泄露底层 URL、请求头或凭据。安装准备拒绝时保留已下载状态；安装器错误恢复引擎后重新检查。浏览器预览仅模拟版本和下载状态，安装入口明确拒绝。
+
+内部 `engine.prepareUpdate` 原子尝试取得请求独占锁，处理中请求、异步比较／取消和同步／排队任务存在时拒绝；通过后返回 `{prepared: true}` 并拒绝后续业务请求。`engine.resumeUpdate` 返回 `{prepared: false}` 并恢复请求。这两个接口只由主进程内部调用，不能经渲染进程 invoke 转发。同步回滚、核验、备份等请求持有共享请求锁直至结束，不能与更新准备同时通过。
+
+主进程先冻结业务请求并拒绝有未完成或超时结果不明的请求，再调用内部准备接口。确认通过后关闭引擎 stdin，等待正常退出，不使用强杀回退；失败则恢复引擎和请求入口，恢复失败保持冻结并提示重启。协议仍为 v1；`ping.version` 改为 Maven 生成的构建版本。
+
 DBAligner 渲染进程通过 `window.dbAligner` 使用桥接，主进程通道为 `dbaligner:invoke`、`dbaligner:event` 和 `dbaligner:window`。引擎启动入口为 `io.dbaligner.EngineMain`，资料目录由 `DB_ALIGNER_HOME` 指定。配置导出标识为 `dbaligner-config-v1`，脚本包标识为 `dbaligner-script-package-v1`；改名前的配置格式标识不再作为导入入口，请在本版本重新配置或导出。
 
 所有消息为 UTF-8 单行 JSON，以换行分隔。不能在 stdout 输出日志。Java 启动发出 ready 事件；标准请求响应按 `id` 关联，长任务通过事件与记录详情追踪。

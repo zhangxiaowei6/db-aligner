@@ -8,14 +8,23 @@ import type {
   SyncPlan,
   ThemeMode,
   DbRef,
+  UpdateState,
   TableChoice,
 } from './types';
+import { version } from '../package.json';
 import { connectionTestError } from './connection-validation';
 import { executionScript } from './sync-scripts';
 import { effectiveOptions, fullStructure } from './structure-options';
 import { previewStructureChange } from './preview-structure';
 import { connectionGroupName, orderedConnections } from './connection-organization';
 const listeners = new Set<(event: Record<string, unknown>) => void>();
+let previewUpdate: UpdateState = {
+  version,
+  enabled: true,
+  revision: 0,
+  status: 'idle',
+  message: '虚构更新演示，不访问网络或安装软件',
+};
 let themeMode: ThemeMode = 'system';
 const currentAppearance = (): Appearance => ({
   themeMode,
@@ -648,6 +657,33 @@ export const previewBridge: DesktopBridge = {
   async invoke<T>(method: string, p: Record<string, unknown> = {}): Promise<T> {
     let result: unknown;
     switch (method) {
+      case 'updates.get':
+        result = previewUpdate;
+        break;
+      case 'updates.check':
+        previewUpdate = {
+          ...previewUpdate,
+          revision: previewUpdate.revision + 1,
+          status: 'available',
+          nextVersion: version.replace(/\d+$/, (patch) => String(Number(patch) + 1)),
+          message: '发现虚构新版本，仅演示界面，不访问 GitHub',
+        };
+        listeners.forEach((fn) => fn({ event: 'update-state', state: { ...previewUpdate } }));
+        result = previewUpdate;
+        break;
+      case 'updates.download':
+        previewUpdate = {
+          ...previewUpdate,
+          revision: previewUpdate.revision + 1,
+          status: 'downloaded',
+          percent: 100,
+          message: '虚构下载完成，没有下载文件或安装软件',
+        };
+        listeners.forEach((fn) => fn({ event: 'update-state', state: { ...previewUpdate } }));
+        result = previewUpdate;
+        break;
+      case 'updates.install':
+        throw new Error('浏览器仅演示更新界面，不能重启或安装软件');
       case 'appearance.get':
         result = currentAppearance();
         break;

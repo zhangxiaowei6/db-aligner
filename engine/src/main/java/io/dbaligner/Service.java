@@ -17,6 +17,7 @@ public final class Service implements AutoCloseable {
   private final External external;
   private final Comparisons comparisons;
   private final ConnectionGroups connectionGroups;
+  private final UpdateGate updateGate = new UpdateGate();
   private final Map<String, SyncPlan> plans = new java.util.concurrent.ConcurrentHashMap<>();
 
   public Service(Path root, Consumer<Object> emit) throws Exception {
@@ -32,10 +33,18 @@ public final class Service implements AutoCloseable {
   }
 
   public Object handle(String method, JsonNode p) throws Exception {
+    if (method.equals("engine.prepareUpdate"))
+      return updateGate.prepare(() -> jobs.busy() || comparisons.busy());
+    if (method.equals("engine.resumeUpdate")) return updateGate.resume();
+    return updateGate.request(() -> dispatch(method, p));
+  }
+
+  private Object dispatch(String method, JsonNode p) throws Exception {
     db.secrets(p.path("$secrets"));
     return switch (method) {
       case "ping" ->
-          Map.of("version", "0.1.0", "protocol", 1, "java", Runtime.version().toString());
+          Map.of(
+              "version", BuildVersion.get(), "protocol", 1, "java", Runtime.version().toString());
       case "state.load" ->
           Map.of(
               "workspaces",

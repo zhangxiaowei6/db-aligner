@@ -20,6 +20,10 @@ final class Comparisons implements AutoCloseable {
   private final Consumer<SyncPlan> save;
   private Task active;
 
+  synchronized boolean busy() {
+    return active != null;
+  }
+
   Comparisons(Consumer<Object> emit, Consumer<SyncPlan> save) {
     this.emit = emit;
     this.save = save;

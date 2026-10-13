@@ -10,7 +10,11 @@
 
 ## 安装与使用
 
-本地构建结果在 `release/DBAligner Setup 0.1.0.exe`。也可以直接运行 `release/win-unpacked/DBAligner.exe`。安装包随附 Java 运行时；首版没有代码签名。卸载默认保留应用资料。
+从 [GitHub Releases](https://github.com/zhangxiaowei6/db-aligner/releases) 下载 Windows x64 正式安装包；尚未公开的版本不在下载列表中。本地构建结果在 `release/DBAligner Setup 0.1.0.exe`。安装包随附 Java 运行时，无需系统 Java／Maven；首版未签名，Windows 可能显示未知发布者提示。卸载默认保留应用资料。
+
+安装版启动后自动检查一次正式版本，在“设置 → 关于”确认下载，再确认重启安装。有运行、排队或取消中的任务时不能安装；网络失败不阻塞数据库功能。更新访问 GitHub，不上传连接、密码、SQL、记录或档案。旧的本地客户端需先手动安装含更新能力的版本。干净安装及真实两版本更新的实际验收范围见[验证记录](docs/validation.md)。
+
+无需安装 ZIP 须完整解压，运行其中的 `DBAligner.exe`；本地也可运行 `release/win-unpacked/DBAligner.exe`。升级先关闭客户端，再替换完整程序目录，保留业务资料及档案。首版自动更新针对 NSIS 安装版。
 
 1. 新建项目工作区；创建连接或导入 Navicat `.ncx`、DBeaver `data-sources.json`、DataGrip `dataSources.xml` / XML 文本。导入先预览，选择工作区与重复项处理方式，补充缺失密码。
 2. 展开左侧连接与数据库。双击表名查看字段、索引、外键、属性和建表 SQL；右键表或数据库进入同步结构、同步数据或导出结构。
@@ -91,7 +95,7 @@ npm run dist
 
 ## 真库回归
 
-测试助手下载 Oracle 官方 MySQL Windows ZIP，只启动项目 `.tools/mysql-test` 内的隔离实例，绑定 `127.0.0.1`，不注册服务。它会生成随机测试凭据（不得提交）；测试只创建并清理自己的 `ds_it_*` 数据库。SSL 回归需要 OpenSSL，脚本默认检测 Git for Windows 的 `D:/Git/usr/bin/openssl.exe`；其他安装位置需调整测试脚本。
+测试助手下载 Oracle 官方 MySQL Windows ZIP，只启动项目 `.tools/mysql-test` 内的隔离实例，绑定 `127.0.0.1`，不注册服务。它会生成随机测试凭据（不得提交）；测试只创建并清理自己的 `ds_it_*` 数据库。SSL 回归必须有 OpenSSL；脚本支持 `-OpenSsl` 或 `DB_ALIGNER_OPENSSL`，并探测 PATH 和 Git for Windows 安装位置，缺失或不可用时失败，不静默跳过 SSL。
 
 ```powershell
 ./scripts/mysql-test-server.ps1 -Version 5.7.44 -Port 33957
@@ -111,6 +115,8 @@ npm run dist
 - `licenses`：第三方许可、驱动源码 JAR 与依赖清单；`design-qa.md`：设计复核。
 
 ## 开源
+
+主仓库为 [GitHub](https://github.com/zhangxiaowei6/db-aligner)。主分支推送自动检查并打包为 Actions Artifact；推送 `vX.Y.Z` 标签生成 Release 草稿，完成安装／升级验收后由维护者公开。普通本地打包固定禁用发布。版本、权限、附件及验收步骤见 [GitHub 构建与发布](docs/releasing.md)。安全问题见 [安全报告](SECURITY.md)。
 
 文档入口见下节；维护要求见[贡献说明中的文档规范](CONTRIBUTING.md#文档规范)。
 

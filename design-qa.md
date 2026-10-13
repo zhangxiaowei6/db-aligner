@@ -335,3 +335,14 @@ final result: passed
 - 字段“无默认值”与“默认 NULL”的显示可进一步区分，底层定义与执行 SQL 已保留原始语义。
 
 本报告通过仅指设计实现和列出的验证；干净机器安装、双向 SSL 等未验收范围保持在验证记录中，不以界面截图替代。
+
+## 2026-10-13 客户端更新入口
+
+更新入口位于“设置 → 关于”，沿用白／灰／蓝和主题变量。当前版本、常驻状态、下载进度与三个操作明确分离；安装前确认重启，取消后仍停留设置页。检查及下载不改变业务草稿或导航。实际检查数、环境与范围见 [验证记录](docs/validation.md#2026-10-13-github-发布准备与客户端更新)。
+
+复核 1488×1056、1180×760的浅色／深色截图：状态文字可读，操作按钮与底部“保存设置”均可达，内容独立滚动，无临时通知遮挡。本次浏览器演示未下载或安装软件；原生验收截图仅证明隔离桌面表现，不代表干净安装或真实更新通过。
+
+- [浅色常规窗口](docs/screenshots/react-ant-design/updates-light-1488.png)
+- [深色常规窗口](docs/screenshots/react-ant-design/updates-dark-1488.png)
+- [浅色最小窗口](docs/screenshots/react-ant-design/updates-light-1180.png)
+- [深色最小窗口](docs/screenshots/react-ant-design/updates-dark-1180.png)

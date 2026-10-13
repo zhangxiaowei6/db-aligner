@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, safeStorage, shell, nativeTheme } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { mkdirSync, promises as fs } from 'node:fs';
+import { existsSync, mkdirSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { smoke } from './smoke.js';
@@ -9,6 +9,13 @@ import { isThemeMode, readThemeMode, writeThemeMode } from './appearance.js';
 import type { Appearance, ThemeMode } from '../src/types.js';
 import { connectionTestError } from '../src/connection-validation.js';
 import { storagePaths } from './storage-paths.js';
+import updater from 'electron-updater';
+import { Updates } from './updates.js';
+import { UpdateInstallGate } from './update-install.js';
+
+const { autoUpdater } = updater;
+const updateGate = new UpdateInstallGate();
+let updates: Updates;
 
 const repo = path.resolve(__dirname, '../..');
 let win: BrowserWindow, engine: ChildProcessWithoutNullStreams, ready: Promise<void>;
@@ -138,6 +145,7 @@ function startEngine() {
       try {
         const n = JSON.parse(line);
         if (n.event === 'ready') {
+          updateGate.engineStarted();
           clearTimeout(timeout);
           resolve();
         } else if (n.event) {
@@ -178,6 +186,7 @@ async function call(method: string, params: Record<string, unknown> = {}) {
   return new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(
       () => {
+        updateGate.uncertain();
         pending.delete(id);
         reject(new Error('请求超时；执行任务不会因此自动撤销，请查看记录'));
       },
@@ -202,6 +211,18 @@ async function stopEngine() {
   });
 }
 async function invoke(method: string, params: Record<string, unknown> = {}) {
+  if (method.startsWith('updates.')) {
+    if (Object.keys(params).length) throw new Error('更新接口不接受自定义参数');
+    if (method === 'updates.get') return updates.get();
+    if (method === 'updates.check') return updates.check();
+    if (method === 'updates.download') return updates.download();
+    if (method === 'updates.install') return updates.install();
+    throw new Error('不允许的更新接口');
+  }
+  return updateGate.request(() => invokeBusiness(method, params));
+}
+
+async function invokeBusiness(method: string, params: Record<string, unknown> = {}) {
   if (method === 'appearance.get') return appearance();
   if (method === 'appearance.set') {
     const selected = params.themeMode;
@@ -410,9 +431,86 @@ app.whenReady().then(async () => {
     },
   });
   win.setMenuBarVisibility(false);
+  const updateEnabled =
+    app.isPackaged &&
+    !smokeMode &&
+    process.env.DB_ALIGNER_DEV !== '1' &&
+    existsSync(path.join(path.dirname(process.execPath), 'Uninstall DBAligner.exe'));
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.logger = null;
+  autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'zhangxiaowei6',
+    repo: 'db-aligner',
+    private: false,
+  });
+  async function recoverUpdateEngine() {
+    if (engine.exitCode !== null) {
+      startEngine();
+      await ready;
+    } else {
+      await call('engine.resumeUpdate');
+    }
+    stopping = false;
+    closeApproved = false;
+  }
+  updates = new Updates(
+    autoUpdater,
+    app.getVersion(),
+    updateEnabled,
+    (state) => {
+      if (!win.isDestroyed())
+        win.webContents.send('dbaligner:event', { event: 'update-state', state });
+    },
+    () =>
+      updateGate.install({
+        prepare: async () => {
+          const result = (await call('engine.prepareUpdate')) as { prepared?: boolean };
+          if (result.prepared !== true) throw new Error('引擎未确认可以更新');
+        },
+        stop: async () => {
+          stopping = true;
+          // Do not reuse stopEngine(): update installation must never kill the engine.
+          await new Promise<void>((resolve, reject) => {
+            engine.once('exit', (code) =>
+              code === 0 ? resolve() : reject(new Error('引擎未正常退出，不能安装更新')),
+            );
+            engine.stdin.end();
+          });
+        },
+        launch: () => {
+          closeApproved = true;
+          autoUpdater.quitAndInstall(false, true);
+        },
+        recover: recoverUpdateEngine,
+      }),
+  );
+  autoUpdater.on('error', () => {
+    void updateGate.recover(recoverUpdateEngine).catch(() => {
+      if (!win.isDestroyed())
+        win.webContents.send('dbaligner:event', {
+          event: 'engine-error',
+          message: '更新失败后无法恢复引擎，请重新启动客户端',
+        });
+    });
+  });
+  if (updateEnabled) {
+    const check = setTimeout(() => {
+      void updates.check();
+    }, 10_000);
+    check.unref();
+    app.once('before-quit', () => clearTimeout(check));
+  }
   win.webContents.session.spellCheckerEnabled = false;
   nativeTheme.on('updated', updateAppearance);
   win.on('close', (event) => {
+    if (updateGate.installing && !closeApproved) {
+      event.preventDefault();
+      return;
+    }
     if (closeApproved || stopping || smokeMode) return;
     event.preventDefault();
     if (closeRequested) return;

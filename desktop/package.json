@@ -7,18 +7,19 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "desktop": "npm run build:electron && node scripts/dev.mjs",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --external:electron --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs",
+    "build:electron": "esbuild electron/main.ts --bundle --platform=node --external:electron --external:electron-updater --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs",
     "build": "tsc --noEmit && vite build && npm run build:electron",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "qa:ui": "node scripts/ui-qa.mjs",
     "qa:tree": "node scripts/tree-qa.mjs",
     "qa:desktop": "node scripts/ui-qa.mjs --desktop",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "@ant-design/icons": "6.3.4",
     "antd": "6.6.5",
+    "electron-updater": "6.8.9",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -30,7 +31,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "44.7.0",
-    "electron-builder": "^26.0.12",
+    "electron-builder": "26.15.3",
     "esbuild": "^0.25.12",
     "jsdom": "^27.0.0",
     "playwright": "1.62.1",
@@ -93,9 +94,23 @@
       "allowToChangeInstallationDirectory": true,
       "deleteAppDataOnUninstall": false,
       "license": "../LICENSE"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "zhangxiaowei6",
+      "repo": "db-aligner",
+      "releaseType": "draft"
     }
   },
   "description": "DBAligner desktop tool for auditable MySQL schema and reference data alignment",
   "author": "DBAligner contributors",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhangxiaowei6/db-aligner.git"
+  },
+  "homepage": "https://github.com/zhangxiaowei6/db-aligner",
+  "bugs": {
+    "url": "https://github.com/zhangxiaowei6/db-aligner/issues"
+  }
 }

@@ -59,9 +59,9 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.4818725585938,
+        "x": 848.1171875,
         "y": 0,
-        "width": 640.0000610351562,
+        "width": 640,
         "height": 1056
       }
     },
@@ -168,7 +168,7 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.4757690429688,
+        "x": 848.1154174804688,
         "y": 0,
         "width": 640.0000610351562,
         "height": 1056
@@ -627,11 +627,7 @@
     {
       "check": "connection-actions-testing",
       "theme": "light",
-      "tops": [
-        263.796875,
-        263.796875,
-        263.796875
-      ],
+      "tops": [263.796875, 263.796875, 263.796875],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -640,11 +636,7 @@
     {
       "check": "connection-actions-success-1488",
       "theme": "light",
-      "tops": [
-        263.796875,
-        263.796875,
-        263.796875
-      ],
+      "tops": [263.796875, 263.796875, 263.796875],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -653,11 +645,7 @@
     {
       "check": "connection-actions-success-1180",
       "theme": "light",
-      "tops": [
-        259.796875,
-        259.796875,
-        259.796875
-      ],
+      "tops": [259.796875, 259.796875, 259.796875],
       "bottom": 283.796875,
       "scrollBottom": 283.796875,
       "clippedInsideCell": true,
@@ -666,11 +654,7 @@
     {
       "check": "connection-actions-success-900",
       "theme": "light",
-      "tops": [
-        279.796875,
-        279.796875,
-        279.796875
-      ],
+      "tops": [279.796875, 279.796875, 279.796875],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -679,11 +663,7 @@
     {
       "check": "connection-actions-narrow-column",
       "theme": "light",
-      "tops": [
-        279.796875,
-        279.796875,
-        279.796875
-      ],
+      "tops": [279.796875, 279.796875, 279.796875],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -692,11 +672,7 @@
     {
       "check": "connection-actions-failure",
       "theme": "light",
-      "tops": [
-        279.796875,
-        279.796875,
-        279.796875
-      ],
+      "tops": [279.796875, 279.796875, 279.796875],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -735,11 +711,7 @@
     {
       "check": "connection-actions-testing",
       "theme": "dark",
-      "tops": [
-        263.796875,
-        263.796875,
-        263.796875
-      ],
+      "tops": [263.796875, 263.796875, 263.796875],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -748,11 +720,7 @@
     {
       "check": "connection-actions-success-1488",
       "theme": "dark",
-      "tops": [
-        263.796875,
-        263.796875,
-        263.796875
-      ],
+      "tops": [263.796875, 263.796875, 263.796875],
       "bottom": 287.796875,
       "scrollBottom": 287.796875,
       "clippedInsideCell": true,
@@ -761,11 +729,7 @@
     {
       "check": "connection-actions-success-1180",
       "theme": "dark",
-      "tops": [
-        259.796875,
-        259.796875,
-        259.796875
-      ],
+      "tops": [259.796875, 259.796875, 259.796875],
       "bottom": 283.796875,
       "scrollBottom": 283.796875,
       "clippedInsideCell": true,
@@ -774,11 +738,7 @@
     {
       "check": "connection-actions-success-900",
       "theme": "dark",
-      "tops": [
-        279.796875,
-        279.796875,
-        279.796875
-      ],
+      "tops": [279.796875, 279.796875, 279.796875],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -787,11 +747,7 @@
     {
       "check": "connection-actions-narrow-column",
       "theme": "dark",
-      "tops": [
-        279.796875,
-        279.796875,
-        279.796875
-      ],
+      "tops": [279.796875, 279.796875, 279.796875],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,
@@ -800,11 +756,7 @@
     {
       "check": "connection-actions-failure",
       "theme": "dark",
-      "tops": [
-        279.796875,
-        279.796875,
-        279.796875
-      ],
+      "tops": [279.796875, 279.796875, 279.796875],
       "bottom": 303.796875,
       "scrollBottom": 303.796875,
       "clippedInsideCell": true,

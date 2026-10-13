@@ -18,10 +18,16 @@
     "runtime": "powershell -ExecutionPolicy Bypass -File scripts/runtime.ps1",
     "licenses": "powershell -ExecutionPolicy Bypass -File scripts/licenses.ps1",
     "format": "prettier --write desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md",
-    "format:check": "prettier --check desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md"
+    "format:check": "prettier --check desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md",
+    "release:check": "node scripts/check-release.mjs",
+    "release:files": "powershell -ExecutionPolicy Bypass -File scripts/release-files.ps1"
   },
   "license": "Apache-2.0",
   "devDependencies": {
     "prettier": "^3.6.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhangxiaowei6/db-aligner.git"
   }
 }

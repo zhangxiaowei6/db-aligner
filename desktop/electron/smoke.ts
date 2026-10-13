@@ -27,6 +27,27 @@ export async function smoke(
     ),
     'real renderer IPC through trusted main frame',
   );
+  const updateState = (await invoke('updates.get')) as { enabled: boolean; status: string };
+  assert(
+    !updateState.enabled && updateState.status === 'disabled',
+    'smoke disables real update requests',
+  );
+  assert(
+    ((await invoke('updates.check')) as { status: string }).status === 'disabled',
+    'disabled update check does not access network',
+  );
+  assert(
+    await win.webContents.executeJavaScript(
+      'window.dbAligner.invoke("engine.prepareUpdate").then(() => false, () => true)',
+    ),
+    'internal engine update preparation is not exposed to renderer',
+  );
+  assert(
+    await win.webContents.executeJavaScript(
+      'window.dbAligner.invoke("updates.check", {url: "https://example.invalid"}).then(() => false, () => true)',
+    ),
+    'renderer cannot override update source',
+  );
   await invoke('entity.save', {
     kind: 'connection',
     value: {

@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { performanceQA } from './performance-qa.mjs';
 import { recordConfirmationQA } from './record-confirmation-qa.mjs';
+import { updatesQA } from './updates-qa.mjs';
 const require = createRequire(import.meta.url);
 const desktop = path.resolve(import.meta.dirname, '..');
 const repo = path.resolve(desktop, '..');
@@ -1565,6 +1566,10 @@ async function browserQA() {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     browser = await chromium.launch({ headless: true, executablePath });
+    if (process.argv.includes('--updates')) {
+      await updatesQA(browser, { repo, report, observe, shot, footerCheck });
+      return;
+    }
     if (process.argv.includes('--record-confirmation')) {
       await recordConfirmationQA(browser, {
         desktop,
@@ -2250,21 +2255,23 @@ try {
       'docs',
       native
         ? 'react-desktop-qa.json'
-        : process.argv.includes('--record-confirmation')
-          ? 'record-confirmation-ui-qa.json'
-          : process.argv.includes('--connection-form')
-            ? 'connection-form-ui-qa.json'
-            : process.argv.includes('--performance')
-              ? 'performance-ui-qa.json'
-              : process.argv.includes('--tree-organization')
-                ? 'tree-organization-qa.json'
-                : process.argv.includes('--context-feedback')
-                  ? 'context-feedback-qa.json'
-                  : process.argv.includes('--sync-modes')
-                    ? 'sync-mode-ui-qa.json'
-                    : process.argv.includes('--diff-scroll')
-                      ? 'diff-scroll-ui-qa.json'
-                      : 'react-ui-qa.json',
+        : process.argv.includes('--updates')
+          ? 'updates-ui-qa.json'
+          : process.argv.includes('--record-confirmation')
+            ? 'record-confirmation-ui-qa.json'
+            : process.argv.includes('--connection-form')
+              ? 'connection-form-ui-qa.json'
+              : process.argv.includes('--performance')
+                ? 'performance-ui-qa.json'
+                : process.argv.includes('--tree-organization')
+                  ? 'tree-organization-qa.json'
+                  : process.argv.includes('--context-feedback')
+                    ? 'context-feedback-qa.json'
+                    : process.argv.includes('--sync-modes')
+                      ? 'sync-mode-ui-qa.json'
+                      : process.argv.includes('--diff-scroll')
+                        ? 'diff-scroll-ui-qa.json'
+                        : 'react-ui-qa.json',
     ),
     JSON.stringify(report, null, 2) + '\n',
   );

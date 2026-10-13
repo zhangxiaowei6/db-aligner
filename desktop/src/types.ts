@@ -214,6 +214,24 @@ export interface DesktopBridge {
   window(action: string): void;
 }
 export type ThemeMode = 'light' | 'dark' | 'system';
+export interface UpdateState {
+  version: string;
+  enabled: boolean;
+  revision: number;
+  status:
+    | 'disabled'
+    | 'idle'
+    | 'checking'
+    | 'current'
+    | 'available'
+    | 'downloading'
+    | 'downloaded'
+    | 'installing'
+    | 'error';
+  nextVersion?: string;
+  percent?: number;
+  message: string;
+}
 export interface Appearance {
   themeMode: ThemeMode;
   resolvedTheme: 'light' | 'dark';
