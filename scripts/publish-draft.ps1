@@ -12,10 +12,10 @@ foreach ($taskLine in Get-Content -LiteralPath 'release/SHA256SUMS.txt') {
   if ($taskName -notin @("DBAligner-Setup-$taskVersion.exe", "DBAligner-Setup-$taskVersion.exe.blockmap", 'latest.yml', "DBAligner-$taskVersion-win-x64.zip")) { throw 'Unexpected release attachment' }
   if ((Get-DBAlignerHash "release/$taskName" SHA256) -ne $taskExpectedHash) { throw "Checksum mismatch: $taskName" }
 }
-$taskExisting = gh api "repos/$env:GH_REPO/releases/tags/$env:RELEASE_TAG" 2>$null
+$taskExisting = gh release view $env:RELEASE_TAG --repo $env:GH_REPO --json isDraft 2>$null
 if ($LASTEXITCODE -eq 0) {
   $taskRelease = $taskExisting | ConvertFrom-Json
-  if (!$taskRelease.draft) { throw 'Refusing to overwrite a published release; increment the version' }
+  if (!$taskRelease.isDraft) { throw 'Refusing to overwrite a published release; increment the version' }
   gh release upload $env:RELEASE_TAG @taskFiles --clobber
 } else {
   # --verify-tag also prevents accidental creation of a tag from the workflow checkout.

@@ -23,7 +23,8 @@ GitHub 主仓库为 [zhangxiaowei6/db-aligner](https://github.com/zhangxiaowei6/
    ```
 
 4. 标签工作流核对标签与版本、主分支祖先关系，完整构建、运行三版本隔离真库和打包客户端 smoke，再生成 Release 草稿。
-5. 核对附件：安装包、`.blockmap`、`latest.yml`、完整无需安装 ZIP、`SHA256SUMS.txt`。完成下节人工验收后，在 GitHub Releases 编辑草稿并发布。
+
+发布脚本使用 `gh release view --json isDraft` 识别已有草稿；REST 按标签查询不能可靠读取草稿。`v0.1.2` 草稿已完成上传，该早期标签保留当时脚本；如需重传其附件，使用主分支修复后的发布脚本并保持同版本校验。后续标签继承修复，不移动旧标签。公开版本始终拒绝覆盖。5. 核对附件：安装包、`.blockmap`、`latest.yml`、完整无需安装 ZIP、`SHA256SUMS.txt`。完成下节人工验收后，在 GitHub Releases 编辑草稿并发布。
 
 发布作业仅使用自动提供的 `GITHUB_TOKEN` 并授予 `contents: write`；其他作业保持读取权限。无需个人 Token或签名证书。公开仓库需启用 Actions和私密漏洞报告，并检查仓库／组织策略允许发布作业写入内容。建议启用 GitHub秘密扫描与推送保护。
 
