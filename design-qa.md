@@ -346,3 +346,7 @@ final result: passed
 - [深色常规窗口](docs/screenshots/react-ant-design/updates-dark-1488.png)
 - [浅色最小窗口](docs/screenshots/react-ant-design/updates-light-1180.png)
 - [深色最小窗口](docs/screenshots/react-ant-design/updates-dark-1180.png)
+
+同日版本修复后再次运行更新 UI 专项，4 个主题／窗口组合、8 条检查通过，截图刷新为 `0.1.1`。复核当前浅色常规窗口与深色最小窗口，版本、演示状态和操作均可见；演示中的 `0.1.2` 为虚构更新，不表示已有远程正式版本。
+
+`0.1.2` 工具探测修复后专项再次通过，当前四张截图更新为该版本；演示中的下一版本仍为虚构数据，没有进行网络下载或安装。

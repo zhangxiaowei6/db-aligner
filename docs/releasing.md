@@ -8,18 +8,18 @@ GitHub 主仓库为 [zhangxiaowei6/db-aligner](https://github.com/zhangxiaowei6/
 
 工具链为 Node.js 24／npm 11、项目 `.tools` 中的 Java 21 和 Maven。`npm ci` 通过根 postinstall 显式准备 Windows x64 Electron 二进制，缺失时立即失败；打包由构建器按已锁定版本准备分发，不依赖本机预先填充的目录。仅缓存 npm／Maven下载资料，不缓存运行时、MySQL数据目录或凭据。普通打包固定 `--publish never`，无需发布 Token。
 
-首次 `v0.1.0` 云端构建未生成 Release，保留该失败标签作为证据；首个可用草稿改为 `v0.1.1`，没有重新指向旧标签。
+`v0.1.0` 因缺少 Electron 运行时失败，`v0.1.1` 完成打包后因 runner 存在多个 OpenSSL 而未能启动真库验收；两次均未生成 Release。保留失败标签作为证据，当前发布候选为 `v0.1.2`，没有重新指向旧标签。
 
 ## 创建版本草稿
 
 1. 同步根 `package.json`、`desktop/package.json` 和 `engine/pom.xml` 的版本，通过 npm 更新 `package-lock.json`。运行 `npm run release:check`。引擎版本由 Maven资源过滤生成，不手工修改响应字符串。
 2. 在 `master` 完成源码、默认测试、界面、三版本真库及打包验证，提交并推送版本变更。
-3. 从主分支创建并推送标签，例如首个可用草稿：
+3. 从主分支创建并推送标签，例如当前候选：
 
    ```powershell
-   git tag v0.1.1
+   git tag v0.1.2
    git push origin master
-   git push origin v0.1.1
+   git push origin v0.1.2
    ```
 
 4. 标签工作流核对标签与版本、主分支祖先关系，完整构建、运行三版本隔离真库和打包客户端 smoke，再生成 Release 草稿。

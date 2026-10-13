@@ -4,13 +4,13 @@
 
 按项目组织的 MySQL 结构和基础数据同步桌面工具。选择表后比较一个源库与多个目标库，预览差异，保存脚本或直接执行，保留每次操作的记录、恢复资料和版本归档。
 
-当前版本：**0.1.1，Windows x64**。Electron / React 19 / TypeScript / Ant Design 6，Java 21 / Spring Boot 4 非 Web 引擎，SQLite 本地存储。生产客户端不启动 HTTP 服务，不需要预装 Java 或 Maven。
+当前版本：**0.1.2，Windows x64**。Electron / React 19 / TypeScript / Ant Design 6，Java 21 / Spring Boot 4 非 Web 引擎，SQLite 本地存储。生产客户端不启动 HTTP 服务，不需要预装 Java 或 Maven。
 
 ![结构差异界面](docs/screenshots/react-ant-design/diff-light.png)
 
 ## 安装与使用
 
-从 [GitHub Releases](https://github.com/zhangxiaowei6/db-aligner/releases) 下载 Windows x64 正式安装包；尚未公开的版本不在下载列表中。本地构建结果在 `release/DBAligner Setup 0.1.1.exe`。安装包随附 Java 运行时，无需系统 Java／Maven；首版未签名，Windows 可能显示未知发布者提示。卸载默认保留应用资料。
+从 [GitHub Releases](https://github.com/zhangxiaowei6/db-aligner/releases) 下载 Windows x64 正式安装包；尚未公开的版本不在下载列表中。本地构建结果在 `release/DBAligner Setup 0.1.2.exe`。安装包随附 Java 运行时，无需系统 Java／Maven；首版未签名，Windows 可能显示未知发布者提示。卸载默认保留应用资料。
 
 安装版启动后自动检查一次正式版本，在“设置 → 关于”确认下载，再确认重启安装。有运行、排队或取消中的任务时不能安装；网络失败不阻塞数据库功能。更新访问 GitHub，不上传连接、密码、SQL、记录或档案。旧的本地客户端需先手动安装含更新能力的版本。干净安装及真实两版本更新的实际验收范围见[验证记录](docs/validation.md)。
 
@@ -86,9 +86,9 @@ npm run dist
 
 `bootstrap` 将 Java 21 和 Maven 下载到项目 `.tools`，无需预装 Java / Maven；首次准备依赖和工具链需要网络。根目录的 `npm run dist` 会依次构建 Java 引擎、前端与 Electron，准备裁剪后的 Java 运行时，整理第三方许可，最后生成 Windows x64 NSIS 安装包。使用根目录的完整打包命令；`npm run dist -w desktop` 只运行 Electron 打包，不会重新构建引擎、界面、运行时或许可材料。
 
-产物保存在项目根目录的 `release` 中，当前版本为 0.1.1：
+产物保存在项目根目录的 `release` 中，当前版本为 0.1.2：
 
-- 安装包：`release/DBAligner Setup 0.1.1.exe`。
+- 安装包：`release/DBAligner Setup 0.1.2.exe`。
 - 无需安装的程序：`release/win-unpacked/DBAligner.exe`；直接运行或分发时需保留完整 `win-unpacked` 目录及其资源。
 
 安装包版本取自 `desktop/package.json`，升级版本后以实际生成的文件名为准。安装包附带 Java 运行时，用户机器无需预装 Java；当前未配置代码签名。打包成功不能替代前端、真库及干净 Windows 环境的安装验收，相关要求见[贡献说明](CONTRIBUTING.md)和下方真库回归。

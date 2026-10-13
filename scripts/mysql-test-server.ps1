@@ -29,10 +29,10 @@ $taskOpenSsl = $OpenSsl
 if ($taskOpenSsl) {
  if (!(Test-Path -LiteralPath $taskOpenSsl -PathType Leaf)) { throw 'Configured OpenSSL executable does not exist' }
 } else {
- $taskOpenSslCommand = Get-Command openssl -CommandType Application -ErrorAction SilentlyContinue
+ $taskOpenSslCommand = Get-Command openssl -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
  if ($taskOpenSslCommand) { $taskOpenSsl = $taskOpenSslCommand.Source }
  else {
-  $taskGitCommand = Get-Command git -CommandType Application -ErrorAction SilentlyContinue
+  $taskGitCommand = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   $taskCandidates = @()
   if ($taskGitCommand) {
    $taskGitRoot = Split-Path -Parent (Split-Path -Parent $taskGitCommand.Source)
