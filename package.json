@@ -1,6 +1,6 @@
 {
   "name": "db-aligner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "workspaces": [
     "desktop"
@@ -20,7 +20,8 @@
     "format": "prettier --write desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md",
     "format:check": "prettier --check desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md",
     "release:check": "node scripts/check-release.mjs",
-    "release:files": "powershell -ExecutionPolicy Bypass -File scripts/release-files.ps1"
+    "release:files": "powershell -ExecutionPolicy Bypass -File scripts/release-files.ps1",
+    "postinstall": "node scripts/prepare-electron.mjs"
   },
   "license": "Apache-2.0",
   "devDependencies": {
