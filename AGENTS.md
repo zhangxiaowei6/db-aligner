@@ -6,7 +6,7 @@
 
 DBAligner 是按工作区组织的 MySQL / PostgreSQL 结构与基础数据同步桌面工具：比较一个源库与多个目标库，预览所选表的差异，保存脚本或执行同步，并保留记录、恢复资料和版本归档。当前面向 Windows x64。
 
-- 桌面端：Electron、React 19、TypeScript、Ant Design 6、Vite。
+- 桌面端：Tauri 2、Rust 宿主、React 19、TypeScript、Ant Design 6、Vite。旧 Electron 代码与报告仅作为迁移对照及历史证据。
 - 引擎：Java 21、Spring Boot 4 非 Web 模式、JDBC；SQLite 保存本地配置与记录。
 - 精确版本、命令和打包资源以根目录及 `desktop/package.json`、`package-lock.json`、`engine/pom.xml` 和实际脚本为准，不把历史验证环境当作推荐环境。
 - `AGENTS.md` 定义公共硬约束，`.agents/skills` 定义任务流程，现有文档定义详细架构、契约和业务交互。技能不能放宽本文件的数据保护与验证要求。
@@ -14,14 +14,14 @@ DBAligner 是按工作区组织的 MySQL / PostgreSQL 结构与基础数据同�
 
 ## 2. 任务与技能索引
 
-| 任务类型                                      | 技能                                                               | 必读文档                                                                                                       |
-| --------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| React 页面、控制器、组件、主题、浏览器预览    | [前端开发与交互规范](.agents/skills/frontend-development/SKILL.md) | [交互规范](docs/interaction-guidelines.md)、[使用指南](docs/user-guide.md)                                     |
-| IPC、preload、Java 路由、模型、事件、凭据边界 | [本地协议与进程边界](.agents/skills/protocol-change/SKILL.md)      | [本地协议](docs/protocol.md)、[架构与证据模型](docs/architecture.md)                                           |
-| 比较、执行、归档、核验、回滚、本地备份恢复    | [数据库同步与恢复](.agents/skills/sync-safety/SKILL.md)            | [架构与证据模型](docs/architecture.md)、[支持范围](docs/limitations.md)、[本地协议](docs/protocol.md)          |
-| 修改后检查、验收与验证报告                    | [修改验证与证据记录](.agents/skills/verification/SKILL.md)         | [贡献说明](CONTRIBUTING.md)、[README](README.md)、[验证记录](docs/validation.md)                               |
-| Windows 工具链、完整打包、产物与许可核验      | [Windows 构建与打包](.agents/skills/windows-packaging/SKILL.md)    | [README 手动打包](README.md#手动构建安装包)、[贡献说明](CONTRIBUTING.md)、[第三方说明](THIRD_PARTY_NOTICES.md) |
-| Git 提交消息、提交拆分与提交前范围检查        | [Git 提交规范](.agents/skills/git-commit-convention/SKILL.md)      | [贡献说明](CONTRIBUTING.md)、[仓库约定](AGENTS.md)                                                             |
+| 任务类型                                          | 技能                                                               | 必读文档                                                                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| React 页面、控制器、组件、主题、浏览器预览        | [前端开发与交互规范](.agents/skills/frontend-development/SKILL.md) | [交互规范](docs/interaction-guidelines.md)、[使用指南](docs/user-guide.md)                                     |
+| Tauri 命令、桥接、Java 路由、模型、事件、凭据边界 | [本地协议与进程边界](.agents/skills/protocol-change/SKILL.md)      | [本地协议](docs/protocol.md)、[架构与证据模型](docs/architecture.md)                                           |
+| 比较、执行、归档、核验、回滚、本地备份恢复        | [数据库同步与恢复](.agents/skills/sync-safety/SKILL.md)            | [架构与证据模型](docs/architecture.md)、[支持范围](docs/limitations.md)、[本地协议](docs/protocol.md)          |
+| 修改后检查、验收与验证报告                        | [修改验证与证据记录](.agents/skills/verification/SKILL.md)         | [贡献说明](CONTRIBUTING.md)、[README](README.md)、[验证记录](docs/validation.md)                               |
+| Windows 工具链、完整打包、产物与许可核验          | [Windows 构建与打包](.agents/skills/windows-packaging/SKILL.md)    | [README 手动打包](README.md#手动构建安装包)、[贡献说明](CONTRIBUTING.md)、[第三方说明](THIRD_PARTY_NOTICES.md) |
+| Git 提交消息、提交拆分与提交前范围检查            | [Git 提交规范](.agents/skills/git-commit-convention/SKILL.md)      | [贡献说明](CONTRIBUTING.md)、[仓库约定](AGENTS.md)                                                             |
 
 跨层修改使用对应技能的组合；文档维护、合并与删除遵循[文档规范](CONTRIBUTING.md#文档规范)，仅文档修改核对相关事实与格式，不触发文档所描述功能的执行或验收。
 各技能正文、触发说明和界面元数据使用中文，目录名与技能标识使用无项目前缀的小写英文及连字符。
@@ -31,7 +31,7 @@ DBAligner 是按工作区组织的 MySQL / PostgreSQL 结构与基础数据同�
 | 目录或文件                           | 职责                                                                 |
 | ------------------------------------ | -------------------------------------------------------------------- |
 | `desktop/src`                        | React 页面、公共组件、控制器、类型、浏览器预览与前端测试             |
-| `desktop/electron`                   | 主进程、preload、受限 IPC、系统凭据加密、原生文件操作与引擎生命周期  |
+| `desktop/src-tauri`                  | Rust 宿主、受限命令、系统凭据加密、原生文件操作与引擎生命周期        |
 | `desktop/scripts`                    | 桌面开发启动与 UI／桌面验收                                          |
 | `engine/src/main/java/io/dbaligner`  | 协议入口、服务路由、连接、元数据、比较、执行、归档、核验、回滚与备份 |
 | `engine/src/test/java/io/dbaligner`  | 引擎单元测试、隔离 MySQL 集成测试与打包客户端测试                    |
@@ -40,19 +40,19 @@ DBAligner 是按工作区组织的 MySQL / PostgreSQL 结构与基础数据同�
 | `.agents/skills`                     | 项目任务技能及中文界面元数据                                         |
 | `licenses`、`THIRD_PARTY_NOTICES.md` | 第三方许可、驱动源码与依赖材料                                       |
 
-修改协议时同时核对主进程允许方法及参数处理、preload 桥接、前端类型与预览、Java 路由与模型，并更新协议文档；定位入口见对应技能。
+修改协议时同时核对 Tauri 宿主允许方法及参数处理、前端 Tauri 桥接与类型、浏览器预览、Java 路由与模型，并更新协议文档；定位入口见对应技能。
 
 - 使用 Windows x64、Node.js 24／npm 11，从仓库根目录执行命令；Java 21 与 Maven 使用 `.tools` 内的项目工具链。首次引导需网络下载，不修改系统 PATH、不注册 Windows 服务，Maven 脚本仅为本次运行设置环境。
-- 开发启动、工具链与命令详见 [README](README.md#开发)。`npm run desktop` 使用真实 Electron／Java 和 `.local-data`；生产资料位于 Electron `userData` 的 `data` 子目录，`DB_ALIGNER_HOME` 用于指定隔离目录。
+- 开发启动、工具链与命令详见 [README](README.md#开发)。`npm run desktop` 使用真实 Tauri／Java 和 `.local-data`；生产资料使用独立于旧 Electron 的 Tauri 应用资料目录，`DB_ALIGNER_HOME` 用于指定隔离目录。
 - `npm run dev` 的 `http://127.0.0.1:4173/?preview=1` 只使用内存虚构数据，不连接数据库、不执行真实同步、不持久保存；不要与同端口的桌面开发实例同时启动。
-- `.tools`、`.local-data` 是工具与开发资料；`node_modules`、`desktop/dist`、`desktop/dist-electron`、`engine/target`、`release` 是依赖或生成产物。修改对应源码、配置或生成脚本，不将这些目录当作业务源码修改或提交。
-- 完整打包必须在根目录运行 `npm run dist`；`npm run build` 不构建引擎，`npm run dist -w desktop` 只调用 Electron 打包。版本、产物与许可核验见打包技能和 README，不能把已有产物当作本次完整构建证据。
+- `.tools`、`.local-data` 是工具与开发资料；`node_modules`、`desktop/dist`、`desktop/src-tauri/target`、`engine/target`、`release` 是依赖或生成产物。修改对应源码、配置或生成脚本，不将这些目录当作业务源码修改或提交。
+- 完整打包必须在根目录运行 `npm run dist`；`npm run build` 不构建引擎，单独调用桌面工作区打包命令不重新构建引擎、界面、运行时或许可材料。版本、产物与许可核验见打包技能和 README，不能把已有产物当作本次完整构建证据。普通构建可无更新签名；正式发布必须生成并核验 Tauri 更新签名。
 
 ## 4. 架构与数据安全硬约束
 
-- 保持渲染进程 `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`，通过限定 preload／IPC 访问主进程。生产加载本机资源、禁止新窗口；生产客户端与 Java 引擎不启动 HTTP 服务。
+- Tauri 渲染进程仅通过受限命令和事件访问 Rust 宿主；命令按允许方法、可信窗口与参数类型校验，不暴露通用文件系统、进程、任意 URL 或可执行 SQL 接口。生产加载本机资源、禁止新窗口；生产客户端与 Java 引擎不启动 HTTP 服务。旧 Electron 的 `contextIsolation`、`nodeIntegration`、`sandbox` 要求只用于历史实现，不能代替 Tauri 的权限边界。
 - Java stdin/stdout 使用 UTF-8 单行 JSON，请求响应按 `id` 关联，stdout 只输出协议消息，日志写 stderr；并发输出完整，中文编码正确。通信展示的精确数值转换不能改写归档、摘要或 SQL。
-- 密码由 Electron 主进程使用 Windows 系统加密保存，请求内部传递凭据；查询、计划和配置导出不得包含明文密码，备份不迁移密码材料。
+- 密码由 Tauri Rust 宿主使用 Windows 系统加密保存，请求内部传递凭据；查询、计划和配置导出不得包含明文密码，备份不迁移密码材料。
 - 先确定所选范围再读取结构与数据，同一份源快照供各目标复用。只执行引擎保存的计划与已选变更，不接受渲染进程提供的可执行 SQL，不写入未选范围。
 - 保留计划的目标连接绑定；连接配置变化后拒绝失效计划。执行、核验和回滚使用已校验配置，保留执行前状态复验、锁保护、本地恢复资料和摘要核验。
 - 新执行不在目标数据库创建辅助备份、收据或执行后快照对象。删除字段／改字段定义的原值资料在执行前锁内读取，先持久化到记录与本地档案；旧记录的目标库辅助对象按兼容逻辑继续使用，不自动清理。
@@ -83,8 +83,8 @@ DBAligner 是按工作区组织的 MySQL / PostgreSQL 结构与基础数据同�
 - 比较、执行、归档或回滚变更必须运行 MySQL 5.7.44／8.0.45／8.4.8 三版本隔离真库回归，不用模拟对象替代；命令和前置条件见[验证技能](.agents/skills/verification/SKILL.md)。
 - MySQL 真库测试仅使用 `.tools/mysql-test` 内绑定 `127.0.0.1` 的隔离实例，不注册服务，只创建和清理自己的 `ds_it_*` 数据库。保留 SSL 回归所需 OpenSSL 检查，不提交随机凭据。
 - PostgreSQL 真库使用 `.tools/postgresql-test` 内绑定 `127.0.0.1` 的隔离 17.x 实例及 `ds_it_*` 数据库，不注册服务，不访问用户实例；新增适配器必须验证比较、执行、核验及恢复，命令见 README。
-- 浏览器 UI 验收先构建前端与 Electron，桌面验收还需可用引擎构建；打包客户端测试先完成根目录 `npm run dist`。原生测试使用独立资料目录，不能替代干净 Windows 安装验收，发布前完成贡献说明要求的安装验收。
+- 浏览器 UI 验收先构建前端，Tauri 原生桌面验收还需可用宿主与引擎构建；旧 `qa:desktop` Electron 脚本及报告不能证明 Tauri 通过。打包客户端测试先完成根目录 `npm run dist`。原生测试使用独立资料目录，不能替代干净 Windows 安装验收，发布前完成贡献说明要求的安装验收。
 - UI 变更更新截图和 [design-qa.md](design-qa.md)；协议、支持范围或业务交互变化更新对应文档。报告实际命令、环境、结果、跳过项和限制，不以历史结果或虚构预览声称本次真实执行通过。
 - 添加依赖时更新锁文件和[第三方说明](THIRD_PARTY_NOTICES.md)，运行 `npm run licenses`。MariaDB Connector/J 保持独立、未修改 JAR，并保留匹配源码与 LGPL 材料；Java 运行时保留法律文件及对应源码地址。
-- 项目代码采用 [Apache-2.0](LICENSE)，第三方保留来源与许可。完整无需安装分发保留 `win-unpacked` 全部资源，不能仅分发 EXE；代码签名和远程发布由维护者配置。
+- 项目代码采用 [Apache-2.0](LICENSE)，第三方保留来源与许可。完整无需安装分发必须保留 Tauri 主程序、Java 引擎、运行时和许可等全部资源，不能仅分发 EXE；Tauri 更新签名为正式发布必需，Windows 代码签名由维护者另行配置。
 - 不提交真实会话、凭据、私钥、SQL 档案、SQLite、本地资料、测试工具资料、依赖或安装包；生产问题报告脱敏 SQL、数据库名与日志。疑似数据丢失先保留原记录和恢复资料，不反复执行掩盖未知状态。

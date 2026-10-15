@@ -38,4 +38,6 @@ $taskSource=@{version=$taskVersion;sourceUrl="https://api.adoptium.net/v3/binary
 [IO.File]::WriteAllText("$taskLicense/runtime-source.json",($taskSource|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
 node "$PSScriptRoot/npm-licenses.mjs"
 if ($LASTEXITCODE -ne 0) { throw 'Dependency notice generation failed' }
+node "$PSScriptRoot/rust-licenses.mjs"
+if ($LASTEXITCODE -ne 0) { throw 'Rust dependency notice generation failed' }
 Write-Output 'Third-party notices, source driver and inventory prepared'

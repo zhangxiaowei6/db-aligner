@@ -25,7 +25,7 @@ export async function recordConfirmationQA(
       await page.addInitScript({
         content: `${fixture.outputFiles[0].text}
         window.rollbackSubmissions = 0;
-        window.dbAligner = {
+        window.__DBALIGNER_PREVIEW_BRIDGE__ = {
           ...RecordFixture.previewBridge,
           async invoke(method, params) {
             if (method === 'rollback.execute') window.rollbackSubmissions++;
@@ -82,7 +82,10 @@ export async function recordConfirmationQA(
       await page.getByRole('button', { name: '回滚预览', exact: true }).click();
       await page.getByRole('heading', { name: '回滚预览', exact: true }).waitFor();
       await page.getByRole('button', { name: '执行所选回滚', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: '执行回滚', exact: true });
+      const dialog = page.getByRole('dialog', {
+        name: '模拟恢复（只修改内存示例）',
+        exact: true,
+      });
       await dialog.waitFor();
       await modalSettled(page);
       assert(

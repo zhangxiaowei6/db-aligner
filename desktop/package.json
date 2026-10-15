@@ -1,105 +1,41 @@
 {
   "name": "db-aligner-desktop",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "desktop": "npm run build:electron && node scripts/dev.mjs",
-    "build:electron": "esbuild electron/main.ts --bundle --platform=node --external:electron --external:electron-updater --outfile=dist-electron/main.cjs && esbuild electron/preload.ts --bundle --platform=node --external:electron --outfile=dist-electron/preload.cjs",
-    "build": "tsc --noEmit && vite build && npm run build:electron",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "desktop": "powershell -ExecutionPolicy Bypass -File ../scripts/tauri.ps1 dev",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run --testTimeout=15000",
     "qa:ui": "node scripts/ui-qa.mjs",
     "qa:tree": "node scripts/tree-qa.mjs",
-    "qa:desktop": "node scripts/ui-qa.mjs --desktop",
-    "dist": "electron-builder --win nsis --x64 --publish never"
+    "qa:desktop": "node scripts/native-qa.mjs",
+    "dist": "powershell -ExecutionPolicy Bypass -File ../scripts/tauri.ps1 build",
+    "dist:unsigned": "powershell -ExecutionPolicy Bypass -File ../scripts/tauri.ps1 build-unsigned"
   },
   "dependencies": {
     "@ant-design/icons": "6.3.4",
+    "@tauri-apps/api": "2.12.2",
     "antd": "6.6.5",
-    "electron-updater": "6.8.9",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "2.12.2",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "5.2.0",
-    "electron": "44.7.0",
-    "electron-builder": "26.15.3",
     "esbuild": "^0.25.12",
     "jsdom": "^27.0.0",
     "playwright": "1.62.1",
     "typescript": "^5.9.3",
     "vite": "^7.2.2",
     "vitest": "^3.2.4"
-  },
-  "build": {
-    "appId": "io.dbaligner.desktop",
-    "productName": "DBAligner",
-    "directories": {
-      "output": "../release"
-    },
-    "files": [
-      "dist/**",
-      "dist-electron/**"
-    ],
-    "extraResources": [
-      {
-        "from": "build/icon.png",
-        "to": "app-icon.png"
-      },
-      {
-        "from": "../engine/target/engine.jar",
-        "to": "engine/engine.jar"
-      },
-      {
-        "from": "../engine/target/lib",
-        "to": "engine/lib"
-      },
-      {
-        "from": "../.tools/runtime",
-        "to": "runtime"
-      },
-      {
-        "from": "../THIRD_PARTY_NOTICES.md",
-        "to": "THIRD_PARTY_NOTICES.md"
-      },
-      {
-        "from": "../licenses",
-        "to": "licenses"
-      },
-      {
-        "from": "../LICENSE",
-        "to": "LICENSE"
-      },
-      {
-        "from": "../NOTICE",
-        "to": "NOTICE"
-      }
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico",
-      "signExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": false,
-      "license": "../LICENSE"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "zhangxiaowei6",
-      "repo": "db-aligner",
-      "releaseType": "draft"
-    }
   },
   "description": "DBAligner desktop tool for auditable MySQL and PostgreSQL schema and reference data alignment",
   "author": "DBAligner contributors",

@@ -1,6 +1,5 @@
 node_modules/
 desktop/dist/
-desktop/dist-electron/
 engine/target/
 .tools/
 .local-data/

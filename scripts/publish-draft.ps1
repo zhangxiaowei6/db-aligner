@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $taskVersion = (Get-Content -Raw -Encoding UTF8 -LiteralPath 'desktop/package.json' | ConvertFrom-Json).version
 if ($env:RELEASE_TAG -ne "v$taskVersion" -or $taskVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release tag' }
 $taskNotes = 'release/RELEASE_NOTES.md'
-$taskAttachmentNames = @("DBAligner-Setup-$taskVersion.exe", "DBAligner-Setup-$taskVersion.exe.blockmap", 'latest.yml', "DBAligner-$taskVersion-win-x64.zip", 'RELEASE_NOTES.md')
+$taskAttachmentNames = @("DBAligner-Setup-$taskVersion-win-x64.exe", "DBAligner-Setup-$taskVersion-win-x64.exe.sig", 'latest.json', "DBAligner-$taskVersion-win-x64.zip", 'RELEASE_NOTES.md')
 $taskFiles = @($taskAttachmentNames | ForEach-Object { "release/$_" }) + @('release/SHA256SUMS.txt')
 foreach ($taskFile in $taskFiles) { if (!(Test-Path -LiteralPath $taskFile)) { throw "Missing release attachment: $taskFile" } }
 $taskVerifiedNames = @()

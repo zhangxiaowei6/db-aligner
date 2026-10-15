@@ -38,7 +38,6 @@ import {
 import { DiffPage, RollbackPage, ScopePage } from './pages/Sync';
 import { HistoryPage, RecordDrawers, RecordPage, TablePage } from './pages/Records';
 import { ExportPage, SettingsPage } from './pages/SettingsExport';
-import appLogo from '../build/icon.png';
 import { CompareConfirmation } from './components/CompareConfirmation';
 import { CompareProgressPanel } from './components/CompareProgress';
 import { ConnectionOrganizationDialogs } from './components/ConnectionOrganization';
@@ -54,6 +53,7 @@ import {
 } from './connection-organization';
 
 function Shell() {
+  const showPreviewBanner = preview && !('__TAURI_INTERNALS__' in window);
   const [sidebarWidth, setSidebarWidth] = useState(() => (window.innerWidth <= 1300 ? 256 : 280));
   const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
   const [selectedTreeKeys, setSelectedTreeKeys] = useState<Key[]>([]);
@@ -355,18 +355,16 @@ function Shell() {
       break;
   }
   return (
-    <div className="app-shell" style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}>
-      <header className={`titlebar ${preview ? 'preview-titlebar' : ''}`}>
-        <div className="titlebar-content">
-          <img className="brand-icon" src={appLogo} alt="" />
-          <span>DBAligner</span>
-          {preview && (
-            <span className="preview-label">
-              浏览器交互预览 · 所有驱动安装、同步与恢复均为内存模拟
-            </span>
-          )}
-        </div>
-      </header>
+    <div
+      className={`app-shell${showPreviewBanner ? ' preview-shell' : ''}`}
+      style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
+    >
+      {showPreviewBanner && (
+        <header className="preview-banner">
+          <span className="preview-banner-dot" aria-hidden="true" />
+          浏览器交互预览 · 所有驱动安装、同步与恢复均为内存模拟
+        </header>
+      )}
       <nav className="activity-rail" aria-label="功能导航">
         <Menu
           className="activity-menu"
@@ -687,6 +685,7 @@ function Shell() {
           className={`page-scroll${m.page === 'export' ? ' export-page-scroll' : (m.page === 'diff' && m.plan) || (m.page === 'rollback' && m.rollback) ? ' diff-page-scroll' : ''}`}
         >
           <Breadcrumb
+            key={`breadcrumb-${m.page}`}
             items={
               m.page === 'scope' || m.page === 'diff'
                 ? [
@@ -715,7 +714,7 @@ function Shell() {
                   ]
             }
           />
-          <div className="page-heading">
+          <div className="page-heading" key={`heading-${m.page}`}>
             <div>
               <h1>{title}</h1>
               {m.page === 'settings' && <p className="hint">本地保存配置、同步记录与恢复资料。</p>}

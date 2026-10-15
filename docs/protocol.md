@@ -2,17 +2,17 @@
 
 ## 客户端更新
 
-`updates.get`、`updates.check`、`updates.download`、`updates.install` 由 Electron 主进程处理，参数必须为空对象；沿用可信发送方验证，不接收更新 URL、文件路径、Token 或命令。preload 沿用限定 invoke／事件桥接，Java 不负责下载软件。
+`updates.get`、`updates.check`、`updates.download`、`updates.install` 由 Rust 宿主处理，参数必须为空对象；沿用可信发送方验证，不接收更新 URL、文件路径、Token 或命令。前端使用限定命令／事件桥接，Java 不负责下载软件。
 
 返回 `UpdateState`：`version` 为客户端实际版本，`enabled` 表示当前运行方式支持更新，`revision` 单调递增，`status` 为 `disabled | idle | checking | current | available | downloading | downloaded | installing | error`，另有 `message`、可选 `nextVersion` 和 `percent`。主进程通过 `{event: 'update-state', state}` 广播状态，前端忽略旧 revision 并在卸载时取消订阅。重复检查和下载复用同一 Promise。
 
 只检查更高的正式版本；下载与安装均需用户操作，普通退出不安装。网络／下载／校验失败返回可重试状态，不泄露底层 URL、请求头或凭据。安装准备拒绝时保留已下载状态；安装器错误恢复引擎后重新检查。浏览器预览仅模拟版本和下载状态，安装入口明确拒绝。
 
-内部 `engine.prepareUpdate` 原子尝试取得请求独占锁，处理中请求、异步比较／取消和同步／排队任务存在时拒绝；通过后返回 `{prepared: true}` 并拒绝后续业务请求。`engine.resumeUpdate` 返回 `{prepared: false}` 并恢复请求。这两个接口只由主进程内部调用，不能经渲染进程 invoke 转发。同步回滚、核验、备份等请求持有共享请求锁直至结束，不能与更新准备同时通过。
+内部 `engine.prepareUpdate` 原子尝试取得请求独占锁，处理中请求、异步比较／取消和同步／排队任务存在时拒绝；通过后返回 `{prepared: true}` 并拒绝后续业务请求。`engine.resumeUpdate` 返回 `{prepared: false}` 并恢复请求。这两个接口只由宿主内部调用，不能经渲染进程 invoke 转发。同步回滚、核验、备份等请求持有共享请求锁直至结束，不能与更新准备同时通过。
 
-主进程先冻结业务请求并拒绝有未完成或超时结果不明的请求，再调用内部准备接口。确认通过后关闭引擎 stdin，等待正常退出，不使用强杀回退；失败则恢复引擎和请求入口，恢复失败保持冻结并提示重启。协议仍为 v1；`ping.version` 改为 Maven 生成的构建版本。
+宿主先冻结业务请求并拒绝有未完成或超时结果不明的请求，再调用内部准备接口。确认通过后关闭引擎 stdin，等待正常退出，不使用强杀回退；失败则恢复引擎和请求入口，恢复失败保持冻结并提示重启。协议仍为 v1；`ping.version` 改为 Maven 生成的构建版本。
 
-DBAligner 渲染进程通过 `window.dbAligner` 使用桥接，主进程通道为 `dbaligner:invoke`、`dbaligner:event` 和 `dbaligner:window`。引擎启动入口为 `io.dbaligner.EngineMain`，资料目录由 `DB_ALIGNER_HOME` 指定。配置导出标识为 `dbaligner-config-v1`，脚本包标识为 `dbaligner-script-package-v1`；改名前的配置格式标识不再作为导入入口，请在本版本重新配置或导出。
+DBAligner 渲染进程通过 `desktop/src/tauri-bridge.ts` 使用受限桥接，宿主命令为 `dbaligner_invoke`、`dbaligner_window`，事件为 `dbaligner:event`。引擎启动入口为 `io.dbaligner.EngineMain`，资料目录由 `DB_ALIGNER_HOME` 指定。配置导出标识为 `dbaligner-config-v1`，脚本包标识为 `dbaligner-script-package-v1`；改名前的配置格式标识不再作为导入入口，请在本版本重新配置或导出。
 
 所有消息为 UTF-8 单行 JSON，以换行分隔。不能在 stdout 输出日志。Java 启动发出 ready 事件；标准请求响应按 `id` 关联，长任务通过事件与记录详情追踪。
 
@@ -21,7 +21,7 @@ DBAligner 渲染进程通过 `window.dbAligner` 使用桥接，主进程通道�
 {"id":"request-1","result":[{"name":"sys_dict","comment":"系统字典"}]}
 ```
 
-失败响应含 `error:{code,message}`，成功响应含 `result`。事件含 `event`，任务事件关联 recordId / target / changeId。具体字段以 `EngineMain.java` 与 `Model.java` 为准。协议输入仅来自受限 Electron 主进程；内部 `$secrets` 不能通过渲染查询取回。
+失败响应含 `error:{code,message}`，成功响应含 `result`。事件含 `event`，任务事件关联 recordId / target / changeId。具体字段以 `EngineMain.java` 与 `Model.java` 为准。协议输入仅来自受限 Rust 宿主；内部 `$secrets` 不能通过渲染查询取回。
 
 面向界面的输出将超过 JavaScript 安全整数范围的 BIGINT 和浮点 / DECIMAL 数值转换为精确文本，小整数、端口、批次等仍为 JSON 数字。此转换仅用于通信展示，不改写原始计划、归档数值、比较摘要或实际 SQL。
 
@@ -31,7 +31,7 @@ DBAligner 渲染进程通过 `window.dbAligner` 使用桥接，主进程通道�
 | `entity.save`, `entity.delete`                                                                  | 工作区、连接、模板、设置                                                             |
 | `connectionGroups.save`, `connectionGroups.delete`, `connectionGroups.move`, `connections.move` | 分组命名、删除空分组、同级分组排序和连接移动；本地配置事务保存                       |
 | `connections.test`, `databases.list`, `tables.list`, `table.get`                                | 真实 JDBC 与元数据                                                                   |
-| `imports.parse`                                                                                 | 三种会话格式；主进程截留密码后返回解析结果                                           |
+| `imports.parse`                                                                                 | 三种会话格式；宿主截留密码后返回解析结果                                             |
 | `sync.compare`                                                                                  | `workspaceId`, `source`, `targets`, `tables` → `SyncPlan`                            |
 | `sync.compare.start`                                                                            | 同样的比较范围，可选客户端 UUID `compareId` → `{compareId}`；注册后后台执行          |
 | `sync.compare.get`                                                                              | `compareId` → `{compareId,status,progress,error,plan?}`；仅完成时提供计划            |
@@ -55,29 +55,29 @@ DBAligner 渲染进程通过 `window.dbAligner` 使用桥接，主进程通道�
 
 `compare-progress` 事件带 `compareId` 和 `progress:{ref,table,phase,completed,total,rows}`，阶段和终态立即发送，行数更新最多每 200ms 一次；终态事件增加 `status,error`，不携带完整计划。`total` 为已选表数 ×（1 + 目标库数），表示源表读取和各目标表比较的处理单元，不代表行数或耗时比例。前端每秒查询状态兜底，只接收当前任务事件；控制接口通信超时为 15 秒，超时后请求取消并继续核验。取消确认前不会解锁范围。
 
-`sync.compare` 与 `sync.compare.start` 沿用 `TableChoice.structure` / `data` 布尔字段，但新比较中所有已选表只能启用同一种类型：任一表同时启用两种或不同表混合两种都会拒绝比较。数据模式下目标缺表自动跳过，`TargetPlan.skippedTables` 保存该目标跳过的表名，不产生 `BLOCKED`、DDL 或 DML 变更；旧计划缺省该字段按空数组展示，原有执行、核验和恢复证据仍兼容读取。Electron 允许方法与 preload 桥接不变，新增字段为响应资料。旧混合模板仍可读取，应用时用户选择单一类型再重新比较。
+`sync.compare` 与 `sync.compare.start` 沿用 `TableChoice.structure` / `data` 布尔字段，但新比较中所有已选表只能启用同一种类型：任一表同时启用两种或不同表混合两种都会拒绝比较。数据模式下目标缺表自动跳过，`TargetPlan.skippedTables` 保存该目标跳过的表名，不产生 `BLOCKED`、DDL 或 DML 变更；旧计划缺省该字段按空数组展示，原有执行、核验和恢复证据仍兼容读取。宿主允许方法与前端桥接保持同一契约，新增字段为响应资料。旧混合模板仍可读取，应用时用户选择单一类型再重新比较。
 
 `TableChoice.structureOptions` 可选，包含全部七个布尔值：`columns`、`columnOrder`、`tableComment`、`columnComments`、`indexes`、`foreignKeys`、`tableCollation`。缺省或 null 兼容为全选；提供对象时缺少布尔项拒绝请求；开启结构但细项全空拒绝比较。`columns` 包含字段增删和定义，`tableCollation` 只控制表默认字符集/排序规则，普通/唯一索引不自动同步主键变更。部分结构不能创建缺失表，也不会自动补入未选字段依赖。
 
 字段变更 `after.column` 保存实际计划定义，`MODIFY_COLUMN.changedParts` 标记所改的 `columns`、`columnOrder`、`columnComments`。只改注释保留目标其他属性，默认选中；字段定义或顺序仍受风险限制。新增字段在未选顺序时追加，未选字段注释时不带源注释。核验、界面与回滚依据实际计划定义，旧记录没有该字段时兼容使用源定义。
 
-Electron 另外提供原生选文件、选目录、导出路径、打开资料目录、复制和窗口操作。文件导入使用短期 token 保持内容在主进程；桥接只允许已定义的方法。所有界面参数在发送前转换为普通 JSON 对象，编辑草稿与已保存模型分别持有独立副本。
+Rust 宿主另外提供原生选文件、选目录、导出路径、打开资料目录、复制和窗口操作。文件导入使用短期 token 保持内容在主进程；桥接只允许已定义的方法。所有界面参数在发送前转换为普通 JSON 对象，编辑草稿与已保存模型分别持有独立副本。
 
-外观接口由 Electron 主进程处理，不进入 Java 引擎：`appearance.get` 返回 `{themeMode,resolvedTheme}`；`appearance.set` 接受 `themeMode: light | dark | system`，原子保存本机偏好并返回生效外观。系统外观变化发送 `{event: appearance-changed, appearance}`。窗口关闭发送 `window-close-request`；渲染进程检查任务并响应 `close-confirmed` 或 `close-cancelled`，重复请求只显示一次确认。`renderer-ready` 在关闭监听订阅后发送；渲染进程未就绪时使用原生关闭确认。
+外观接口由 Rust 宿主处理，不进入 Java 引擎：`appearance.get` 返回 `{themeMode,resolvedTheme}`；`appearance.set` 接受 `themeMode: light | dark | system`，原子保存本机偏好并返回生效外观。系统外观变化发送 `{event: appearance-changed, appearance}`。窗口关闭发送 `window-close-request`；渲染进程检查任务并响应 `close-confirmed` 或 `close-cancelled`，重复请求只显示一次确认。`renderer-ready` 在关闭监听订阅后发送；渲染进程未就绪时使用原生关闭确认。
 
 `connectionGroups.save` 接受可选 `id` 和必填 `name`，去除首尾空格并校验非空及重名；编辑时按原名称关联更新连接，新建追加到末尾，返回 `{id,name,sortOrder}`。`connectionGroups.move` 接受 `groupId`、`anchorGroupId`、`placement: before | after`，校验两个已存在且不同的同级分组，在一个 SQLite 事务中重排并保存连续 `sortOrder`，返回 `{ok:true}`；不改动连接、凭据或工作区关联。`connections.move` 接受 `connectionId`、目标 `groupId`、`placement: before | after | last`；前后插入还需 `anchorConnectionId`，锚点必须位于目标分组且不能是自身。分组内连接顺序及跨组移动均在事务中保存。`state.load` 的 `connectionGroups` 按 `sortOrder` 返回；客户端数据库选项复用分组和组内连接顺序。配置导出／导入继续兼容缺少排序字段的旧配置。
 
 `connectionGroups.delete` 接受 `{groupId:string}`，成功返回 `{ok:true}`。空 ID、不存在的分组和非空分组拒绝删除。
 引擎在同一 SQLite 事务中按现有名称归属规则检查所有工作区的连接、删除空分组并连续重排剩余 `sortOrder`。
 不会删除或移动连接，不修改凭据、工作区关联与历史记录。默认名称“数据库连接”也遵循空分组规则；
-后续保存连接仍按既有逻辑自动创建缺失分组。preload 沿用现有 `invoke`，主进程将该方法列入允许清单。
+后续保存连接仍按既有逻辑自动创建缺失分组。前端沿用 `invoke` 语义，Rust 宿主将该方法列入允许清单。
 
 ## 多数据库与按需驱动
 
 连接配置新增可选 `databaseType: mysql | postgresql`、`driverId`、`driverVersion` 与
 `initialDatabase`。历史连接缺省为 MySQL；PostgreSQL 的初始数据库用于枚举数据库及连接测试。
 PostgreSQL SSL 使用明确的 `verify-full` 或 `disable`；启用 SSL 需要 CA PEM，客户端证书使用
-PKCS#12（别名 user），证书密码仍由主进程内部注入。配置导出清除证书路径与凭据。
+PKCS#12（别名 user），证书密码仍由宿主内部注入。配置导出清除证书路径与凭据。
 
 `DbRef` 新增可选 `schema`；MySQL 不接受独立 schema。PostgreSQL 比较、表读取、执行及恢复要求
 明确的数据库和非系统 schema，SQL 使用 schema 限定名。命名空间标识保留旧 MySQL 的
@@ -86,15 +86,15 @@ PKCS#12（别名 user），证书密码仍由主进程内部注入。配置导�
 
 | 接口                    | 归属与参数                  | 返回                                                     |
 | ----------------------- | --------------------------- | -------------------------------------------------------- |
-| `drivers.list`          | Electron，空对象            | 驱动状态数组                                             |
-| `drivers.get`           | Electron，`{driverId}`      | 当前驱动状态                                             |
-| `drivers.install`       | Electron，`{driverId}`      | 安装终态；重复安装复用 Promise                           |
-| `drivers.cancel`        | Electron，`{driverId}`      | 当前状态；取消结果由事件或 get 核验                      |
+| `drivers.list`          | Rust 宿主，空对象           | 驱动状态数组                                             |
+| `drivers.get`           | Rust 宿主，`{driverId}`     | 当前驱动状态                                             |
+| `drivers.install`       | Rust 宿主，`{driverId}`     | 安装终态；重复安装复用 Promise                           |
+| `drivers.cancel`        | Rust 宿主，`{driverId}`     | 当前状态；取消结果由事件或 get 核验                      |
 | `schemas.list`          | Java，`{ref}`（数据库层级） | 可访问的非系统 schema 名称                               |
 | `database.capabilities` | Java，`{ref}`               | 类型、服务版本、适配器版本、结构／数据／恢复能力及受限项 |
 
 驱动状态包含 `id,databaseType,name,version,builtin,license,licenseUrl,status,revision,bytes,message`。
-`status` 为 `missing | downloading | installed | error | cancelled`；主进程广播
+`status` 为 `missing | downloading | installed | error | cancelled`；宿主广播
 `{event:'driver-state',state}`，界面拒绝旧 revision 和旧编辑会话响应。
 下载地址、类名、依赖文件及 SHA-256 只读取应用随附目录；渲染进程不能传入 URL、路径或类名。
 
@@ -108,4 +108,4 @@ PKCS#12（别名 user），证书密码仍由主进程内部注入。配置导�
 
 浏览器预览的驱动安装、同步、外部声明及恢复只修改内存虚构资料，不连接数据库、下载 JAR 或
 持久化。模拟执行确认和记录明确标识“虚构”，刷新页面重置。预览额外的网络失败参数只由内存
-桥接处理，真实 Electron 驱动接口拒绝该参数。
+桥接处理，真实原生驱动接口拒绝该参数。

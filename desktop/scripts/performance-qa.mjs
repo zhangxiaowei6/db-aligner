@@ -41,7 +41,7 @@ export async function performanceQA(browser, { repo, report, observe, shot, foot
           sql: 'ALTER TABLE qa_table ADD COLUMN qa_column_' + index + ' INT;'
         }));
         window.performanceFixture = { tables: 298, bytes: 0, saved: '', source: '', delivered: 0, calls: [], sql: '' };
-        window.dbAligner = {
+        window.__DBALIGNER_PREVIEW_BRIDGE__ = {
           ...PerformanceFixture.previewBridge,
           async invoke(method, params) {
             const fixture = window.performanceFixture;
@@ -183,6 +183,16 @@ export async function performanceQA(browser, { repo, report, observe, shot, foot
         cycleHeaps,
       });
       await page.getByRole('menuitem', { name: /新建同步/ }).click();
+      await page.getByRole('combobox', { name: '来源数据库', exact: true }).click();
+      await page
+        .locator('.ant-select-dropdown:visible .ant-select-item-option')
+        .filter({ hasText: '测试服务器 · MySQL / shop_test' })
+        .click();
+      await page.getByRole('checkbox', { name: 'qa_table_0 表结构', exact: true }).waitFor();
+      const targetPicker = page.getByRole('combobox', { name: '目标数据库', exact: true });
+      await targetPicker.fill('shop_a');
+      await targetPicker.press('Enter');
+      await page.keyboard.press('Escape');
       await page.getByRole('checkbox', { name: 'qa_table_0 表结构', exact: true }).check();
       await page.getByRole('button', { name: '开始比较', exact: true }).click();
       await page.getByRole('button', { name: '确认并开始比较', exact: true }).click();

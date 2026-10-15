@@ -1,27 +1,28 @@
 {
   "name": "db-aligner",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "private": true,
   "workspaces": [
     "desktop"
   ],
   "scripts": {
     "dev": "npm run dev -w desktop",
-    "desktop": "npm run desktop -w desktop",
+    "desktop": "npm run engine:build && npm run desktop -w desktop",
     "build": "npm run build -w desktop",
     "test": "npm run test -w desktop && npm run engine:test",
     "typecheck": "npm run typecheck -w desktop",
     "engine:build": "powershell -ExecutionPolicy Bypass -File scripts/mvn.ps1 package",
     "engine:test": "powershell -ExecutionPolicy Bypass -File scripts/mvn.ps1 test",
     "bootstrap": "powershell -ExecutionPolicy Bypass -File scripts/bootstrap.ps1",
-    "dist": "npm run engine:build && npm run build && npm run runtime && npm run licenses && npm run dist -w desktop",
+    "dist": "npm run engine:build && npm run build && npm run runtime && npm run licenses && npm run release:clean && npm run dist -w desktop && npm run release:files",
+    "dist:unsigned": "npm run engine:build && npm run build && npm run runtime && npm run licenses && npm run release:clean && npm run dist:unsigned -w desktop && npm run release:files -- -Unsigned",
     "runtime": "powershell -ExecutionPolicy Bypass -File scripts/runtime.ps1",
     "licenses": "powershell -ExecutionPolicy Bypass -File scripts/licenses.ps1",
-    "format": "prettier --write desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md",
-    "format:check": "prettier --check desktop/src desktop/electron desktop/scripts *.json *.md docs/*.md",
+    "format": "prettier --write desktop/src desktop/scripts *.json *.md docs/*.md",
+    "format:check": "prettier --check desktop/src desktop/scripts *.json *.md docs/*.md",
     "release:check": "node scripts/check-release.mjs",
-    "release:files": "powershell -ExecutionPolicy Bypass -File scripts/release-files.ps1",
-    "postinstall": "node scripts/prepare-electron.mjs"
+    "release:clean": "powershell -ExecutionPolicy Bypass -File scripts/clean-release.ps1",
+    "release:files": "powershell -ExecutionPolicy Bypass -File scripts/release-files.ps1"
   },
   "license": "Apache-2.0",
   "devDependencies": {

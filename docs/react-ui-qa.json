@@ -59,9 +59,9 @@
       "onTop": true,
       "bg": "rgb(255, 255, 255)",
       "rect": {
-        "x": 848.472900390625,
+        "x": 848.4815063476562,
         "y": 0,
-        "width": 640,
+        "width": 639.9999389648438,
         "height": 1056
       }
     },
@@ -168,9 +168,9 @@
       "onTop": true,
       "bg": "rgb(31, 31, 31)",
       "rect": {
-        "x": 848.4739990234375,
+        "x": 848.4750366210938,
         "y": 0,
-        "width": 640,
+        "width": 640.0000610351562,
         "height": 1056
       }
     },
@@ -605,6 +605,10 @@
       "passed": true
     },
     {
+      "check": "reduced-motion-modal-twice-and-page-navigation-animation",
+      "passed": true
+    },
+    {
       "check": "context-menu-icons-group",
       "theme": "light",
       "passed": true
@@ -628,12 +632,12 @@
       "check": "connection-actions-testing",
       "theme": "light",
       "tops": [
-        263.796875,
-        263.796875,
-        263.796875
+        255.796875,
+        255.796875,
+        255.796875
       ],
-      "bottom": 287.796875,
-      "scrollBottom": 287.796875,
+      "bottom": 279.796875,
+      "scrollBottom": 279.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -641,12 +645,12 @@
       "check": "connection-actions-success-1488",
       "theme": "light",
       "tops": [
-        263.796875,
-        263.796875,
-        263.796875
+        255.796875,
+        255.796875,
+        255.796875
       ],
-      "bottom": 287.796875,
-      "scrollBottom": 287.796875,
+      "bottom": 279.796875,
+      "scrollBottom": 279.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -654,12 +658,12 @@
       "check": "connection-actions-success-1180",
       "theme": "light",
       "tops": [
-        259.796875,
-        259.796875,
-        259.796875
+        251.796875,
+        251.796875,
+        251.796875
       ],
-      "bottom": 283.796875,
-      "scrollBottom": 283.796875,
+      "bottom": 275.796875,
+      "scrollBottom": 275.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -667,12 +671,12 @@
       "check": "connection-actions-success-900",
       "theme": "light",
       "tops": [
-        279.796875,
-        279.796875,
-        279.796875
+        271.796875,
+        271.796875,
+        271.796875
       ],
-      "bottom": 303.796875,
-      "scrollBottom": 303.796875,
+      "bottom": 295.796875,
+      "scrollBottom": 295.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -680,12 +684,12 @@
       "check": "connection-actions-narrow-column",
       "theme": "light",
       "tops": [
-        279.796875,
-        279.796875,
-        279.796875
+        271.796875,
+        271.796875,
+        271.796875
       ],
-      "bottom": 303.796875,
-      "scrollBottom": 303.796875,
+      "bottom": 295.796875,
+      "scrollBottom": 295.796875,
       "clippedInsideCell": true,
       "overflow": true
     },
@@ -693,12 +697,12 @@
       "check": "connection-actions-failure",
       "theme": "light",
       "tops": [
-        279.796875,
-        279.796875,
-        279.796875
+        271.796875,
+        271.796875,
+        271.796875
       ],
-      "bottom": 303.796875,
-      "scrollBottom": 303.796875,
+      "bottom": 295.796875,
+      "scrollBottom": 295.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -736,12 +740,12 @@
       "check": "connection-actions-testing",
       "theme": "dark",
       "tops": [
-        263.796875,
-        263.796875,
-        263.796875
+        255.796875,
+        255.796875,
+        255.796875
       ],
-      "bottom": 287.796875,
-      "scrollBottom": 287.796875,
+      "bottom": 279.796875,
+      "scrollBottom": 279.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -749,12 +753,12 @@
       "check": "connection-actions-success-1488",
       "theme": "dark",
       "tops": [
-        263.796875,
-        263.796875,
-        263.796875
+        255.796875,
+        255.796875,
+        255.796875
       ],
-      "bottom": 287.796875,
-      "scrollBottom": 287.796875,
+      "bottom": 279.796875,
+      "scrollBottom": 279.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -762,12 +766,12 @@
       "check": "connection-actions-success-1180",
       "theme": "dark",
       "tops": [
-        259.796875,
-        259.796875,
-        259.796875
+        251.796875,
+        251.796875,
+        251.796875
       ],
-      "bottom": 283.796875,
-      "scrollBottom": 283.796875,
+      "bottom": 275.796875,
+      "scrollBottom": 275.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -775,12 +779,12 @@
       "check": "connection-actions-success-900",
       "theme": "dark",
       "tops": [
-        279.796875,
-        279.796875,
-        279.796875
+        271.796875,
+        271.796875,
+        271.796875
       ],
-      "bottom": 303.796875,
-      "scrollBottom": 303.796875,
+      "bottom": 295.796875,
+      "scrollBottom": 295.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -788,12 +792,12 @@
       "check": "connection-actions-narrow-column",
       "theme": "dark",
       "tops": [
-        279.796875,
-        279.796875,
-        279.796875
+        271.796875,
+        271.796875,
+        271.796875
       ],
-      "bottom": 303.796875,
-      "scrollBottom": 303.796875,
+      "bottom": 295.796875,
+      "scrollBottom": 295.796875,
       "clippedInsideCell": true,
       "overflow": true
     },
@@ -801,12 +805,12 @@
       "check": "connection-actions-failure",
       "theme": "dark",
       "tops": [
-        279.796875,
-        279.796875,
-        279.796875
+        271.796875,
+        271.796875,
+        271.796875
       ],
-      "bottom": 303.796875,
-      "scrollBottom": 303.796875,
+      "bottom": 295.796875,
+      "scrollBottom": 295.796875,
       "clippedInsideCell": true,
       "overflow": false
     },
@@ -899,6 +903,5 @@
       "passed": true
     }
   ],
-  "desktop": [],
   "errors": []
 }

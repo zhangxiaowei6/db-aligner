@@ -77,13 +77,13 @@ try {
         content: `${fixture.outputFiles[0].text}
           window.treeTableLoads = 0;
           window.treeRevision = 0;
-          window.dbAligner = {
+          window.__DBALIGNER_PREVIEW_BRIDGE__ = {
             ...TreeFixture.previewBridge,
             invoke(method, params) {
               if (window.treeLoadDelay && ['databases.list', 'tables.list'].includes(method)) {
                 return new Promise(resolve => { window.treeLoadRelease = resolve; }).then(() => {
                   window.treeLoadDelay = false;
-                  return window.dbAligner.invoke(method, params);
+                  return window.__DBALIGNER_PREVIEW_BRIDGE__.invoke(method, params);
                 });
               }
               if (method === 'tables.list') {

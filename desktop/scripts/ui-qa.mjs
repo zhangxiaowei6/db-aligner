@@ -1,8 +1,8 @@
 import { multiDatabaseQA } from './multi-database-qa.mjs';
-/** UI acceptance against the production bundle and an isolated native client.
+/** Browser UI acceptance against the production React bundle.
  * Requires npm run build. Uses a local Chrome/Edge installation (or Playwright's browser).
  * Never reads the normal client's database or connects to a database server. */
-import { chromium, _electron as electron } from 'playwright';
+import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { promises as fs, existsSync } from 'node:fs';
@@ -15,10 +15,12 @@ import { updatesQA } from './updates-qa.mjs';
 const require = createRequire(import.meta.url);
 const desktop = path.resolve(import.meta.dirname, '..');
 const repo = path.resolve(desktop, '..');
-const screenshots = path.join(repo, 'docs', 'screenshots', 'react-ant-design');
-const report = { browser: [], desktop: [], errors: [] };
+const output = process.env.DB_ALIGNER_QA_OUTPUT_DIR;
+const screenshots = output
+  ? path.join(path.resolve(output), 'screenshots')
+  : path.join(repo, 'docs', 'screenshots', 'react-ant-design');
+const report = { browser: [], errors: [] };
 await fs.mkdir(screenshots, { recursive: true });
-const native = process.argv.includes('--desktop');
 const executablePath =
   process.env.DB_ALIGNER_QA_BROWSER ||
   [
@@ -217,7 +219,7 @@ async function longDiffQA(browser, theme) {
         target.before = Object.fromEntries(names.map((name, index) => [name, snapshot(beforeTable, name, index)]));
         plan.targets = [target];
         window.diffFixturePending = 0;
-        window.dbAligner = {
+        window.__DBALIGNER_PREVIEW_BRIDGE__ = {
           ...DiffFixture.previewBridge,
           invoke(method, params) {
             if (method === 'sync.compare.start') return Promise.resolve({ compareId: params.compareId });
@@ -234,11 +236,20 @@ async function longDiffQA(browser, theme) {
     await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
     await page.getByRole('button', { name: '上一步', exact: true }).click();
     await page.getByText('显示 6 / 6 张表', { exact: false }).waitFor();
+    await page
+      .getByRole('status')
+      .filter({ hasText: '正在检查目标库表清单…' })
+      .waitFor({ state: 'hidden' });
     await page.waitForFunction(() => window.diffFixturePending === 0);
     await page.getByRole('button', { name: '开始比较', exact: true }).click();
     await modalSettled(page);
     await page.getByRole('button', { name: '确认并开始比较', exact: true }).click();
     await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page
+      .locator('.page-body')
+      .evaluate((element) =>
+        Promise.all(element.getAnimations().map((animation) => animation.finished)),
+      );
     for (const width of [1488, 1180, 960]) {
       await page.setViewportSize({ width, height: width === 1488 ? 1056 : 760 });
       const list = page.locator('.diff-layout > section');
@@ -253,9 +264,10 @@ async function longDiffQA(browser, theme) {
       const bounds = await inspector.boundingBox();
       const listBounds = await list.boundingBox();
       const footerBounds = await page.locator('#page-footer').boundingBox();
+      const breadcrumbs = await page.locator('.page-scroll > .ant-breadcrumb').count();
       assert(
         bounds.height > 80 && listBounds.height > 80,
-        'both difference panes need usable height',
+        `both difference panes need usable height: inspector=${JSON.stringify(bounds)}, list=${JSON.stringify(listBounds)}, footer=${JSON.stringify(footerBounds)}, breadcrumbs=${breadcrumbs}`,
       );
       assert(bounds.y >= 0 && bounds.y + bounds.height <= footerBounds.y + 1);
       assert.equal(await inspector.evaluate((element) => element.scrollTop), 0);
@@ -465,7 +477,7 @@ async function selectedScopeQA(browser, theme) {
   try {
     await page.addInitScript({
       content: `${fixture.outputFiles[0].text}
-        window.dbAligner = {
+        window.__DBALIGNER_PREVIEW_BRIDGE__ = {
           ...ScopeFixture.previewBridge,
           invoke(method, params) {
             if (method === 'sync.compare') return Promise.resolve(structuredClone(ScopeFixture.previewPlan));
@@ -934,6 +946,52 @@ async function connectionFormQA(browser, theme) {
     report.browser.push({
       check: 'connection-placeholders-ssl-spellcheck-validation-and-empty-group-delete',
       theme,
+      passed: true,
+    });
+  } finally {
+    await context.close();
+  }
+}
+async function reducedMotionModalQA(browser) {
+  const context = await browser.newContext({
+    viewport: { width: 1488, height: 1056 },
+    colorScheme: 'light',
+    reducedMotion: 'reduce',
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    assert(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches));
+    for (let index = 0; index < 2; index++) {
+      await page.getByRole('button', { name: '新建连接', exact: true }).first().click();
+      const dialog = page.getByRole('dialog', { name: '新建连接', exact: true });
+      await dialog.waitFor();
+      await dialog.getByPlaceholder('请输入连接名称，例如：开发环境').fill(`减少动态效果 ${index}`);
+      if (index === 0) await shot(page, 'connection-reduced-motion');
+      await dialog.getByRole('button', { name: /取\s*消/ }).click();
+      await page.locator('.ant-modal-wrap').waitFor({ state: 'detached', timeout: 3000 });
+    }
+    await page.evaluate(() => {
+      window.__pageAnimations = [];
+      document.addEventListener('animationstart', (event) => {
+        if (event.animationName === 'page-enter')
+          window.__pageAnimations.push(String(event.target.className));
+      });
+    });
+    await page.getByRole('menuitem', { name: /同步模板/ }).click();
+    await page.getByRole('heading', { level: 1, name: '同步模板' }).waitFor();
+    await page.waitForFunction(
+      () => window.__pageAnimations.filter((item) => item === 'page-body').length >= 1,
+    );
+    await page.getByRole('menuitem', { name: /同步历史/ }).click();
+    await page.getByRole('heading', { level: 1, name: '同步历史' }).waitFor();
+    await page.waitForFunction(
+      () => window.__pageAnimations.filter((item) => item === 'page-body').length >= 2,
+    );
+    report.browser.push({
+      check: 'reduced-motion-modal-twice-and-page-navigation-animation',
       passed: true,
     });
   } finally {
@@ -1679,6 +1737,10 @@ async function browserQA() {
       for (const theme of ['light', 'dark']) await connectionFormQA(browser, theme);
       return;
     }
+    if (process.argv.includes('--reduced-motion')) {
+      await reducedMotionModalQA(browser);
+      return;
+    }
     if (process.argv.includes('--performance')) {
       await performanceQA(browser, { repo, report, observe, shot, footerCheck });
       return;
@@ -1722,7 +1784,7 @@ async function browserQA() {
       await page.getByText('remark', { exact: true }).first().waitFor();
       assert.equal(await page.title(), 'DBAligner');
       assert(
-        await page.locator('.titlebar-content').getByText('DBAligner', { exact: true }).isVisible(),
+        await page.getByText('浏览器交互预览 · 所有驱动安装、同步与恢复均为内存模拟').isVisible(),
       );
       await shot(page, `diff-${mode}`);
       const first = page.getByRole('checkbox', { name: '选择 remark', exact: true });
@@ -2134,6 +2196,7 @@ async function browserQA() {
       await organizationQA(browser, theme);
     }
     for (const theme of ['light', 'dark']) await connectionFormQA(browser, theme);
+    await reducedMotionModalQA(browser);
     for (const theme of ['light', 'dark']) await connectionActionsQA(browser, theme);
     for (const theme of ['light', 'dark']) await refreshAndTemplateQA(browser, theme);
     for (const theme of ['light', 'dark']) await contextFeedbackQA(browser, theme);
@@ -2156,232 +2219,42 @@ async function browserQA() {
     await log.close();
   }
 }
-async function desktopQA() {
-  const root = await fs.mkdtemp(path.join(repo, '.local-data', 'react-native-qa-'));
-  const env = { ...process.env, DB_ALIGNER_HOME: root };
-  delete env.DB_ALIGNER_DEV;
-  delete env.ELECTRON_RUN_AS_NODE;
-  let application;
-  async function launch() {
-    application = await electron.launch({
-      executablePath: process.env.DB_ALIGNER_QA_APP || require('electron'),
-      args: process.env.DB_ALIGNER_QA_APP ? [] : [path.join(desktop, 'dist-electron', 'main.cjs')],
-      env,
-    });
-    const page = await application.firstWindow();
-    observe(page);
-    await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
-    await page.getByText('我的项目', { exact: true }).first().waitFor();
-    assert.equal(await page.title(), 'DBAligner');
-    assert(
-      await page.locator('.titlebar-content').getByText('DBAligner', { exact: true }).isVisible(),
-    );
-    const profile = await application.evaluate(({ app }) => app.getPath('userData'));
-    assert.equal(profile, path.join(root, 'electron-profile'));
-    return page;
-  }
-  try {
-    let page = await launch();
-    assert.equal(
-      await application.evaluate(
-        ({ BrowserWindow }) =>
-          BrowserWindow.getAllWindows()[0].webContents.session.spellCheckerEnabled,
-      ),
-      false,
-    );
-    const deletedGroupId = await page.evaluate(async () => {
-      const group = await window.dbAligner.invoke('connectionGroups.save', { name: 'QA 删除分组' });
-      const result = await window.dbAligner.invoke('connectionGroups.delete', {
-        groupId: group.id,
-      });
-      if (!result.ok) throw new Error('删除分组失败');
-      const state = await window.dbAligner.invoke('state.load');
-      if (state.connectionGroups.some((value) => value.id === group.id))
-        throw new Error('分组仍存在');
-      return group.id;
-    });
-    assert(await page.locator('body').evaluate((element) => !element.spellcheck));
-    report.desktop.push({
-      check: 'global-spellcheck-disabled-and-real-group-delete-ipc',
-      passed: true,
-    });
-    const overlay = await page.evaluate(() => {
-      const controls = navigator.windowControlsOverlay;
-      const area = controls?.getTitlebarAreaRect();
-      return {
-        visible: controls?.visible,
-        area: area && { x: area.x, y: area.y, width: area.width, height: area.height },
-        width: innerWidth,
-        customButtons: !!document.querySelector('.window-actions'),
-      };
-    });
-    assert(
-      overlay.visible && overlay.area.width < overlay.width && !overlay.customButtons,
-      'native window controls overlay missing',
-    );
-    report.desktop.push({ check: 'native-controls', ...overlay });
-    await application.evaluate(
-      ({ BrowserWindow }) =>
-        new Promise((resolve) => {
-          const win = BrowserWindow.getAllWindows()[0];
-          win.once('maximize', () => resolve(true));
-          win.maximize();
-        }),
-    );
-    assert(
-      await application.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].isMaximized(),
-      ),
-    );
-    await application.evaluate(
-      ({ BrowserWindow }) =>
-        new Promise((resolve) => {
-          const win = BrowserWindow.getAllWindows()[0];
-          win.once('unmaximize', () => resolve(true));
-          win.unmaximize();
-        }),
-    );
-    report.desktop.push({ check: 'maximize-restore', passed: true });
-    await application.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].minimize();
-    });
-    assert(
-      await application.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].isMinimized(),
-      ),
-    );
-    await application.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].restore();
-    });
-    report.desktop.push({ check: 'minimize-restore', passed: true });
-    await page.getByRole('menuitem', { name: /设置/ }).click();
-    await page.getByText('深色', { exact: true }).click();
-    await page.locator('[data-theme="dark"]').waitFor();
-    const preference = JSON.parse(
-      await fs.readFile(path.join(root, 'ui-preferences.json'), 'utf8'),
-    );
-    assert.equal(preference.themeMode, 'dark');
-    await shot(page, 'native-settings-dark');
-    console.log('Native QA: first close');
-    const exit = application.waitForEvent('close', { timeout: 15000 });
-    await application.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].close();
-    });
-    await exit;
-    application = undefined;
-    console.log('Native QA: restart');
-    page = await launch();
-    assert(
-      await page.evaluate(async (id) => {
-        const state = await window.dbAligner.invoke('state.load');
-        return !state.connectionGroups.some((value) => value.id === id);
-      }, deletedGroupId),
-    );
-    await page.locator('[data-theme="dark"]').waitFor();
-    report.desktop.push({ check: 'theme-restart-persistence', passed: true });
-    await page.evaluate(async () => {
-      await window.dbAligner.invoke('appearance.set', { themeMode: 'system' });
-    });
-    await application.evaluate(({ nativeTheme }) => {
-      nativeTheme.themeSource = 'dark';
-    });
-    await page.locator('[data-theme="dark"]').waitFor();
-    await application.evaluate(({ nativeTheme }) => {
-      nativeTheme.themeSource = 'light';
-    });
-    await page.locator('[data-theme="light"]').waitFor();
-    report.desktop.push({ check: 'native-theme-events', passed: true });
-    // Insert a status-only fixture into the isolated local store, without starting a job or contacting a server.
-    const { DatabaseSync } = await import('node:sqlite');
-    const db = new DatabaseSync(path.join(root, 'state.sqlite'));
-    db.prepare('INSERT INTO entities(kind,id,json) VALUES(?,?,?)').run(
-      'record',
-      'qa-running-fixture',
-      JSON.stringify({
-        id: 'qa-running-fixture',
-        workspaceId: 'default',
-        status: 'RUNNING',
-        mode: 'EXECUTE_AND_SAVE',
-        createdAt: new Date().toISOString(),
-        remark: 'UI QA status fixture',
-        parentId: '',
-        archivePath: '',
-        selectedIds: [],
-        results: [],
-      }),
-    );
-    db.close();
-    await application.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win.close();
-      win.close();
-    });
-    await page.getByRole('dialog', { name: '关闭客户端', exact: true }).waitFor();
-    assert.equal(await page.getByRole('dialog').count(), 1);
-    await shot(page, 'native-close-confirmation');
-    await page.getByRole('button', { name: /取\s*消/ }).click();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    assert.equal(
-      await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
-      1,
-    );
-    const close = application.waitForEvent('close', { timeout: 15000 });
-    await application.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].close();
-    });
-    await page.getByRole('dialog').waitFor();
-    await page
-      .getByRole('button', { name: /^关\s*闭$/ })
-      .click()
-      .catch((error) => {
-        if (!page.isClosed()) throw error;
-      });
-    await close;
-    application = undefined;
-    report.desktop.push({
-      check: 'running-task-close-cancel-confirm',
-      passed: true,
-      fixture: 'status-only record in isolated local store; no database server or task execution',
-    });
-  } finally {
-    await application?.close();
-  }
-}
 await fs.mkdir(path.join(repo, '.local-data'), { recursive: true });
 try {
-  if (native) await desktopQA();
-  else await browserQA();
+  await browserQA();
   assert.deepEqual(report.errors, [], 'browser console errors');
   console.log(JSON.stringify(report, null, 2));
 } finally {
   await fs.writeFile(
-    path.join(
-      repo,
-      'docs',
-      process.argv.includes('--template-workspace')
-        ? 'template-workspace-ui-qa.json'
-        : native
-          ? 'react-desktop-qa.json'
-          : process.argv.includes('--multi-database')
-            ? 'multi-database-ui-qa.json'
-            : process.argv.includes('--updates')
-              ? 'updates-ui-qa.json'
-              : process.argv.includes('--record-confirmation')
-                ? 'record-confirmation-ui-qa.json'
-                : process.argv.includes('--connection-form')
-                  ? 'connection-form-ui-qa.json'
-                  : process.argv.includes('--performance')
-                    ? 'performance-ui-qa.json'
-                    : process.argv.includes('--tree-organization')
-                      ? 'tree-organization-qa.json'
-                      : process.argv.includes('--context-feedback')
-                        ? 'context-feedback-qa.json'
-                        : process.argv.includes('--sync-modes')
-                          ? 'sync-mode-ui-qa.json'
-                          : process.argv.includes('--diff-scroll')
-                            ? 'diff-scroll-ui-qa.json'
-                            : 'react-ui-qa.json',
-    ),
+    output
+      ? path.join(path.resolve(output), 'ui-qa-report.json')
+      : path.join(
+          repo,
+          'docs',
+          process.argv.includes('--template-workspace')
+            ? 'template-workspace-ui-qa.json'
+            : process.argv.includes('--multi-database')
+              ? 'multi-database-ui-qa.json'
+              : process.argv.includes('--updates')
+                ? 'updates-ui-qa.json'
+                : process.argv.includes('--record-confirmation')
+                  ? 'record-confirmation-ui-qa.json'
+                  : process.argv.includes('--connection-form')
+                    ? 'connection-form-ui-qa.json'
+                    : process.argv.includes('--reduced-motion')
+                      ? 'reduced-motion-ui-qa.json'
+                      : process.argv.includes('--performance')
+                        ? 'performance-ui-qa.json'
+                        : process.argv.includes('--tree-organization')
+                          ? 'tree-organization-qa.json'
+                          : process.argv.includes('--context-feedback')
+                            ? 'context-feedback-qa.json'
+                            : process.argv.includes('--sync-modes')
+                              ? 'sync-mode-ui-qa.json'
+                              : process.argv.includes('--diff-scroll')
+                                ? 'diff-scroll-ui-qa.json'
+                                : 'react-ui-qa.json',
+        ),
     JSON.stringify(report, null, 2) + '\n',
   );
 }

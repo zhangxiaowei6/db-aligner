@@ -1,6 +1,92 @@
-# 0.1.0 验证记录
+# 验证记录
 
 > 名称展示说明：2026-10-12 按改名要求将下方历史条目的产品名称、路径示例和命令标识映射为当前名称。历史日期、环境、结果、大小和哈希保持原值，不表示旧产物已重新构建或旧命令已重新执行；当前产物以本次验证条目和产物清单为准。
+
+## 2026-10-16：Tauri 0.1.0 发布准备
+
+维护者要求将不兼容的旧 Electron Release 与标签从 GitHub 移除，并将 Tauri 系列从
+`0.1.0` 重新编号。旧版本的 Git 提交历史和本文件历史验收事实保留；下方 `0.3.0`
+条目记录的是此前迁移开发候选，不代表新版曾发布 0.3.0。
+
+环境：Windows 11 x64、Node.js 24.9.0、npm 11.6.0、项目 Java 21、Tauri 2／WebView2。
+本轮只调整版本清单、发布记录和文档，迁移实现的完整本地验收范围见下一条。
+
+- `npm run release:check`、`npm run typecheck`、`npm test` 均退出 0；前端 19 文件、217 项
+  通过，引擎 30 项无失败／错误、四个真库入口按默认配置跳过。
+- `cargo fmt --all --check` 退出 0。`npm run format:check` 仍因 18 个本轮未修改的旧前端
+  文件退出 1；本轮改动的版本清单和文档单独运行 Prettier 检查通过，`git diff --check` 退出 0。
+- 首次 `npm run dist` 在沙箱中下载 NSIS 时遭网络权限错误 10013，未完成打包。允许网络的
+  桌面环境重新运行根目录 `npm run dist` 退出 0，生成本版签名 NSIS、`.sig`、`latest.json`、
+  完整便携 ZIP、发布说明与 SHA-256 清单；发布脚本核对签名和更新元数据通过。
+- `npm run qa:desktop -w desktop` 首次在沙箱内启动客户端时无错误码退出，不作为通过证据；
+  在桌面用户会话中重跑退出 0，八项原生客户端检查通过、错误 0，使用隔离资料目录。
+- 为标签构建配置了 `TAURI_SIGNING_PRIVATE_KEY` 与
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 两项 GitHub Actions Secrets；没有将秘密值写入源码或报告。
+
+| 本次产物                                    | 大小（字节） | SHA-256                                                            |
+| ------------------------------------------- | -----------: | ------------------------------------------------------------------ |
+| `release/DBAligner-Setup-0.1.0-win-x64.exe` |   61,161,012 | `51174ab63d7bf229ad906246009a9c546af484f10e969685f69e28f2f313550f` |
+| `release/DBAligner-0.1.0-win-x64.zip`       |   67,522,326 | `3be23e0df681e962e60a22bba6e5af3a7ec540571c1a178b0bb7b8419f91daa2` |
+
+上述哈希属于本机产物，不能代替后续 GitHub Actions 产物核验。本轮没有重跑 MySQL／PostgreSQL
+隔离真库；迁移阶段的真库记录保留原日期和范围。维护者表示本地已验收没有问题并要求直接发布，
+但没有提供干净 Windows 版本及两个 Tauri 版本之间更新的逐项证据，本条不将其扩写为代理亲自验收。
+
+## 2026-10-16：0.3.0 迁移收尾与弹窗卡顿修复
+
+环境：Windows 11 x64、Node.js 24.9.0、项目 Java 21，Tauri 2／WebView2。
+用户在迁移版中复现了弹窗关闭后全页无法点击。浏览器事件记录显示鼠标仍命中已退出的
+`.ant-modal-wrap`；该弹窗保持 `ant-zoom-leave-active`，但 Windows 的
+`prefers-reduced-motion: reduce` 命中了项目全局 `animation: none !important`，
+使退出动画永不结束、遮罩不卸载。移除该全局规则后，用户在同一窗口连续打开、输入和关闭
+两次并确认恢复流畅。页面切换增加 180 ms 入场动画；面包屑与标题使用不同 React key，
+避免连续导航时留下重复面包屑。最终采用 Windows 原生标题栏，页面内去掉重复的品牌行，
+浏览器预览保留独立的模拟数据提示。
+
+- `npm run typecheck`、`npm test`、`npm run build` 退出 0。前端 19 文件、217 项通过；
+  默认引擎 30 项中 26 项通过，四个真库入口按默认配置跳过。构建仅有 Vite 单块体积警告。
+- `npm run qa:ui -w desktop` 退出 0，132 条检查、控制台错误 0；
+  `--diff-scroll` 的 1488／1180／960 宽度及浅色／深色六组通过；
+  `--record-confirmation` 的浅色／深色记录与回滚确认通过；
+  `npm run qa:tree -w desktop` 的 1000／5000 表、浅色／深色四组通过。
+  `--performance` 的浅色／深色 20,000 项差异与恢复列表、10 MiB SQL 预览通过。
+  减少动态效果专项在两次弹窗开关、输入和跨页动画上通过。
+- 根目录 `npm run dist` 完整成功，包含引擎、前端、随包 Java、许可、Rust 宿主、NSIS、
+  签名更新资料及完整便携 ZIP。第一次在许可清单写入时遇到 Windows `UNKNOWN`，
+  重试后发现移除窗口控件依赖使 `Cargo.lock` 需要刷新；离线刷新并完整重跑成功。
+  `npm run release:check` 通过。正式发布仍需维护者配置 Windows 代码签名及发布流程。
+- 新 ZIP 解压到临时目录的 `npm run qa:desktop -w desktop` 通过八项、错误 0：本地资源、
+  随包 Java、受限命令、内置 MySQL 驱动、最大化时两次弹窗输入及关闭、Java 保存与删除、
+  浅色／深色和重启后状态。运行使用隔离资料目录；便携包必须完整解压，不能只运行 EXE。
+- 最终 `npm run format:check` 退出 1，列出的 18 个文件均为本轮未修改的既有前端组件／
+  测试文件；本轮修改的 TS、CSS、验收脚本及文档已单独运行 Prettier 检查通过，
+  `git diff --check` 退出 0。未为消除历史格式差异改动无关源码。
+
+| 本次产物                                    |                       大小 | SHA-256                                                            |
+| ------------------------------------------- | -------------------------: | ------------------------------------------------------------------ |
+| `release/DBAligner-Setup-0.3.0-win-x64.exe` | 61,156,186 字节，58.32 MiB | `611d361b9ebc44c685eec5259a0637a6947afa6fe2ca9b0fb7ec17e58814f34e` |
+| `release/DBAligner-0.3.0-win-x64.zip`       | 67,522,360 字节，64.39 MiB | `d5e2af037230e3978168ed7a86eba5ca4ce83f2f5eac8bcd924d6168feb566ee` |
+
+安装包相对旧 Electron 172.92 MiB 基准减少约 114.60 MiB（66.27%），两者均包含桌面客户端、
+Java 引擎及运行时。上述为本机本次构建；干净 Windows 安装和两个新版之间的真实更新
+尚未验收，不以 ZIP 解压运行或用户对先前交互版的确认代替。此前迁移阶段的 MySQL
+5.7.44／8.0.45／8.4.8 与 PostgreSQL 17.11 隔离真库回归已通过；本条仅修复前端布局、
+动画与浏览器预览注入，没有重跑真库，因此不将先前结果记作本次重跑。
+
+报告：[完整界面](react-ui-qa.json)、[减少动态效果](reduced-motion-ui-qa.json)、
+[记录确认](record-confirmation-ui-qa.json)、[性能](performance-ui-qa.json)、
+[原生客户端](native-client-ui-qa.json)、[连接树](tree-qa.json)；外观截图见[设计 QA](../design-qa.md)。
+
+## 2026-10-15：Tauri 标题栏原型门槛
+
+本项只评估迁移原型的 Windows 原生标题栏与既有 React 页面视觉边界；不代表完整业务迁移、正式安装包或更新验收。测试环境为 Windows 11 x64、2560 × 1440、100% DPI，Electron 基线使用既有 `release/win-unpacked/DBAligner.exe`，Tauri v3 原型使用内嵌前端预览页，二者均通过 `DB_ALIGNER_HOME` 隔离资料。原始截图和窗口测量记录位于忽略的 `.local-data/tauri-*`，不作为仓库内可长期访问的截图链接。
+
+- Electron 的 `getBounds()` 与 `getContentBounds()` 均为 `(536,168)`、`1488 × 1056`；Tauri v3 的 Win32 外框与客户区在同一位置和尺寸。v2 曾出现不可见边框造成的内容区缩小，v3 调整后复测消除。
+- 浅色标题栏空白处为 `#f5f5f5`，深色为 `#000000`。真实鼠标操作验证原生最小化、最大化、还原、关闭、标题栏双击、拖至左边缘贴靠、Windows 11 Snap Layout／Snap Assist 与边框缩放；最小尺寸为 `1180 × 760`。
+- 暗色设置页的静态区域对照中，左侧图标栏 99.978% 像素完全相同，设置页上半部为 99.612%。两端资料不同，这些数字仅用于评价被比较区域的布局和样式，不证明全页逐像素相同。
+- 未测试 125%／150% DPI、跨显示器、干净机器安装、两个 Tauri 版本更新及实际 Java 数据库业务；原型的内嵌预览不证明真实同步或恢复。正式迁移仍需在完整宿主与安装包上重新验收。
+
+视觉结论与边界见[设计 QA](../design-qa.md)。此前 Electron 的真库与 smoke 报告仍为历史证据，不能充当 Tauri 打包客户端本次通过记录。
 
 ## 2026-10-13：模板应用后筛选已选表与工作区 placeholder
 

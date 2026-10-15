@@ -12,13 +12,13 @@
       "check": "bounded-sql-performance",
       "theme": "light",
       "tables": 298,
-      "displayMs": 103,
+      "displayMs": 84.30000001192093,
       "sqlCharacters": 529325,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 615,
-      "pageMs": 8.300000011920929,
-      "heapBytes": 28097564
+      "domNodes": 632,
+      "pageMs": 10.899999976158142,
+      "heapBytes": 28584460
     },
     {
       "check": "performance-export-1000-0-light",
@@ -32,13 +32,13 @@
       "check": "bounded-sql-performance",
       "theme": "light",
       "tables": 1000,
-      "displayMs": 72.30000001192093,
+      "displayMs": 71.59999999403954,
       "sqlCharacters": 1776779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 632,
-      "pageMs": 8.300000011920929,
-      "heapBytes": 34738316
+      "domNodes": 649,
+      "pageMs": 7.5999999940395355,
+      "heapBytes": 35147544
     },
     {
       "check": "performance-export-5000-0-light",
@@ -52,13 +52,13 @@
       "check": "bounded-sql-performance",
       "theme": "light",
       "tables": 5000,
-      "displayMs": 72.40000003576279,
+      "displayMs": 100.30000001192093,
       "sqlCharacters": 8892779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 644,
-      "pageMs": 9.600000023841858,
-      "heapBytes": 66972444
+      "domNodes": 662,
+      "pageMs": 10.5,
+      "heapBytes": 67549972
     },
     {
       "check": "performance-export-298-10485760-light",
@@ -73,13 +73,13 @@
       "theme": "light",
       "tables": 298,
       "bytes": 10485760,
-      "displayMs": 129.69999998807907,
+      "displayMs": 69.40000000596046,
       "sqlCharacters": 10485760,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 646,
-      "pageMs": 12.900000035762787,
-      "heapBytes": 66069120
+      "domNodes": 663,
+      "pageMs": 8.800000011920929,
+      "heapBytes": 66637328
     },
     {
       "check": "sql-replacement-memory",
@@ -87,15 +87,21 @@
       "cycles": 5,
       "beforeCycles": {
         "documents": 1,
-        "nodes": 972,
-        "jsEventListeners": 852
+        "nodes": 994,
+        "jsEventListeners": 853
       },
       "afterCycles": {
         "documents": 1,
-        "nodes": 973,
-        "jsEventListeners": 1573
+        "nodes": 1005,
+        "jsEventListeners": 1576
       },
-      "cycleHeaps": [55599356, 46245972, 55712532, 46321916, 55779200]
+      "cycleHeaps": [
+        56152820,
+        46785576,
+        56304244,
+        46890752,
+        56368008
+      ]
     },
     {
       "check": "performance-diff-light",
@@ -110,8 +116,8 @@
       "theme": "light",
       "changes": 20000,
       "mountedRows": 4,
-      "selectionMs": 38.799999952316284,
-      "filterMs": 137.19999998807907
+      "selectionMs": 25.899999976158142,
+      "filterMs": 82
     },
     {
       "check": "performance-rollback-light",
@@ -126,7 +132,7 @@
       "theme": "light",
       "items": 20000,
       "mountedRows": 8,
-      "selectionMs": 48.90000003576279
+      "selectionMs": 29.19999998807907
     },
     {
       "check": "performance-rollback-narrow-light",
@@ -148,13 +154,13 @@
       "check": "bounded-sql-performance",
       "theme": "dark",
       "tables": 298,
-      "displayMs": 100.5,
+      "displayMs": 85.59999999403954,
       "sqlCharacters": 529325,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 611,
-      "pageMs": 9.300000011920929,
-      "heapBytes": 28073672
+      "domNodes": 632,
+      "pageMs": 10.400000005960464,
+      "heapBytes": 28606148
     },
     {
       "check": "performance-export-1000-0-dark",
@@ -168,13 +174,13 @@
       "check": "bounded-sql-performance",
       "theme": "dark",
       "tables": 1000,
-      "displayMs": 80.20000004768372,
+      "displayMs": 80.10000002384186,
       "sqlCharacters": 1776779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 632,
-      "pageMs": 8,
-      "heapBytes": 34686200
+      "domNodes": 649,
+      "pageMs": 7.9000000059604645,
+      "heapBytes": 35228452
     },
     {
       "check": "performance-export-5000-0-dark",
@@ -188,13 +194,13 @@
       "check": "bounded-sql-performance",
       "theme": "dark",
       "tables": 5000,
-      "displayMs": 124.89999997615814,
+      "displayMs": 86.5,
       "sqlCharacters": 8892779,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 645,
-      "pageMs": 13.900000035762787,
-      "heapBytes": 67019060
+      "domNodes": 662,
+      "pageMs": 12.099999994039536,
+      "heapBytes": 67556304
     },
     {
       "check": "performance-export-298-10485760-dark",
@@ -209,13 +215,13 @@
       "theme": "dark",
       "tables": 298,
       "bytes": 10485760,
-      "displayMs": 116,
+      "displayMs": 76.40000000596046,
       "sqlCharacters": 10485760,
       "displayedCharacters": 32768,
       "sqlNodes": 0,
-      "domNodes": 639,
-      "pageMs": 15,
-      "heapBytes": 66062488
+      "domNodes": 663,
+      "pageMs": 6.0999999940395355,
+      "heapBytes": 66560300
     },
     {
       "check": "sql-replacement-memory",
@@ -223,15 +229,21 @@
       "cycles": 5,
       "beforeCycles": {
         "documents": 1,
-        "nodes": 971,
-        "jsEventListeners": 852
+        "nodes": 998,
+        "jsEventListeners": 853
       },
       "afterCycles": {
         "documents": 1,
-        "nodes": 973,
-        "jsEventListeners": 1575
+        "nodes": 1005,
+        "jsEventListeners": 1576
       },
-      "cycleHeaps": [55677400, 46268604, 55648384, 46253172, 55732120]
+      "cycleHeaps": [
+        56014844,
+        46616820,
+        56129628,
+        46763052,
+        56245804
+      ]
     },
     {
       "check": "performance-diff-dark",
@@ -246,8 +258,8 @@
       "theme": "dark",
       "changes": 20000,
       "mountedRows": 4,
-      "selectionMs": 42.80000001192093,
-      "filterMs": 127.19999998807907
+      "selectionMs": 27,
+      "filterMs": 66.19999998807907
     },
     {
       "check": "performance-rollback-dark",
@@ -262,7 +274,7 @@
       "theme": "dark",
       "items": 20000,
       "mountedRows": 8,
-      "selectionMs": 38.39999997615814
+      "selectionMs": 20.599999994039536
     },
     {
       "check": "performance-rollback-narrow-dark",
@@ -273,12 +285,11 @@
       "hitFooter": true
     }
   ],
-  "desktop": [],
   "errors": [],
   "environment": {
     "node": "v24.9.0",
     "platform": "win32",
-    "browser": "155.0.8059.39",
+    "browser": "155.0.8059.41",
     "fixture": "production frontend with isolated in-memory data; no database operations"
   }
 }

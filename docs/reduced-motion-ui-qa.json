@@ -1,0 +1,9 @@
+{
+  "browser": [
+    {
+      "check": "reduced-motion-modal-twice-and-page-navigation-animation",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

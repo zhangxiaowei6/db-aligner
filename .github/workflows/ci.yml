@@ -13,7 +13,7 @@ concurrency:
 jobs:
   checks:
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: pwsh
@@ -24,6 +24,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
       - uses: actions/cache@v4
         with:
           path: |
@@ -38,9 +41,9 @@ jobs:
       - run: npm run build
       - name: MySQL 与 PostgreSQL 完整预览交互
         run: npm run qa:ui -w desktop -- --multi-database
-      - name: 完整构建安装包
+      - name: 完整构建无更新签名的 Tauri 安装包
         if: github.event_name != 'pull_request'
-        run: npm run dist
+        run: npm run dist:unsigned
       - name: 两种数据库隔离真库与打包客户端验收
         if: github.event_name != 'pull_request'
         run: |
@@ -48,7 +51,7 @@ jobs:
           ./scripts/mysql-test-server.ps1 -Version 8.0.45 -Port 33980
           ./scripts/mysql-test-server.ps1 -Version 8.4.8 -Port 33984
           ./scripts/postgresql-test-server.ps1 -Port 33917
-          ./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.postgresql.test=true' '-Ddbaligner.electron.smoke=true'
+          ./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.postgresql.test=true' '-Ddbaligner.native.smoke=true'
           if ($LASTEXITCODE -ne 0) { throw '隔离真库或打包客户端验收失败' }
       - name: 停止项目 MySQL 隔离实例
         if: always() && github.event_name != 'pull_request'
@@ -56,22 +59,16 @@ jobs:
       - name: 停止项目 PostgreSQL 隔离实例
         if: always() && github.event_name != 'pull_request'
         run: ./scripts/postgresql-test-stop.ps1
-      - name: 核验与整理分发文件
-        if: github.event_name != 'pull_request'
-        run: npm run release:files
       - uses: actions/upload-artifact@v4
         if: github.event_name != 'pull_request'
         with:
-          name: DBAligner-windows-x64-${{ github.sha }}
+          name: DBAligner-windows-x64-unsigned-${{ github.sha }}
           if-no-files-found: error
           retention-days: 14
           path: |
-            release/DBAligner-Setup-*.exe
-            release/DBAligner-Setup-*.exe.blockmap
-            release/latest.yml
+            release/DBAligner-Setup-*-win-x64.exe
             release/DBAligner-*-win-x64.zip
             release/SHA256SUMS.txt
-            release/RELEASE_NOTES.md
       - uses: actions/upload-artifact@v4
         if: success() && github.event_name != 'pull_request'
         with:
@@ -80,7 +77,7 @@ jobs:
           retention-days: 14
           path: |
             docs/multi-database-ui-qa.json
-            docs/native-smoke-result.json
-            docs/postgresql-native-smoke.json
-            docs/postgresql-native-cached-smoke.json
+            docs/native-client-smoke-result.json
+            docs/postgresql-native-client-smoke.json
+            docs/postgresql-native-client-cached-smoke.json
             docs/screenshots/react-ant-design/multi-db-*.png

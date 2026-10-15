@@ -10,7 +10,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 120
     defaults:
       run:
         shell: pwsh
@@ -24,6 +24,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
       - uses: actions/cache@v4
         with:
           path: |
@@ -35,7 +38,18 @@ jobs:
       - run: npm run bootstrap
       - run: npm run typecheck
       - run: npm test
-      - run: npm run dist
+      - name: 验证 Tauri 更新签名密钥
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) { throw '缺少 TAURI_SIGNING_PRIVATE_KEY' }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD)) { throw '缺少 TAURI_SIGNING_PRIVATE_KEY_PASSWORD' }
+      - name: 完整构建并签名 Tauri 更新包
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run dist
       - name: MySQL 与 PostgreSQL 完整预览交互
         run: npm run qa:ui -w desktop -- --multi-database
       - name: 两种数据库隔离真库与打包客户端验收
@@ -44,7 +58,7 @@ jobs:
           ./scripts/mysql-test-server.ps1 -Version 8.0.45 -Port 33980
           ./scripts/mysql-test-server.ps1 -Version 8.4.8 -Port 33984
           ./scripts/postgresql-test-server.ps1 -Port 33917
-          ./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.postgresql.test=true' '-Ddbaligner.electron.smoke=true'
+          ./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.postgresql.test=true' '-Ddbaligner.native.smoke=true'
           if ($LASTEXITCODE -ne 0) { throw '隔离真库或打包客户端验收失败' }
       - name: 停止项目 MySQL 隔离实例
         if: always()
@@ -52,16 +66,15 @@ jobs:
       - name: 停止项目 PostgreSQL 隔离实例
         if: always()
         run: ./scripts/postgresql-test-stop.ps1
-      - run: npm run release:files
       - uses: actions/upload-artifact@v4
         with:
           name: release-files
           if-no-files-found: error
           retention-days: 14
           path: |
-            release/DBAligner-Setup-*.exe
-            release/DBAligner-Setup-*.exe.blockmap
-            release/latest.yml
+            release/DBAligner-Setup-*-win-x64.exe
+            release/DBAligner-Setup-*-win-x64.exe.sig
+            release/latest.json
             release/DBAligner-*-win-x64.zip
             release/SHA256SUMS.txt
             release/RELEASE_NOTES.md
@@ -72,9 +85,9 @@ jobs:
           retention-days: 14
           path: |
             docs/multi-database-ui-qa.json
-            docs/native-smoke-result.json
-            docs/postgresql-native-smoke.json
-            docs/postgresql-native-cached-smoke.json
+            docs/native-client-smoke-result.json
+            docs/postgresql-native-client-smoke.json
+            docs/postgresql-native-client-cached-smoke.json
             docs/screenshots/react-ant-design/multi-db-*.png
   draft:
     needs: build

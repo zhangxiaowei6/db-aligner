@@ -1,8 +1,15 @@
 import type { DesktopBridge } from './types';
 import { previewBridge } from './preview';
+import { tauriBridge } from './tauri-bridge';
 import { copyModel } from './copy';
 export const preview = new URLSearchParams(location.search).get('preview') === '1';
-const bridge: DesktopBridge | undefined = window.dbAligner || (preview ? previewBridge : undefined);
+const previewOverride = (window as Window & { __DBALIGNER_PREVIEW_BRIDGE__?: DesktopBridge })
+  .__DBALIGNER_PREVIEW_BRIDGE__;
+const bridge: DesktopBridge | undefined = preview
+  ? (previewOverride ?? previewBridge)
+  : '__TAURI_INTERNALS__' in window
+    ? tauriBridge
+    : undefined;
 export async function api<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},

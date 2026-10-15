@@ -5,14 +5,14 @@
 先阅读 [README](README.md)、[支持范围](docs/limitations.md)、[架构](docs/architecture.md)和[协议](docs/protocol.md)，按 [AGENTS.md](AGENTS.md#2-任务与技能索引) 选择任务技能。界面提交保持已确认的白／灰／蓝风格；同步引擎变更优先证明不会写入未选范围、不会把未知状态标为成功、不会丢失恢复证据。
 
 1. `npm ci`、`npm run bootstrap` 后按 README 启动开发客户端。
-2. 代码修改完成运行 `npm run typecheck`、`npm test`，前端使用 Prettier。Java 使用 Google Java Format 1.28.0，工具可放在忽略的 `.tools`。
+2. 代码修改完成运行 `npm run typecheck`、`npm test`，前端使用 Prettier，Tauri 宿主使用 `cargo fmt` 与 `cargo check`。Java 使用 Google Java Format 1.28.0，工具可放在忽略的 `.tools`。
 3. 比较、执行、归档或回滚变更必须运行三个版本的隔离真库测试；记录实际版本、结果和跳过项，不用模拟对象替代真库验收。命令与组合见[验证技能](.agents/skills/verification/SKILL.md)。
 4. 添加依赖更新锁文件、[第三方说明](THIRD_PARTY_NOTICES.md)并运行 `npm run licenses`。MariaDB 驱动独立分发，不打入引擎单一 JAR。
 5. UI 变更更新受影响截图与[设计 QA](design-qa.md)，具体测试结果集中在[验证记录](docs/validation.md)。浏览器虚构成功不能证明真实连接或执行通过。
 
 不提交真实连接会话、凭据、私钥、SQL 档案、`.local-data`、`.tools`、SQLite、依赖目录或安装包。生产问题报告脱敏 SQL、数据库名和日志；疑似数据丢失先保留原始记录与恢复资料，不反复执行掩盖未知状态。
 
-项目代码采用 Apache-2.0，第三方保留来源与许可。发布前完成干净 Windows 安装与升级验收；首版保持未签名。GitHub Actions 生成标签版本草稿，附件核验通过后仍需人工验收并公开，流程见 [GitHub 构建与发布](docs/releasing.md)。安全问题使用 [私密报告](SECURITY.md)。
+项目代码采用 Apache-2.0，第三方保留来源与许可。发布前完成干净 Windows 安装及两个 Tauri 版本之间的升级验收；Tauri 更新包必须签名，Windows 代码签名独立配置。GitHub Actions 生成标签版本草稿，附件核验通过后仍需人工验收并公开，流程见 [GitHub 构建与发布](docs/releasing.md)。安全问题使用 [私密报告](SECURITY.md)。
 
 ## 文档规范
 

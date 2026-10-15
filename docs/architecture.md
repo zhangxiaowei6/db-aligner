@@ -2,19 +2,19 @@
 
 ## 软件更新与任务互斥
 
-软件更新由 Electron 主进程的 `electron-updater` 管理，来源固定为公开 GitHub Releases，客户端不携带发布 Token。安装版启动后延迟检查一次，用户确认下载及重启安装；不自动下载、不在普通退出时安装。生产仍加载本地打包资源，不启动 HTTP 服务；更新通过出站 HTTPS 获取软件，不上传业务资料。
+软件更新由 Rust 宿主的签名更新插件管理，来源固定为公开 GitHub Releases，客户端不携带发布 Token。安装版启动后延迟检查一次，用户确认下载及重启安装；不自动下载、不在普通退出时安装。生产仍加载本地打包资源，不启动 HTTP 服务；更新通过出站 HTTPS 获取软件，不上传业务资料。
 
-主进程对业务 invoke 计数，在更新安装前冻结新入口。存在请求或超时结果不明时拒绝安装；请求超时不表示引擎工作已取消。Java 用共享／独占请求锁协调更新准备，异步比较、取消和同步任务另外检查仍活动的注册项，包含排队及执行资料收尾。只有原子确认空闲后才拒绝新业务请求并等待 Java 正常退出，再启动安装器；更新路径不强杀引擎。准备失败恢复入口，无法恢复时保持冻结并提示重新启动。
+Rust 宿主对业务 invoke 计数，在更新安装前冻结新入口。存在请求或超时结果不明时拒绝安装；请求超时不表示引擎工作已取消。Java 用共享／独占请求锁协调更新准备，异步比较、取消和同步任务另外检查仍活动的注册项，包含排队及执行资料收尾。只有原子确认空闲后才拒绝新业务请求并等待 Java 正常退出，再启动安装器；更新路径不强杀引擎。准备失败恢复入口，无法恢复时保持冻结并提示重新启动。
 
-升级不改变 `io.dbaligner.desktop`、`db-aligner-desktop` 资料身份与 Windows 密码加密方式，不迁移或删除连接、SQLite、记录和恢复档案。NSIS 安装版通过同目录卸载程序标识识别；无需安装 ZIP 使用完整目录手动替换。开发、预览和 smoke 不做真实更新检查；预览仅演示状态。远程发布和验收边界见 [GitHub 构建与发布](releasing.md)。
+新版使用 `io.dbaligner.client` 安装和资料身份，Windows 密码使用系统 DPAPI 加密。新版自身的升级保留连接、SQLite、记录、恢复档案和密码；旧 Electron 版本的安装与资料不迁移或删除。NSIS 安装版通过同目录卸载程序标识识别；无需安装 ZIP 使用完整目录手动替换。开发、预览和 smoke 不做真实更新检查；预览仅演示状态。远程发布和验收边界见 [GitHub 构建与发布](releasing.md)。
 
 ## 进程与安全边界
 
-React 渲染进程通过上下文隔离的 preload 访问限定接口。Electron 主进程管理系统加密密码、导入文件内容、原生文件对话框与 Java 子进程。生产只加载本机打包资源，禁止新窗口，渲染进程禁用 Node、启用 sandbox。产品不启动本地 HTTP 服务。
+React 渲染进程通过限定的 Tauri 命令与事件访问 Rust 宿主。Rust 宿主管理系统加密密码、导入文件内容、原生文件对话框与 Java 子进程。生产只加载本机打包资源，禁止新窗口，不向页面开放通用文件系统、进程或任意 URL 能力。产品不启动本地 HTTP 服务。
 
-Java 使用 Spring Boot 非 Web 模式，stdin/stdout 每行一条 UTF-8 JSON。日志只写 stderr，由主进程追加到 `engine.log`。Windows 下协议输出明确写 UTF-8 字节，避免控制台编码破坏中文。主进程每次请求在内部传递凭据，查询返回不包含明文密码。
+Java 使用 Spring Boot 非 Web 模式，stdin/stdout 每行一条 UTF-8 JSON。日志只写 stderr，由 Rust 宿主追加到 `engine.log`。Windows 下协议输出明确写 UTF-8 字节，避免控制台编码破坏中文。Rust 宿主每次请求在内部传递凭据，查询返回不包含明文密码。
 
-DBAligner 的 Java 包名与入口为 `io.dbaligner` 和 `io.dbaligner.EngineMain`，Maven 坐标为 `io.dbaligner:db-aligner-engine`，安装应用 ID 为 `io.dbaligner.desktop`。正常生产资料使用全新的 `%APPDATA%/db-aligner-desktop/data`，需要重新配置连接；不迁移或删除旧应用的档案与密码材料。IPC 通道、桥接与配置／脚本包格式标识分别使用 `dbaligner:*`、`window.dbAligner` 与 `dbaligner-*`。指定 `DB_ALIGNER_HOME` 时，业务资料与 Electron 配置分别位于指定目录及其 `electron-profile` 子目录。
+DBAligner 的 Java 包名与入口为 `io.dbaligner` 和 `io.dbaligner.EngineMain`，Maven 坐标为 `io.dbaligner:db-aligner-engine`，新版安装应用 ID 为 `io.dbaligner.client`。正常生产资料位于该应用独立的 Windows LocalAppData 目录下的 `data`，首次使用需要重新配置连接；不迁移或删除旧 Electron 版本的档案与密码材料。页面通过 `dbaligner_invoke`、`dbaligner_window` 及 `dbaligner:event` 与宿主通信，配置／脚本包格式标识继续使用 `dbaligner-*`。指定 `DB_ALIGNER_HOME` 时，业务资料位于该目录，WebView2 资料位于其 `webview-profile` 子目录。
 
 SQLite 使用 WAL 与 FULL 同步保存实体、计划、记录、事件和版本链接。归档目录保存不可变原始计划、勾选、SQL 和后续证据；任务步骤状态和关联核验以追加信息保存。记录摘要不加载大型行证据，详情按需读取。
 
@@ -82,7 +82,7 @@ SQLite 使用 WAL 与 FULL 同步保存实体、计划、记录、事件和版�
 MySQL 行为，`PostgresAdapter/PostgresPlanner` 生成 PostgreSQL 操作。`PostgresSql` 从元数据
 生成类型、标识符、注释、索引、空值比较和结构化外键 SQL，不翻译 MySQL SQL 文本。
 
-Electron 从随应用发布的目录下载并校验 PostgreSQL JDBC，临时文件同步后原子切换；Java 再次
+Rust 宿主按随应用发布的目录下载并校验 PostgreSQL JDBC，临时文件同步后原子切换；Java 再次
 检查摘要和路径，通过独立加载器实例化固定驱动，显式建立连接。驱动缓存在资料目录的
 `drivers/<id>/<version>`，不进入业务备份。当前 MySQL 驱动仍随安装包分发。
 升级目录必须保留仍被连接或历史恢复记录引用的版本条目和文件，不自动升级连接，不热卸载。

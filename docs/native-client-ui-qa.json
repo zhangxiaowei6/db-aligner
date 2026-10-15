@@ -1,0 +1,19 @@
+{
+  "client": "DBAligner",
+  "checks": [
+    "本地页面、隔离桥接与原有新建同步布局",
+    "受限桥接和随包 Java 引擎",
+    "内部方法、驱动地址及更新源不能由页面覆盖",
+    "内置 MySQL 驱动离线可用",
+    "最大化安装版在减少动态效果下两次弹窗输入和关闭响应",
+    "Java 保存及删除命令通过原生宿主",
+    "浅色、深色及外观事件",
+    "主题偏好和业务状态重启后保留"
+  ],
+  "errors": [],
+  "screenshots": [
+    "native-client-light.png",
+    "native-client-dark.png"
+  ],
+  "passed": true
+}

@@ -450,7 +450,7 @@ class PostgresIntegrationTest {
             db.execute(
                 c, "CREATE INDEX special_operator ON source.defaults(note text_pattern_ops)");
             assertFalse(db.snapshot(c, source, "defaults", false).supported);
-            if (Boolean.getBoolean("dbaligner.electron.smoke")) {
+            if (Boolean.getBoolean("dbaligner.native.smoke")) {
               String nativeTable = "安装版字典";
               for (var ref : List.of(source, target)) {
                 db.execute(
@@ -483,14 +483,22 @@ class PostgresIntegrationTest {
               nativeFixture.put("amount", "1234567890.123456789");
               var mysqlCredentials =
                   Path.of("..", ".tools", "mysql-test", "8.4.8", "credentials.json");
-              if (!System.getProperty("dbaligner.mysql.versions", "").isEmpty())
+              if (!System.getProperty("dbaligner.mysql.versions", "").isEmpty()) {
+                var mysql = Json.MAPPER.readTree(Files.readString(mysqlCredentials));
                 nativeFixture.put(
-                    "mysql", Json.MAPPER.readTree(Files.readString(mysqlCredentials)));
-              var executable =
-                  Path.of("..", "release", "win-unpacked", "DBAligner.exe")
-                      .toAbsolutePath()
-                      .normalize();
-              assertTrue(Files.exists(executable), "需先完成根目录 npm run dist");
+                    "mysql",
+                    Map.of(
+                        "host", mysql.path("host").asText(),
+                        "port", mysql.path("port").asInt(),
+                        "user", mysql.path("user").asText(),
+                        "password", mysql.path("password").asText(),
+                        "databaseType", "mysql",
+                        "driverId", "mariadb",
+                        "driverVersion", "3.5.10",
+                        "ssl", true,
+                        "ca", mysqlCredentials.getParent().resolve("server-cert.pem").toAbsolutePath().toString()));
+              }
+              var executable = NativeClientRelease.extract(root.resolve("native-client"));
               for (boolean cached : List.of(false, true)) {
                 nativeFixture.put("expectCachedDriver", cached);
                 Files.writeString(fixture, Json.write(nativeFixture));
@@ -508,8 +516,14 @@ class PostgresIntegrationTest {
                   running.destroyForcibly();
                   throw new AssertionError("打包 PostgreSQL smoke 超时");
                 }
-                var result =
-                    Json.MAPPER.readTree(Files.readString(nativeRoot.resolve("smoke-result.json")));
+                var resultFile = nativeRoot.resolve("smoke-result.json");
+                assertTrue(
+                    Files.exists(resultFile),
+                    "Packaged client produced no result (exit "
+                        + running.exitValue()
+                        + "): "
+                        + Files.readString(nativeRoot.resolve("native.log")));
+                var result = Json.MAPPER.readTree(Files.readString(resultFile));
                 assertEquals(0, running.exitValue(), result.toString());
                 assertTrue(result.path("passed").asBoolean(), result.toString());
                 Files.writeString(
@@ -517,8 +531,8 @@ class PostgresIntegrationTest {
                         "..",
                         "docs",
                         cached
-                            ? "postgresql-native-cached-smoke.json"
-                            : "postgresql-native-smoke.json"),
+                            ? "postgresql-native-client-cached-smoke.json"
+                            : "postgresql-native-client-smoke.json"),
                     result.toPrettyString());
               }
             }

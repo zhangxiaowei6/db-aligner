@@ -482,9 +482,9 @@ class MySqlIntegrationTest {
                   List.of(a),
                   List.of(new TableChoice(keysTable, false, true, List.of("kind", "code"))));
           assertTrue(nullKey.targets.getFirst().changes.stream().anyMatch(x -> x.blocked));
-          // The release executable drives its real isolated preload/main/Java stack without system
-          // Java.
-          if (Boolean.getBoolean("dbaligner.electron.smoke") && version.equals("8.4.8")) {
+          // The Tauri release executable drives its real isolated Rust host and Java engine
+          // without system Java.
+          if (Boolean.getBoolean("dbaligner.native.smoke") && version.equals("8.4.8")) {
             for (var ref : List.of(src, a)) {
               db.execute(
                   admin,
@@ -501,11 +501,7 @@ class MySqlIntegrationTest {
                       + (ref.equals(src) ? "1234567890.123456789" : "0.123456789")
                       + ")");
             }
-            Path release =
-                Path.of("..", "release", "win-unpacked", "DBAligner.exe")
-                    .toAbsolutePath()
-                    .normalize();
-            assertTrue(Files.exists(release), "Build the release before enabling native smoke");
+            Path release = NativeClientRelease.extract(root.resolve("native-client"));
             Path nativeRoot = root.resolve("native-release");
             Files.createDirectories(nativeRoot);
             Path fixture = nativeRoot.resolve("fixture.json");
@@ -541,14 +537,21 @@ class MySqlIntegrationTest {
               throw new AssertionError(
                   "Packaged smoke timeout: " + Files.readString(nativeRoot.resolve("native.log")));
             }
+            var resultFile = nativeRoot.resolve("smoke-result.json");
+            assertTrue(
+                Files.exists(resultFile),
+                "Packaged client produced no result (exit "
+                    + running.exitValue()
+                    + "): "
+                    + Files.readString(nativeRoot.resolve("native.log")));
             var smokeResult =
-                Json.read(
-                    Files.readString(nativeRoot.resolve("smoke-result.json")),
-                    com.fasterxml.jackson.databind.JsonNode.class);
+                Json.read(Files.readString(resultFile), com.fasterxml.jackson.databind.JsonNode.class);
             assertEquals(0, running.exitValue(), smokeResult.toString());
             assertTrue(smokeResult.path("passed").asBoolean());
             Path report =
-                Path.of("..", "docs", "native-smoke-result.json").toAbsolutePath().normalize();
+                Path.of("..", "docs", "native-client-smoke-result.json")
+                    .toAbsolutePath()
+                    .normalize();
             Files.writeString(report, smokeResult.toPrettyString());
           }
           InterruptionProbe.verify(

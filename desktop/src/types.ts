@@ -264,8 +264,3 @@ export interface DriverState {
   bytes: number;
   message: string;
 }
-declare global {
-  interface Window {
-    dbAligner?: DesktopBridge;
-  }
-}
