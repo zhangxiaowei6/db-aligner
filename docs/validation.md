@@ -2,6 +2,27 @@
 
 > 名称展示说明：2026-10-12 按改名要求将下方历史条目的产品名称、路径示例和命令标识映射为当前名称。历史日期、环境、结果、大小和哈希保持原值，不表示旧产物已重新构建或旧命令已重新执行；当前产物以本次验证条目和产物清单为准。
 
+## 2026-10-16：Tauri 0.1.0 GitHub 正式发布
+
+代码提交 `da7d6a3` 已推送到 `origin/master`，新建的 `v0.1.0` 标签指向该提交。
+[主分支 CI](https://github.com/zhangxiaowei6/db-aligner/actions/runs/38804684124)
+与[标签发布工作流](https://github.com/zhangxiaowei6/db-aligner/actions/runs/38804718478)
+均成功。标签工作流通过 Node／Java 测试、完整签名构建、MySQL 与 PostgreSQL 浏览器交互、
+MySQL 5.7.44／8.0.45／8.4.8 与 PostgreSQL 17 隔离真库及打包客户端验收，并生成六个
+GitHub Release 附件。云端 `SHA256SUMS.txt` 与各附件的 GitHub SHA-256 摘要一致；下载的
+`latest.json` 与 `.exe.sig` 签名文本一致，版本和 Latest 下载链接正确。
+
+| GitHub 构建产物                     | 大小（字节） | SHA-256                                                            |
+| ----------------------------------- | -----------: | ------------------------------------------------------------------ |
+| `DBAligner-Setup-0.1.0-win-x64.exe` |   61,160,583 | `44996bf3efeb70c370adf2e997d6c4927acb5e9e1d6a521e642ba4a08492f3bf` |
+| `DBAligner-0.1.0-win-x64.zip`       |   67,522,410 | `30640551a3855e19991dc35dab41e1255abdd346147f29d9fb081e1299623780` |
+
+[DBAligner 0.1.0](https://github.com/zhangxiaowei6/db-aligner/releases/tag/v0.1.0)
+于北京时间 2026-10-16 05:05:34 公开发布，并被 GitHub 标记为 Latest。旧 Electron
+`v0.1.0`、`v0.1.1`、`v0.1.2`、`v0.2.0` Release／标签已清理；最终远程 Release 和标签列表
+均只保留新版 `v0.1.0`，Git 提交历史及历史验收事实保留。维护者确认本地已验收；本记录
+没有独立的干净 Windows 安装或两个 Tauri 版本间真实自动更新证据。
+
 ## 2026-10-16：Tauri 0.1.0 发布准备
 
 维护者要求将不兼容的旧 Electron Release 与标签从 GitHub 移除，并将 Tauri 系列从
