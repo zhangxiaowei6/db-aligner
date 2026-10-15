@@ -71,3 +71,41 @@ Electron 另外提供原生选文件、选目录、导出路径、打开资料�
 引擎在同一 SQLite 事务中按现有名称归属规则检查所有工作区的连接、删除空分组并连续重排剩余 `sortOrder`。
 不会删除或移动连接，不修改凭据、工作区关联与历史记录。默认名称“数据库连接”也遵循空分组规则；
 后续保存连接仍按既有逻辑自动创建缺失分组。preload 沿用现有 `invoke`，主进程将该方法列入允许清单。
+
+## 多数据库与按需驱动
+
+连接配置新增可选 `databaseType: mysql | postgresql`、`driverId`、`driverVersion` 与
+`initialDatabase`。历史连接缺省为 MySQL；PostgreSQL 的初始数据库用于枚举数据库及连接测试。
+PostgreSQL SSL 使用明确的 `verify-full` 或 `disable`；启用 SSL 需要 CA PEM，客户端证书使用
+PKCS#12（别名 user），证书密码仍由主进程内部注入。配置导出清除证书路径与凭据。
+
+`DbRef` 新增可选 `schema`；MySQL 不接受独立 schema。PostgreSQL 比较、表读取、执行及恢复要求
+明确的数据库和非系统 schema，SQL 使用 schema 限定名。命名空间标识保留旧 MySQL 的
+`connectionId/database`，PostgreSQL 使用 `pg:` 加 `[connectionId,database,schema]` 的紧凑 JSON。
+前端标识只用于关联，不作为 SQL。跨数据库类型的同步请求在打开数据库前拒绝。
+
+| 接口                    | 归属与参数                  | 返回                                                     |
+| ----------------------- | --------------------------- | -------------------------------------------------------- |
+| `drivers.list`          | Electron，空对象            | 驱动状态数组                                             |
+| `drivers.get`           | Electron，`{driverId}`      | 当前驱动状态                                             |
+| `drivers.install`       | Electron，`{driverId}`      | 安装终态；重复安装复用 Promise                           |
+| `drivers.cancel`        | Electron，`{driverId}`      | 当前状态；取消结果由事件或 get 核验                      |
+| `schemas.list`          | Java，`{ref}`（数据库层级） | 可访问的非系统 schema 名称                               |
+| `database.capabilities` | Java，`{ref}`               | 类型、服务版本、适配器版本、结构／数据／恢复能力及受限项 |
+
+驱动状态包含 `id,databaseType,name,version,builtin,license,licenseUrl,status,revision,bytes,message`。
+`status` 为 `missing | downloading | installed | error | cancelled`；主进程广播
+`{event:'driver-state',state}`，界面拒绝旧 revision 和旧编辑会话响应。
+下载地址、类名、依赖文件及 SHA-256 只读取应用随附目录；渲染进程不能传入 URL、路径或类名。
+
+新计划 `formatVersion=2`，保存数据库类型、适配器版本、来源驱动版本及每目标驱动和连接绑定。
+`Change.statements` 保存一个 PostgreSQL 操作编译出的完整语句列表，`sql` 用于完整预览；执行
+仍只接收引擎保存的计划 ID 和勾选项。PostgreSQL 主键由 `Table.primaryKeyColumns` 表达，
+原生属性和结构化外键资料保存在 `attributes`；`columnDefaults` 保存默认值的
+`NONE | LITERAL | EXPRESSION` 类别和原生表示，SQL 编译保留原生表达式。UUID、日期和时间值内部使用带类型文本，
+二进制继续使用 `$binary`；展示转换不改写计划、归档或摘要。
+旧 MySQL 连接身份仍按原字段验证，历史 SQL 和摘要不重新生成。
+
+浏览器预览的驱动安装、同步、外部声明及恢复只修改内存虚构资料，不连接数据库、下载 JAR 或
+持久化。模拟执行确认和记录明确标识“虚构”，刷新页面重置。预览额外的网络失败参数只由内存
+桥接处理，真实 Electron 驱动接口拒绝该参数。

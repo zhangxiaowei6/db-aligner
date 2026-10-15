@@ -27,6 +27,7 @@ import {
   type TreeNode,
 } from './model';
 import { Status } from './components/shared';
+import { DatabaseTypeIcon } from './components/DatabaseTypeIcon';
 import {
   ConnectionEditor,
   ConnectionsPage,
@@ -123,7 +124,7 @@ function Shell() {
     return () => treeLoads.current.clear();
   }, [m.workspaceId]);
   function reloadExpandedNode(node: TreeNode) {
-    if (!['connection', 'database'].includes(node.type)) return;
+    if (!['connection', 'database', 'schema'].includes(node.type)) return;
     const token = {};
     const startedAt = Date.now();
     treeLoads.current.set(node.key, token);
@@ -262,7 +263,10 @@ function Shell() {
         ? contextMenu.results.refresh
         : undefined;
     const items = [
-      ...(node.type === 'database'
+      ...(node.type === 'schema' ||
+      (node.type === 'database' &&
+        m.state.connections.find((connection) => connection.id === node.ref?.connectionId)
+          ?.databaseType !== 'postgresql')
         ? [
             {
               key: 'refresh',
@@ -357,7 +361,9 @@ function Shell() {
           <img className="brand-icon" src={appLogo} alt="" />
           <span>DBAligner</span>
           {preview && (
-            <span className="preview-label">浏览器设计预览 · 执行操作请使用桌面客户端</span>
+            <span className="preview-label">
+              浏览器交互预览 · 所有驱动安装、同步与恢复均为内存模拟
+            </span>
           )}
         </div>
       </header>
@@ -408,6 +414,7 @@ function Shell() {
           </div>
           <Select
             aria-label="当前工作区"
+            placeholder="选择工作区"
             disabled={!!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status)}
             value={m.workspaceId}
             options={m.state.workspaces.map((w) => ({ value: w.id, label: w.name }))}
@@ -553,7 +560,13 @@ function Shell() {
                     m.refreshing['connection:' + node.connectionId] ? (
                       <LoadingOutlined aria-label="正在刷新数据库" />
                     ) : (
-                      <ApiOutlined />
+                      <DatabaseTypeIcon
+                        databaseType={
+                          m.state.connections.find(
+                            (connection) => connection.id === node.connectionId,
+                          )?.databaseType
+                        }
+                      />
                     )
                   ) : m.refreshing['database:' + node.key] ? (
                     <LoadingOutlined aria-label="正在刷新表结构" />
@@ -576,7 +589,16 @@ function Shell() {
                       }
                       data-group-id={node.groupId}
                     >
-                      {node.title}
+                      <span>{node.title}</span>
+                      {node.type === 'connection' && (
+                        <small className="hint" style={{ marginLeft: 6 }}>
+                          {m.state.connections.find(
+                            (connection) => connection.id === node.connectionId,
+                          )?.databaseType === 'postgresql'
+                            ? 'PostgreSQL'
+                            : 'MySQL'}
+                        </small>
+                      )}
                     </span>
                   );
                   return (

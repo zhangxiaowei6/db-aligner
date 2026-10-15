@@ -97,6 +97,8 @@ public final class Service implements AutoCloseable {
         }
       }
       case "databases.list" -> db.databases(p.path("connectionId").asText());
+      case "schemas.list" -> db.schemas(ref(p.path("ref")));
+      case "database.capabilities" -> db.capabilities(ref(p.path("ref")));
       case "tables.list" -> db.tables(ref(p.path("ref")));
       case "table.get" -> db.snapshot(ref(p.path("ref")), p.path("table").asText(), false);
       case "imports.parse" -> Imports.parse(p.path("format").asText(), p.path("content").asText());
@@ -279,7 +281,11 @@ public final class Service implements AutoCloseable {
           "ssl",
           "ca",
           "clientCert",
-          "hasPassword");
+          "hasPassword",
+          "databaseType",
+          "driverId",
+          "driverVersion",
+          "initialDatabase");
     String id = v.path("id").asText();
     if (id.isBlank()) id = UUID.randomUUID().toString();
     if (!id.matches("[a-zA-Z0-9-]{1,100}")) throw new IllegalArgumentException("配置标识无效");
@@ -299,6 +305,14 @@ public final class Service implements AutoCloseable {
       Files.createDirectories(archive);
     } else if (v.path("name").asText().isBlank()) throw new IllegalArgumentException("名称不能为空");
     if (kind.equals("connection")) {
+      var driver = new DriverRegistry(store.root).entry(v);
+      if (v.has("databaseType")) {
+        v.put("driverId", driver.path("id").asText());
+        v.put("driverVersion", driver.path("version").asText());
+      }
+      if (DriverRegistry.type(v).equals("postgresql")
+          && v.path("initialDatabase").asText().isBlank())
+        throw new IllegalArgumentException("请输入初始连接数据库");
       if (!v.path("host").asText().matches("[a-zA-Z0-9.\\-:\\[\\]]+")
           || v.path("user").asText().isBlank()
           || !v.path("port").isIntegralNumber()
@@ -358,6 +372,7 @@ public final class Service implements AutoCloseable {
         tables.add(t);
       }
     }
+    if (db.type(opts.source()).equals("postgresql")) return postgresExport(opts, tables);
     var b =
         new StringBuilder(
             "-- DBAligner / 仅表结构 / "
@@ -383,6 +398,46 @@ public final class Service implements AutoCloseable {
             .append(";\n");
     if (opts.includeDrop()) b.append("SET FOREIGN_KEY_CHECKS=@ds_previous_fk_checks;\n");
     return Map.of("sql", b.toString(), "tables", opts.tables(), "includeDrop", opts.includeDrop());
+  }
+
+  private Object postgresExport(SchemaExportOptions opts, List<Table> tables) throws Exception {
+    for (var t : tables)
+      if (!t.supported) throw new IllegalArgumentException(String.join("；", t.issues));
+    var sql = new StringBuilder(Sql.header(opts.source()));
+    if (opts.includeDrop()) {
+      var selected = new HashSet<>(opts.tables());
+      for (var t : tables)
+        for (var fk : t.foreignKeys)
+          if (!selected.contains(fk.referencedTable()))
+            throw new IllegalArgumentException("DROP 范围包含未选外键依赖");
+      if (!tables.isEmpty())
+        sql.append("DROP TABLE IF EXISTS ")
+            .append(
+                String.join(
+                    ",", tables.stream().map(t -> Sql.qualified(opts.source(), t.name)).toList()))
+            .append(";\n");
+    }
+    for (var t : tables) {
+      sql.append(PostgresSql.create(t, opts.source())).append(";\n");
+      sql.append("COMMENT ON TABLE ")
+          .append(Sql.qualified(opts.source(), t.name))
+          .append(" IS ")
+          .append(PostgresSql.literal(t.comment))
+          .append(";\n");
+      for (var col : t.columns)
+        for (String line : PostgresSql.comment(opts.source(), t.name, col))
+          sql.append(line).append(";\n");
+      for (var idx : t.indexes)
+        sql.append(PostgresPlanner.indexSql(opts.source(), t.name, idx)).append(";\n");
+    }
+    for (var t : tables)
+      for (var fk : t.foreignKeys)
+        sql.append("ALTER TABLE ")
+            .append(Sql.qualified(opts.source(), t.name))
+            .append(" ADD ")
+            .append(fk.definition())
+            .append(";\n");
+    return Map.of("sql", sql.toString());
   }
 
   private Map<String, Object> startComparison(JsonNode p) throws Exception {
@@ -421,6 +476,7 @@ public final class Service implements AutoCloseable {
   public void close() throws Exception {
     comparisons.close();
     jobs.close();
+    db.close();
     store.close();
   }
 }

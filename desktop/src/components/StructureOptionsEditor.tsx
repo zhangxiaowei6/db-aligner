@@ -1,14 +1,16 @@
 import { AsyncButton as Button } from './AsyncButton';
-import { Checkbox, Popover } from 'antd';
+import { Checkbox, Popover, Tooltip } from 'antd';
 import type { StructureOptions } from '../types';
 import { effectiveOptions, structureLabels, structureSummary } from '../structure-options';
 
 export function StructureOptionsEditor({
   value,
+  databaseType = 'mysql',
   onChange,
   disabled = false,
   label = '结构细项',
 }: {
+  databaseType?: 'mysql' | 'postgresql';
   value?: StructureOptions;
   onChange: (options: StructureOptions) => void;
   disabled?: boolean;
@@ -17,16 +19,31 @@ export function StructureOptionsEditor({
   return (
     <div className="structure-options-editor" role="group" aria-label={label}>
       {(Object.keys(structureLabels) as (keyof StructureOptions)[]).map((key) => (
-        <Checkbox
+        <Tooltip
           key={key}
-          disabled={disabled}
-          checked={effectiveOptions(value)[key]}
-          onChange={(event) =>
-            onChange({ ...effectiveOptions(value), [key]: event.target.checked })
+          title={
+            databaseType === 'postgresql' && ['columnOrder', 'tableCollation'].includes(key)
+              ? 'PostgreSQL 不支持此结构调整'
+              : undefined
           }
         >
-          {structureLabels[key]}
-        </Checkbox>
+          <Checkbox
+            disabled={
+              disabled ||
+              (databaseType === 'postgresql' && ['columnOrder', 'tableCollation'].includes(key))
+            }
+            checked={
+              databaseType === 'postgresql' && ['columnOrder', 'tableCollation'].includes(key)
+                ? false
+                : effectiveOptions(value)[key]
+            }
+            onChange={(event) =>
+              onChange({ ...effectiveOptions(value), [key]: event.target.checked })
+            }
+          >
+            {structureLabels[key]}
+          </Checkbox>
+        </Tooltip>
       ))}
     </div>
   );
@@ -38,9 +55,21 @@ export function TableStructureOptions(props: Parameters<typeof StructureOptionsE
         type="link"
         size="small"
         disabled={props.disabled}
-        title={structureSummary(props.value)}
+        title={structureSummary(
+          props.databaseType === 'postgresql'
+            ? { ...effectiveOptions(props.value), columnOrder: false, tableCollation: false }
+            : props.value,
+        )}
       >
-        {Object.values(effectiveOptions(props.value)).filter(Boolean).length} / 7 项 · 调整
+        {
+          Object.entries(effectiveOptions(props.value)).filter(
+            ([key, selected]) =>
+              selected &&
+              (props.databaseType !== 'postgresql' ||
+                !['columnOrder', 'tableCollation'].includes(key)),
+          ).length
+        }{' '}
+        / {props.databaseType === 'postgresql' ? 5 : 7} 项 · 调整
       </Button>
     </Popover>
   );

@@ -23,6 +23,7 @@ import { effectiveOptions } from './structure-options';
 import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
 import {
   changesOf,
+  connectionOwnsKey,
   dbOptions,
   emptyConnection,
   fromKey,
@@ -139,14 +140,27 @@ function useBusinessController() {
     tables: s.scopeTables.map((table) => ({
       ...table,
       missingTargets: missingTargetsOf(s, table.name),
+      ...(s.sourceKey.startsWith('pg:')
+        ? {
+            structureOptions: {
+              ...effectiveOptions(table.structureOptions),
+              columnOrder: false,
+              tableCollation: false,
+            },
+          }
+        : {}),
     })),
-    structureDefaults: s.structureDefaults,
+    structureDefaults: s.sourceKey.startsWith('pg:')
+      ? { ...s.structureDefaults, columnOrder: false, tableCollation: false }
+      : s.structureDefaults,
   });
   const selectionSignature = (selection: CompareSelection) => JSON.stringify(selection);
   const commit = useCallback((update: (current: Model) => Model) => {
     if (!mounted.current) return;
     const current = latest.current;
     const next = update(current);
+    if (next.sourceKey && next.sourceKey !== current.sourceKey)
+      next.syncDatabaseType = next.sourceKey.startsWith('pg:') ? 'postgresql' : 'mysql';
     if (current.page !== next.page || current.recordView !== next.recordView)
       requests.current.delete('rollback');
     if (
@@ -350,11 +364,14 @@ function useBusinessController() {
               state.connections.some((c) => c.id === id),
           ),
         ),
+        schemaCache: Object.fromEntries(
+          Object.entries(s.schemaCache).filter(([key]) => unchangedTarget([key, undefined])),
+        ),
         treeChildren: Object.fromEntries(
           Object.entries(s.treeChildren).filter(([key]) =>
             state.connections.some(
               (c) =>
-                (key === c.id || key.startsWith(c.id + '/')) &&
+                connectionOwnsKey(key, c.id) &&
                 connectionSignature(c) ===
                   connectionSignature(s.state.connections.find((old) => old.id === c.id)),
             ),
@@ -499,10 +516,17 @@ function useBusinessController() {
       exportSql: '',
     }));
   }
-  async function loadDatabaseOptions(force = false, onlyId?: string) {
+  async function loadDatabaseOptions(
+    force = false,
+    onlyId?: string,
+    databaseType?: 'mysql' | 'postgresql',
+  ) {
     const s = latest.current;
     const connections = s.state.connections.filter(
-      (c) => c.workspaceIds.includes(s.workspaceId) && (!onlyId || c.id === onlyId),
+      (c) =>
+        c.workspaceIds.includes(s.workspaceId) &&
+        (!onlyId || c.id === onlyId) &&
+        (!databaseType || (c.databaseType || 'mysql') === databaseType),
     );
     await Promise.all(
       connections.map(async (connection) => {
@@ -525,7 +549,26 @@ function useBusinessController() {
         const loading = (async () => {
           try {
             const databases = await api<string[]>('databases.list', { connectionId: id });
-            if (current()) commit((v) => ({ ...v, dbCache: { ...v.dbCache, [id]: databases } }));
+            const schemaEntries =
+              connection.databaseType === 'postgresql'
+                ? await Promise.all(
+                    databases.map(
+                      async (database) =>
+                        [
+                          refKey({ connectionId: id, database }),
+                          await api<string[]>('schemas.list', {
+                            ref: { connectionId: id, database },
+                          }),
+                        ] as const,
+                    ),
+                  )
+                : [];
+            if (current())
+              commit((v) => ({
+                ...v,
+                dbCache: { ...v.dbCache, [id]: databases },
+                schemaCache: { ...v.schemaCache, ...Object.fromEntries(schemaEntries) },
+              }));
           } catch (error) {
             if (current())
               commit((v) => ({
@@ -549,7 +592,7 @@ function useBusinessController() {
     if (!m.loading && ['scope', 'templates', 'export'].includes(m.page)) void loadDatabaseOptions();
   }, [m.loading, m.page, m.workspaceId, m.state.connections]);
   async function loadTree(node: TreeNode, force = false) {
-    if (!['connection', 'database'].includes(node.type)) return;
+    if (!['connection', 'database', 'schema'].includes(node.type)) return;
     const connectionId = node.connectionId || node.ref?.connectionId;
     const signature = connectionSignature(
       latest.current.state.connections.find((connection) => connection.id === connectionId),
@@ -592,6 +635,25 @@ function useBusinessController() {
         commit((s) => ({
           ...s,
           dbCache: { ...s.dbCache, [node.connectionId!]: databases },
+          treeChildren: { ...s.treeChildren, [node.key]: children },
+        }));
+      } else if (
+        node.type === 'database' &&
+        latest.current.state.connections.find((c) => c.id === connectionId)?.databaseType ===
+          'postgresql'
+      ) {
+        const schemas = await api<string[]>('schemas.list', { ref: node.ref });
+        if (!valid()) return;
+        children = schemas.map((schema) => ({
+          key: refKey({ ...node.ref!, schema }),
+          title: schema,
+          type: 'schema',
+          ref: { ...node.ref!, schema },
+          isLeaf: false,
+        }));
+        commit((s) => ({
+          ...s,
+          schemaCache: { ...s.schemaCache, [refKey(node.ref!)]: schemas },
           treeChildren: { ...s.treeChildren, [node.key]: children },
         }));
       } else {
@@ -697,15 +759,34 @@ function useBusinessController() {
     }
     return valid() ? latest.current.refreshResults[key] : undefined;
   }
+  function databaseOptionsType(
+    scope: string,
+    s = latest.current,
+  ): Model['syncDatabaseType'] | undefined {
+    if (scope === 'sync') return s.syncDatabaseType;
+    const source =
+      scope === 'template' ? s.templateSource : scope === 'export' ? s.exportSource : '';
+    return source ? (source.startsWith('pg:') ? 'postgresql' : 'mysql') : undefined;
+  }
   async function refreshDatabaseOptions(feedbackKey: string) {
     const s = latest.current;
+    const scope = feedbackKey.split(':', 1)[0];
+    const databaseType = databaseOptionsType(scope, s);
     const ids = s.state.connections
-      .filter((c) => c.workspaceIds.includes(s.workspaceId))
+      .filter(
+        (c) =>
+          c.workspaceIds.includes(s.workspaceId) &&
+          (!databaseType || (c.databaseType || 'mysql') === databaseType),
+      )
       .map((c) => c.id);
     if (!ids.length) return;
     return await runRefresh(feedbackKey, '刷新数据库', async () => {
-      await loadDatabaseOptions(true);
-      if (latest.current.workspaceId !== s.workspaceId) return false;
+      await loadDatabaseOptions(true, undefined, databaseType);
+      if (
+        latest.current.workspaceId !== s.workspaceId ||
+        databaseOptionsType(scope) !== databaseType
+      )
+        return false;
       const errors = ids.map((id) => latest.current.dbErrors[id]).filter(Boolean);
       if (errors.length) throw new Error(errors.join('；'));
     });
@@ -813,6 +894,11 @@ function useBusinessController() {
     commit((s) => ({
       ...s,
       sourceKey: source,
+      syncDatabaseType: source
+        ? source.startsWith('pg:')
+          ? 'postgresql'
+          : 'mysql'
+        : s.syncDatabaseType,
       scopeTables: [],
       scopeDrafts: {},
       tableSearch: '',
@@ -844,7 +930,9 @@ function useBusinessController() {
             scopeMode: mode,
             scopeTables: tables,
             scopeDrafts: {},
-            targetKeys: s.targetKeys.filter((k) => k !== source),
+            targetKeys: s.targetKeys.filter(
+              (k) => k !== source && k.startsWith('pg:') === source.startsWith('pg:'),
+            ),
           },
           s.scopeMode,
         );
@@ -914,6 +1002,22 @@ function useBusinessController() {
       }),
     );
   }
+  function switchDatabaseType(databaseType: 'mysql' | 'postgresql') {
+    if (comparisonActive() || latest.current.syncDatabaseType === databaseType) return;
+    requests.current.delete('scope');
+    commit((s) => ({
+      ...s,
+      syncDatabaseType: databaseType,
+      sourceKey: '',
+      targetKeys: [],
+      scopeTables: [],
+      scopeDrafts: {},
+      plan: undefined,
+      selectedIds: [],
+      tableSearch: '',
+      scopeTableFilter: 'all',
+    }));
+  }
   async function setTargets(keys: string[]) {
     if (comparisonActive()) return;
     if (JSON.stringify(keys) !== JSON.stringify(latest.current.targetKeys)) {
@@ -949,6 +1053,7 @@ function useBusinessController() {
       scopeTables: [],
       scopeDrafts: {},
       scopeMode: 'structure',
+      syncDatabaseType: initial.syncDatabaseType,
       structureDefaults: initial.structureDefaults,
       tableSearch: '',
       scopeTableFilter: 'all',
@@ -1031,7 +1136,7 @@ function useBusinessController() {
       };
     });
   }
-  const choices = (tables: TableChoice[]) =>
+  const choices = (tables: TableChoice[], sourceKey = latest.current.sourceKey) =>
     tables
       .filter((t) => t.structure || t.data)
       .map((t) => ({
@@ -1039,12 +1144,22 @@ function useBusinessController() {
         structure: t.structure,
         data: t.data,
         keyColumns: t.keyText === undefined ? t.keyColumns : splitKeys(t.keyText),
-        structureOptions: { ...effectiveOptions(t.structureOptions) },
+        structureOptions: {
+          ...effectiveOptions(t.structureOptions),
+          ...(sourceKey.startsWith('pg:') ? { columnOrder: false, tableCollation: false } : {}),
+        },
       }));
   async function compare() {
     if (comparisonActive() || latest.current.compareConfirmation || compareStarting.current) return;
     const s = latest.current;
     if (!s.sourceKey || !s.targetKeys.length || !choices(s.scopeTables).length) return;
+    const typeOf = (key: string) =>
+      s.state.connections.find((connection) => connection.id === fromKey(key).connectionId)
+        ?.databaseType || 'mysql';
+    if (s.targetKeys.some((key) => typeOf(key) !== typeOf(s.sourceKey))) {
+      void message.warning('仅支持同类型数据库同步');
+      return;
+    }
     if (mixedSyncModes(s.scopeTables)) {
       void message.warning('每次只能同步结构或数据，请选择一种同步类型');
       return;
@@ -1234,7 +1349,12 @@ function useBusinessController() {
     try {
       if (mode === 'EXECUTE_AND_SAVE' || mode === 'SAVE_ONLY') {
         const accepted = await modal.confirm({
-          title: mode === 'SAVE_ONLY' ? '预览并保存同步脚本' : '确认执行同步',
+          title:
+            mode === 'SAVE_ONLY'
+              ? '预览并保存同步脚本'
+              : preview
+                ? '确认模拟同步（不会连接数据库）'
+                : '确认执行同步',
           centered: true,
           width: 960,
           content: (
@@ -1245,7 +1365,7 @@ function useBusinessController() {
               saveOnly={mode === 'SAVE_ONLY'}
             />
           ),
-          okText: mode === 'SAVE_ONLY' ? '确认保存' : '确认执行',
+          okText: mode === 'SAVE_ONLY' ? '确认保存' : preview ? '确认模拟执行' : '确认执行',
           cancelText: '取消',
         });
         if (!accepted) return;
@@ -1273,7 +1393,9 @@ function useBusinessController() {
         void message.success(
           mode === 'SAVE_ONLY'
             ? '同步记录和脚本已保存，目标库未变更'
-            : '任务已创建，正在准备恢复资料',
+            : preview
+              ? '虚构模拟已完成，未连接真实数据库'
+              : '任务已创建，正在准备恢复资料',
         );
       });
     } finally {
@@ -1569,9 +1691,7 @@ function useBusinessController() {
         dbLoading: { ...v.dbLoading, [form.id]: false },
         dbErrors: { ...v.dbErrors, [form.id]: '' },
         treeChildren: Object.fromEntries(
-          Object.entries(v.treeChildren).filter(
-            ([key]) => key !== form.id && !key.startsWith(form.id + '/'),
-          ),
+          Object.entries(v.treeChildren).filter(([key]) => !connectionOwnsKey(key, form.id)),
         ),
       }));
       await loadState();
@@ -1725,7 +1845,7 @@ function useBusinessController() {
       commit((s) => ({
         ...s,
         treeChildren: Object.fromEntries(
-          Object.entries(s.treeChildren).filter(([key]) => key !== id && !key.startsWith(id + '/')),
+          Object.entries(s.treeChildren).filter(([key]) => !connectionOwnsKey(key, id)),
         ),
       }));
       await loadDatabaseOptions(true, id);
@@ -1918,7 +2038,13 @@ function useBusinessController() {
     }));
   }
   async function templateSourceChanged(source: string) {
-    set('templateSource', source);
+    commit((s) => ({
+      ...s,
+      templateSource: source,
+      templateTargets: s.templateTargets.filter(
+        (key) => key !== source && key.startsWith('pg:') === source.startsWith('pg:'),
+      ),
+    }));
     const valid = request('templateScope');
     const id = latest.current.templateForm.id;
     const generation = templateEditorGeneration.current;
@@ -1986,7 +2112,7 @@ function useBusinessController() {
             ...s.templateForm,
             source: fromKey(s.templateSource),
             targets: s.templateTargets.map(fromKey),
-            tables: choices(s.templateForm.tables),
+            tables: choices(s.templateForm.tables, s.templateSource),
           },
         });
         await loadState();
@@ -2091,6 +2217,7 @@ function useBusinessController() {
         ...s,
         scopeTemplateId: template.id,
         appliedTemplate: { id: template.id, name: template.name },
+        scopeTableFilter: 'selected',
       }));
     } finally {
       if (valid()) set('applyingTemplateId', '');
@@ -2134,6 +2261,7 @@ function useBusinessController() {
       title: '编辑版本说明',
       content: (
         <Input.TextArea
+          placeholder="填写版本包含的变更与注意事项（选填）"
           defaultValue={description}
           onChange={(e) => {
             description = e.target.value;
@@ -2375,7 +2503,7 @@ function useBusinessController() {
     set('rollbackSubmitting', s.rollback.recordId);
     try {
       const accepted = await modal.confirm({
-        title: '执行回滚',
+        title: preview ? '模拟恢复（只修改内存示例）' : '执行回滚',
         centered: true,
         width: 960,
         content: (
@@ -2784,10 +2912,12 @@ function useBusinessController() {
     loadState,
     switchWorkspace,
     loadTree,
+    switchDatabaseType,
     openTable,
     refreshTable,
     refreshDatabase,
     clearRefresh,
+    databaseOptionsType,
     refreshDatabaseOptions,
     refreshTargetTables,
     refreshEngine,

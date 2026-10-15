@@ -12,6 +12,10 @@ $taskMaria=Join-Path $taskLicense 'mariadb'
 New-Item -ItemType Directory -Force -Path $taskMaria | Out-Null
 if (!(Test-Path "$taskMaria/mariadb-java-client-3.5.10-sources.jar")) { Invoke-WebRequest 'https://repo.maven.apache.org/maven2/org/mariadb/jdbc/mariadb-java-client/3.5.10/mariadb-java-client-3.5.10-sources.jar' -OutFile "$taskMaria/mariadb-java-client-3.5.10-sources.jar" }
 if (!(Test-Path "$taskMaria/LICENSE")) { Invoke-WebRequest 'https://raw.githubusercontent.com/mariadb-corporation/mariadb-connector-j/3.5.10/LICENSE' -OutFile "$taskMaria/LICENSE" }
+$taskPgLicense=Join-Path $taskLicense 'postgresql'
+New-Item -ItemType Directory -Force -Path $taskPgLicense | Out-Null
+if (!(Test-Path "$taskPgLicense/LICENSE")) { Invoke-WebRequest 'https://raw.githubusercontent.com/pgjdbc/pgjdbc/REL42.7.8/LICENSE' -OutFile "$taskPgLicense/LICENSE" }
+Copy-Item -LiteralPath "$taskRoot/engine/src/main/resources/drivers.json" -Destination "$taskPgLicense/driver-catalogue.json" -Force
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $taskInventory=@()
 foreach ($taskJar in Get-ChildItem -LiteralPath "$taskRoot/engine/target/lib" -Filter '*.jar') {

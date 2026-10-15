@@ -48,6 +48,31 @@ export async function smoke(
     ),
     'renderer cannot override update source',
   );
+  const drivers = (await invoke('drivers.list')) as { id: string; status: string }[];
+  assert(
+    drivers.some((driver) => driver.id === 'mariadb' && driver.status === 'installed'),
+    'offline built-in MySQL driver',
+  );
+  assert(
+    await win.webContents.executeJavaScript(
+      'window.dbAligner.invoke("drivers.install", {driverId:"postgresql",url:"https://example.invalid"}).then(() => false, () => true)',
+    ),
+    'renderer cannot override JDBC catalogue',
+  );
+  if (fixture.connection.databaseType === 'postgresql') {
+    const before = (await invoke('drivers.get', { driverId: 'postgresql' })) as { status: string };
+    assert(
+      before.status === (fixture.expectCachedDriver ? 'installed' : 'missing'),
+      'PostgreSQL driver cache on startup',
+    );
+    const installed = (await invoke('drivers.install', { driverId: 'postgresql' })) as {
+      status: string;
+    };
+    assert(
+      installed.status === 'installed',
+      'pinned PostgreSQL driver installation or offline reuse',
+    );
+  }
   await invoke('entity.save', {
     kind: 'connection',
     value: {
@@ -88,8 +113,38 @@ export async function smoke(
     ok: boolean;
   };
   assert(connected.ok, 'real packaged JDBC connection');
-  const source = { connectionId: 'smoke-connection', database: fixture.source };
-  const target = { connectionId: 'smoke-connection', database: fixture.target };
+  const source = {
+    connectionId: 'smoke-connection',
+    database: fixture.source,
+    ...(fixture.sourceSchema ? { schema: fixture.sourceSchema } : {}),
+  };
+  const target = {
+    connectionId: 'smoke-connection',
+    database: fixture.target,
+    ...(fixture.targetSchema ? { schema: fixture.targetSchema } : {}),
+  };
+  if (fixture.sourceSchema) {
+    const schemas = (await invoke('schemas.list', { ref: source })) as string[];
+    assert(
+      schemas.includes(fixture.sourceSchema) && schemas.includes(fixture.targetSchema),
+      'packaged schema namespace discovery',
+    );
+  }
+  if (fixture.mysql) {
+    await invoke('entity.save', {
+      kind: 'connection',
+      value: {
+        ...fixture.mysql,
+        id: 'mysql-control',
+        name: '双驱动验证',
+        workspaceIds: ['default'],
+      },
+    });
+    assert(
+      ((await invoke('connections.test', { id: 'mysql-control' })) as { ok: boolean }).ok,
+      'both JDBC drivers work in the same packaged process',
+    );
+  }
   const plan = (await invoke('sync.compare', {
     workspaceId: 'default',
     source,

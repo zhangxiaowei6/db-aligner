@@ -1,3 +1,4 @@
+import { fromKey } from '../model';
 import { Alert, Checkbox, Modal, Tag } from 'antd';
 import { useEffect, useState } from 'react';
 import { useController } from '../controller';
@@ -13,12 +14,15 @@ export function CompareConfirmation() {
   const dataCount = tables.filter((table) => table.data).length;
   const allData = dataCount > 0 && dataCount === pending.tables.length;
   const database = (key: string) => {
-    const connection = c.m.state.connections.find(
-      (item) => item.id === key.slice(0, key.indexOf('/')),
-    );
+    const ref = fromKey(key);
+    const connection = c.m.state.connections.find((item) => item.id === ref.connectionId);
     return (
       <span>
-        <strong>{key.slice(key.indexOf('/') + 1)}</strong> · {connection?.name || key.split('/')[0]}
+        <strong>
+          {ref.database}
+          {ref.schema !== undefined ? ' / ' + ref.schema : ''}
+        </strong>{' '}
+        · {connection?.name || ref.connectionId}
         {connection && (
           <small>
             {' '}
@@ -78,7 +82,16 @@ export function CompareConfirmation() {
                     <span key={key}>{database(key)}；</span>
                   ))}
                   {' 缺少该表：'}
-                  {table.structure && fullStructure(table.structureOptions)
+                  {table.structure &&
+                  fullStructure(
+                    pending.sourceKey.startsWith('pg:')
+                      ? {
+                          ...effectiveOptions(table.structureOptions),
+                          columnOrder: true,
+                          tableCollation: true,
+                        }
+                      : table.structureOptions,
+                  )
                     ? '将创建表'
                     : table.structure
                       ? '结构细项不足，无法创建完整表，该表将被阻止'

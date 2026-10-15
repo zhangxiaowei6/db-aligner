@@ -1,0 +1,52 @@
+{
+  "browser": [
+    {
+      "check": "workspace-edit-placeholders-minimum",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "workspace-create-placeholders-minimum",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "template-selected-tables-minimum-light",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "apply-and-reapply-template-selects-selected-table-filter",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "workspace-edit-placeholders-minimum",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "workspace-create-placeholders-minimum",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "template-selected-tables-minimum-dark",
+      "scrollBottom": 695,
+      "footerTop": 695,
+      "footerBottom": 760,
+      "windowHeight": 760,
+      "hitFooter": true
+    },
+    {
+      "check": "apply-and-reapply-template-selects-selected-table-filter",
+      "theme": "dark",
+      "passed": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

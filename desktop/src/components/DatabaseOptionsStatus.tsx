@@ -11,11 +11,14 @@ export function DatabaseOptionsStatus({
 }) {
   const c = useController();
   const id = useId();
-  const key = `${scope}:databases:${id}:${c.m.workspaceId}${scope === 'sync' ? ':' + c.m.scopeView : ''}`;
+  const databaseType = c.databaseOptionsType(scope);
+  const key = `${scope}:databases:${id}:${c.m.workspaceId}:${databaseType || 'all'}${scope === 'sync' ? ':' + c.m.scopeView : ''}`;
   const clearRefresh = c.clearRefresh;
   useEffect(() => () => clearRefresh(key), [key, clearRefresh]);
-  const connections = c.m.state.connections.filter((connection) =>
-    connection.workspaceIds.includes(c.m.workspaceId),
+  const connections = c.m.state.connections.filter(
+    (connection) =>
+      connection.workspaceIds.includes(c.m.workspaceId) &&
+      (!databaseType || (connection.databaseType || 'mysql') === databaseType),
   );
   const loading = !!c.m.refreshing[key];
   const errors = connections.filter((connection) => c.m.dbErrors[connection.id]);

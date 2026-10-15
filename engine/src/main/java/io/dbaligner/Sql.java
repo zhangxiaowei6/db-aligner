@@ -27,7 +27,26 @@ public final class Sql {
   }
 
   public static String qualified(DbRef r, String table) {
+    if (r.schema() != null) return PostgresSql.id(r.schema()) + "." + PostgresSql.id(table);
     return id(r.database()) + "." + id(table);
+  }
+
+  public static String id(DbRef ref, String name) {
+    return ref.schema() == null ? id(name) : PostgresSql.id(name);
+  }
+
+  public static String value(DbRef ref, Object value) {
+    return ref.schema() == null ? value(value) : PostgresSql.value(value);
+  }
+
+  public static String where(DbRef ref, Map<String, Object> row, List<String> fields) {
+    return ref.schema() == null ? where(row, fields) : PostgresSql.where(row, fields);
+  }
+
+  public static String header(DbRef ref) {
+    return ref.schema() == null
+        ? header()
+        : "SET client_encoding = 'UTF8';\nSET standard_conforming_strings = on;\n";
   }
 
   // Readable literals double quotes; escape-sensitive values use hex in either SQL mode.
@@ -212,6 +231,21 @@ public final class Sql {
   }
 
   public static String schemaHash(Table t) {
+    if (t.databaseType.equals("postgresql"))
+      return t.exists
+          ? Json.hash(
+              Arrays.asList(
+                  t.name,
+                  t.comment,
+                  t.columns.stream()
+                      .sorted(java.util.Comparator.comparing(Column::name))
+                      .map(Sql::columnSignature)
+                      .toList(),
+                  t.indexes,
+                  t.foreignKeys,
+                  t.primaryKeyColumns,
+                  t.attributes))
+          : "MISSING";
     return t.exists
         ? Json.hash(
             Arrays.asList(

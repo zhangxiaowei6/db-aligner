@@ -333,7 +333,16 @@ public final class External {
                               .anyMatch(
                                   s ->
                                       s.name().equals(i.name())
-                                          && s.definition().equals(i.definition())));
+                                          && (source.databaseType.equals("postgresql")
+                                                  ? PostgresSql.foreignKey(
+                                                      s.name(),
+                                                      Json.node(
+                                                              source.attributes.get(
+                                                                  "foreignKeySpecs"))
+                                                          .path(s.name()),
+                                                      ref.schema())
+                                                  : s.definition())
+                                              .equals(i.definition())));
       case "DROP_FK" -> actual.foreignKeys.stream().noneMatch(i -> i.name().equals(x.label));
       case "TABLE_COMMENT" -> Objects.equals(actual.comment, source.comment);
       case "TABLE_COLLATION" ->

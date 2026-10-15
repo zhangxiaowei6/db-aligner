@@ -1,3 +1,4 @@
+import { namespaceLabel } from '../model';
 import { AsyncButton as Button } from './AsyncButton';
 import { useEffect, useState } from 'react';
 import { Alert, Collapse, Progress, Space, Tooltip } from 'antd';
@@ -29,7 +30,7 @@ export function CompareProgressPanel() {
     0;
   const name = (ref?: DbRef) =>
     ref
-      ? `${m.state.connections.find((connection) => connection.id === ref.connectionId)?.name || ref.connectionId} / ${ref.database}`
+      ? `${m.state.connections.find((connection) => connection.id === ref.connectionId)?.name || ref.connectionId} / ${namespaceLabel(ref)}`
       : '—';
   const role =
     progress.ref && source && refKey(progress.ref) === refKey(source) ? '源库' : '目标库';

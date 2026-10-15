@@ -2,6 +2,45 @@
 
 > 名称展示说明：2026-10-12 按改名要求将下方历史条目的产品名称、路径示例和命令标识映射为当前名称。历史日期、环境、结果、大小和哈希保持原值，不表示旧产物已重新构建或旧命令已重新执行；当前产物以本次验证条目和产物清单为准。
 
+## 2026-10-13：模板应用后筛选已选表与工作区 placeholder
+
+本次前端修改：模板范围加载成功后切换“已选表”，结构和数据模板、再次应用均适用；
+新建与编辑工作区的名称和说明补充填写提示，关联连接保留现有提示。
+验证保留工作区中已有的 PostgreSQL／驱动等其他未提交修改。
+
+实际环境：Windows x64、Node.js 24.9.0、npm 11.6.0、项目 Java 21.0.12.1、
+Google Chrome 155.0.8059.39。
+
+- `npm run typecheck`：最终退出 0。首次被其他未提交的 `preview-postgres.ts`
+  中 `Change.matchColumns` 类型错误阻止；后续工作区更新后重跑通过。
+- `npm run build`：最终退出 0，前端与 Electron 构建成功，保留 Vite 包体大小警告。
+  首次因上述类型错误失败；中间单独执行 Vite／Electron 构建供浏览器验收，
+  最后标准构建也已完整通过。
+- `npm test`：未完整通过。首次沙箱运行因 Vitest 依赖 `realpath EPERM` 无法启动；
+  本机重跑前端 21 文件、227 项，其中 223 项通过、4 项失败，未进入串联的引擎测试。
+  两项新增回归因点击 Ant Design 隐藏 radio input 失败，已改为点击可见标签；
+  另两项既有连接测试因新驱动组件请求未被测试桥接适配，出现 `Unexpected test API: drivers.get`。
+  未再次完整重跑，因此不能报告全套通过。
+- `npm run test -w desktop -- --testNamePattern="shows only selected tables"`：退出 0，
+  本次结构／数据模板两个回归通过，其他 225 项按名称筛选跳过。
+  覆盖模板初次应用、手动切到全部表但保留选择、再次应用及模式切回后的筛选恢复。
+  jsdom 仍显示既有 CSS 解析提示。
+- `npm run engine:test`：退出 0，30 项中 26 项通过、4 项集成入口默认跳过，
+  0 失败、0 错误；这是默认引擎测试，不包含真库回归。
+- `npm run qa:ui -w desktop`：未完整通过。首次新增截图步骤错误引用主题变量，
+  修正后重跑在既有连接分组断言处失败：预览已有“PostgreSQL 演示”分组，
+  断言仍只接受“测试环境／目标环境”。[完整浏览器报告](react-ui-qa.json)保存本次未完整通过的结果。
+- `npm run qa:ui -w desktop -- --template-workspace`：最终退出 0，8 项检查、0 错误。
+  [专项报告](template-workspace-ui-qa.json)覆盖 1180 × 760、浅色／深色、工作区新建／编辑提示、
+  模板管理列表应用、范围页再次应用、已选表筛选及底部按钮可达。
+  初版专项复用刷新检查时被等待刷新成功状态超时阻止，改为本次需求的直接验收路径；
+  随后修正初始预览加载等待，最终完整专项通过。
+- 修改的测试、UI 脚本与文档 Prettier 检查、UI 脚本语法检查和 `git diff --check` 通过。
+
+截图与视觉复核见[设计 QA](../design-qa.md)。本次未改动数据库比较、执行、归档或回滚算法，
+未运行三版本真库、原生客户端、完整安装包构建或干净 Windows 安装验收。
+浏览器使用虚构资料，不证明真实同步或恢复；已有安装包不包含本次修改。
+
 ## 2026-10-12 19:12：侧栏新建同步清空旧会话
 
 侧栏入口调用同步会话重置，清空来源、目标、结构／数据双草稿、搜索筛选、
@@ -721,3 +760,99 @@ OpenSSL 与 Git 探测均显式取第一个可执行命令，避免 PATH 中多�
 正式发布于 2026-10-13 18:36:32 +08:00，地址为 [v0.1.2](https://github.com/zhangxiaowei6/db-aligner/releases/tag/v0.1.2)，`draft=false`、`prerelease=false`，已设为 Latest。公开前再次确认五个附件及校验值，发布只更新说明与可见状态，未重新构建、覆盖附件或移动标签。安装包保持未签名，大小与 SHA-256 仍为上述云端结果。
 
 使用不带授权凭据的请求读取公开 `releases/latest`，确认返回 `v0.1.2` 与五个下载地址；实际下载公开 `latest.yml`，与此前已验证文件逐字节一致，SHA-256 为 `edde1165c7bfe41af812e6a593e5fa9c268e89241ffca93899c20049c680250f`。本次仅更新发布说明和记录，格式与差异检查通过，不重复执行客户端构建或数据库测试。
+
+### 2026-10-13 多数据库、按需驱动与完整预览
+
+本次实现 MySQL／PostgreSQL 分开的驱动目录、适配器和执行策略。预览从连接表单、驱动状态、
+连接树、数据库／schema 范围到差异、保存确认、模拟执行、记录及模拟恢复均包含两种类型。
+预览只使用内存虚构数据，刷新会重置；不会下载 JDBC、连接服务器或持久化执行事实。
+
+环境为 Windows 11 x64（10.0.26200）、Node.js 24.9.0、npm 11.6.0、项目 Temurin
+21.0.12.1、MySQL 5.7.44／8.0.45／8.4.8、PostgreSQL 17.11 和 OpenSSL 3.5.4。
+JDBC 目录保留内置 MariaDB Connector/J 3.5.10，PostgreSQL 固定为 42.7.8；Maven 制品
+SHA-256 与随附目录一致。密码、证书私钥、随机数据库和工具目录均未加入源码资料。
+
+实际检查：
+
+- `npm run typecheck` 通过。完整前端 22 个文件、231 项通过；默认引擎 30 项、零失败，
+  四个真库入口默认跳过。前期失败包括旧驱动接口测试桩、连接反馈查询范围和数据示例断言，
+  修复后复验，不将此前失败运行记作通过。
+  最终根目录 `npm test` 完整通过，日志结束于 2026-10-13 20:47:25 +08:00，
+  前端 231 项通过；引擎实际执行 26 项、跳过 4 项，无失败或错误。
+- `./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8'
+'-Ddbaligner.postgresql.test=true' '-Ddbaligner.electron.smoke=true'` 于 20:32:21 +08:00
+  通过：36 项、零失败／错误／跳过。MySQL 打包客户端仍仅在 8.4.8 分支启动。
+- PostgreSQL 覆盖真实 SSL 与客户端证书、特殊标识符、多 schema、精确数值、二进制、UUID、
+  空值、业务键保留目标主键、仅保存、真实执行、核验、独立行冲突、字段原值恢复、事务失败、
+  超限、身份列阻止、连接绑定变化、取消与提交确认丢失。创建关联表的外键实际指向目标 schema。
+  20:43:48 的专项再次通过，补充实际锁等待中的取消、比较后新增未选 schema 级联外键时阻止
+  写入、默认值类别与非默认索引操作符类阻止。未选 schema、表与关联行保持原值。
+- 打包客户端 PostgreSQL 首次下载和重启缓存复用各通过 26 条检查，同一进程测试两种 JDBC，
+  使用随附 Java；比较、保存、执行、原生归档、精确数值 IPC、SQL 导出和恢复均通过。
+  报告见 `postgresql-native-smoke.json` 与 `postgresql-native-cached-smoke.json`。
+  这里使用 `win-unpacked`，没有把它表述为干净 NSIS 安装验收。
+- `npm run qa:ui -w desktop -- --multi-database`：两种数据库、浅／深色、1488／1180 宽度，
+  八组完整流程通过，无控制台错误，含实际模拟恢复和类型切换后的范围隔离。
+  报告为 `multi-database-ui-qa.json`；截图见 `screenshots/react-ant-design/multi-db-*.png`。
+- `npm run qa:desktop -w desktop`：七项原生窗口、主题、关闭任务确认及实际 IPC 检查通过，
+  无控制台错误。资料使用本次独立临时目录，报告为 `react-desktop-qa.json`。
+- 根目录 `npm run dist` 于 20:28 完整通过，包括引擎、前端、Electron、裁剪 Java 运行时、
+  `npm run licenses` 与 NSIS。安装包 `release/DBAligner Setup 0.1.2.exe` 为 181,323,560 字节，
+  SHA-256：`2b500e3dd3b178fcd932f3ec10b7e7824dcda831f1d407111f42d76830a7637a`。
+  PostgreSQL JAR 按需下载，许可与驱动目录随应用发布；MySQL 独立 JAR 保持原版本。
+
+修复隔离 PostgreSQL 启动脚本的等待方式：PowerShell `Start-Process -Wait` 会等待数据库整个
+子进程树，改为只等待 pg_ctl 完成。启动、立即返回和停止已复验。所有本次隔离实例均由项目
+停止脚本清理，不注册服务，不操作用户数据库。
+
+`git diff --check` 通过。全仓库 `npm run format:check` 在 19 个未修改的既存文件报告格式差异，
+本次变更文件另行检查；没有为该任务重排无关文件。构建仍有既存的前端单块体积警告。
+本次本地产物保留 0.1.2 作为开发构建，没有提交、发布或覆盖 GitHub 已公开附件；多数据库版本
+的干净 Windows 安装／升级、外网受限环境下载和全部服务器权限组合仍待独立验收。
+
+## 2026-10-15：0.2.0 发布准备的本地验证
+
+本次将根清单、桌面清单、锁文件与引擎版本统一为 `0.2.0`，补充中文版本记录及 GitHub
+多数据库构建流程。最终本地构建包含 MySQL／PostgreSQL 不同轮廓的类型图标与类型文字，
+以及各页面表单的中文 placeholder；前端技能和交互规范同步记录提示、标签、校验及已存密码的要求。
+以下仅记录本次本地结果，不将前述 2026-10-13 的真库记录计作本次重新执行。
+
+- `npm run typecheck` 通过。
+- 根目录 `npm test` 首次在受限环境中为 234 项前端通过、2 项失败，未继续执行串联的引擎测试。
+  外观偏好测试在临时文件替换时报 `EPERM`，驱动安装测试返回错误状态而非已安装，涉及同类
+  临时文件替换权限。提升运行权限后完整重跑：前端 22 个文件、236 项全部通过；默认引擎
+  30 项、0 失败／错误、4 个真库入口跳过，即实际执行 26 项。日志为本地忽略目录中的
+  `release-020-tests-unrestricted.log`，Maven 于 15:57:29 +08:00 成功结束。
+- 最终根目录 `npm run dist` 完整通过，日志为 `release-020-final-dist.log`，覆盖引擎构建与
+  默认测试、前端、Electron、随附 Java 运行时、许可材料和 NSIS 安装包。前端仍有单块体积
+  超过 500 kB 的构建警告；安装包未签名，普通打包继续使用 `--publish never`。
+- 发布整理首次在 Windows PowerShell 5 中因默认 ANSI 解码破坏驱动目录 JSON 的中文字符串
+  而失败。发布与 PostgreSQL 脚本的 JSON／摘要读取改为显式 UTF-8；JSON 写入使用 UTF-8
+  无 BOM，含中文的 PostgreSQL 启停脚本使用 UTF-8 BOM、CRLF 供 PowerShell 5 解析。
+  修复后实际使用 `powershell.exe` 运行发布整理通过；最终构建后的整理再次通过，日志为
+  `release-020-final-files.log`。已核验版本说明、更新元数据、安装包 SHA-512、打包更新依赖、
+  PostgreSQL 许可与驱动目录、完整无需安装 ZIP 和 SHA-256 清单。
+- 发布脚本另在 Windows PowerShell 5 下使用本地 `gh` 替身验证草稿创建、草稿更新、公开版本
+  拒绝覆盖、摘要缺项拒绝和版本说明篡改拒绝，五项通过；这些检查没有访问或修改 GitHub。
+
+最终本地产物经独立读取大小、重新计算 SHA-256，并与 `release/SHA256SUMS.txt` 核对：
+
+| 产物                                  | 大小（字节） | SHA-256                                                            |
+| ------------------------------------- | -----------: | ------------------------------------------------------------------ |
+| `release/DBAligner-Setup-0.2.0.exe`   |  181,324,560 | `5ed1c8193de1a1770b0f57c7402c882d3362df3b630b5f79875a60df37b9c689` |
+| `release/DBAligner-0.2.0-win-x64.zip` |  236,062,600 | `640212806b0dad186b3253895691ca6fd81ac8b604a17b73088001adb19021da` |
+
+带空格的本地 NSIS 原文件 `release/DBAligner Setup 0.2.0.exe` 与上表安装包内容相同；ZIP
+包含完整 `win-unpacked` 资源。安装包、blockmap、`latest.yml`、ZIP、`RELEASE_NOTES.md`
+及 `SHA256SUMS.txt` 已整理在忽略的 `release` 目录，未作为源码提交。
+
+最终构建后运行 `npm run qa:ui -w desktop`，131 条检查全部通过，无控制台错误；随后运行
+`npm run qa:ui -w desktop -- --multi-database`，MySQL／PostgreSQL、浅／深色及 1488／1180
+窗口的八组完整流程通过，无控制台错误。报告与截图已刷新；复核连接树和列表中的海豚／大象
+图标在浅／深色下可辨识。源码检查覆盖 55 个输入或选择控件，均有 placeholder；提示未替代
+标签、字段校验或已存密码语义。浏览器结果只证明内存演示交互。
+
+截至此条目记录，源码与版本标签尚未推送，没有把本地构建报告为 GitHub Actions 成功。
+后续远程结果独立追加。`0.2.0` 的干净 Windows
+安装、覆盖升级和真实自动更新仍待完成；本机完整打包与已有 `win-unpacked` smoke 不能替代，
+远程版本在完成相应验收前保持草稿。

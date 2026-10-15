@@ -74,3 +74,29 @@ SQLite 使用 WAL 与 FULL 同步保存实体、计划、记录、事件和版�
 - [External.java](../engine/src/main/java/io/dbaligner/External.java)、[Store.java](../engine/src/main/java/io/dbaligner/Store.java)与[Backup.java](../engine/src/main/java/io/dbaligner/Backup.java)：外部证据、本地持久化及备份验证。
 
 现行支持边界见[支持范围](limitations.md)，操作步骤见[使用指南](user-guide.md)，实际验证见[验证记录](validation.md)。源码和现有用例用于定位行为，不能作为本次重新验证通过的证据。
+
+## 数据库适配器与 PostgreSQL 事务
+
+数据库类型和 JDBC 驱动分别管理。`Database` 保留公共连接、凭据及兼容入口，
+`DatabaseAdapter` 定义专有元数据、版本和键语义契约；`MySqlAdapter/MySqlPlanner` 保留既有
+MySQL 行为，`PostgresAdapter/PostgresPlanner` 生成 PostgreSQL 操作。`PostgresSql` 从元数据
+生成类型、标识符、注释、索引、空值比较和结构化外键 SQL，不翻译 MySQL SQL 文本。
+
+Electron 从随应用发布的目录下载并校验 PostgreSQL JDBC，临时文件同步后原子切换；Java 再次
+检查摘要和路径，通过独立加载器实例化固定驱动，显式建立连接。驱动缓存在资料目录的
+`drivers/<id>/<version>`，不进入业务备份。当前 MySQL 驱动仍随安装包分发。
+升级目录必须保留仍被连接或历史恢复记录引用的版本条目和文件，不自动升级连接，不热卸载。
+
+PostgreSQL 来源使用可重复读事务，所选快照供全部目标复用。确定性键按原值比较，numeric
+标度和定长字符尾部空格规范化；字段类型及排序规则不兼容时阻止数据同步。
+
+每个 PostgreSQL 目标的选中变更在一个事务内执行。现有表及引用依赖按固定顺序取得表锁，锁内
+重新读取支持状态与目标快照，采集并持久化字段原值资料后才开始写入。缺表创建不使用
+IF NOT EXISTS，并与所选后续 DDL 同事务。步骤先保存 IN_FLIGHT；全部 SQL、执行后行和摘要
+采样完成后提交，确认提交后才保存 DONE。事务中途失败回滚前面步骤；提交或本地完成证据
+保存结果不明时保留 UNKNOWN，不根据当前状态补写成功。MySQL 仍使用原独立 DDL／批次提交模型。
+
+PostgreSQL 恢复仍要求可信完成步骤、当前执行后状态、本地资料摘要和外键核验。预览后在事务锁
+内再次复验，按逆序恢复并生成 parentId 关联记录。删除字段的恢复先追加允许空的新字段、写回
+原值，再恢复默认值和非空约束；不保证恢复原物理字段位置。结构摘要按语义字段排序，原始
+元数据和归档仍保存实际顺序。外部执行声明和当前核验仍是追加证据，不改写原未执行事实。

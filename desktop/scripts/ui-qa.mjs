@@ -1,3 +1,4 @@
+import { multiDatabaseQA } from './multi-database-qa.mjs';
 /** UI acceptance against the production bundle and an isolated native client.
  * Requires npm run build. Uses a local Chrome/Edge installation (or Playwright's browser).
  * Never reads the normal client's database or connects to a database server. */
@@ -776,10 +777,10 @@ async function organizationQA(browser, theme) {
     assert.deepEqual(
       await page.locator('.ant-select-dropdown:visible .ant-select-item-option').allTextContents(),
       [
-        '目标服务器 1 / shop_a',
-        '目标服务器 2 / shop_b',
-        '目标服务器 3 / shop_c',
-        '测试服务器 / shop_test',
+        '目标服务器 1 · MySQL / shop_a',
+        '目标服务器 2 · MySQL / shop_b',
+        '目标服务器 3 · MySQL / shop_c',
+        '测试服务器 · MySQL / shop_test',
       ],
     );
     await page.keyboard.press('Escape');
@@ -904,7 +905,11 @@ async function connectionFormQA(browser, theme) {
       const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option');
       await options.first().waitFor();
       await motionSettled(page, '.ant-select-dropdown');
-      assert.deepEqual(await options.allTextContents(), ['测试环境', '目标环境']);
+      assert.deepEqual(await options.allTextContents(), [
+        '测试环境',
+        '目标环境',
+        'PostgreSQL 演示',
+      ]);
       await shot(page, `connection-new-in-place-${heading}-${theme}`);
       await page.keyboard.press('Escape');
       await editor.getByRole('button', { name: /取\s*消/ }).click();
@@ -1096,6 +1101,14 @@ async function connectionActionsQA(browser, theme) {
       .click();
     const workspaceEditor = page.getByRole('dialog', { name: '编辑工作区', exact: true });
     await modalSettled(page);
+    assert.equal(
+      await workspaceEditor.getByLabel('工作区名称', { exact: true }).getAttribute('placeholder'),
+      '请输入工作区名称，例如：业务系统',
+    );
+    assert.equal(
+      await workspaceEditor.getByLabel('说明', { exact: true }).getAttribute('placeholder'),
+      '请输入工作区说明（选填）',
+    );
     assert.equal(await workspaceEditor.getByRole('checkbox').count(), 0);
     await workspaceEditor.getByRole('combobox', { name: '关联连接', exact: true }).click();
     await page
@@ -1126,6 +1139,16 @@ async function connectionActionsQA(browser, theme) {
     await page.getByRole('button', { name: /新建工作区/ }).click();
     const newWorkspace = page.getByRole('dialog', { name: '新建工作区', exact: true });
     await modalSettled(page);
+    assert.equal(
+      await newWorkspace.getByLabel('工作区名称', { exact: true }).getAttribute('placeholder'),
+      '请输入工作区名称，例如：业务系统',
+    );
+    assert.equal(
+      await newWorkspace.getByLabel('说明', { exact: true }).getAttribute('placeholder'),
+      '请输入工作区说明（选填）',
+    );
+    assert.equal(await newWorkspace.getByText('选择关联连接', { exact: true }).count(), 1);
+    await shot(page, `workspace-create-placeholders-${theme}`);
     assert.equal(await newWorkspace.getByLabel('工作区名称', { exact: true }).inputValue(), '');
     await newWorkspace.getByRole('button', { name: /取\s*消/ }).click();
     report.browser.push({
@@ -1467,6 +1490,7 @@ async function refreshAndTemplateQA(browser, theme) {
     const apply = page.getByRole('button', { name: '应用模板', exact: true });
     await apply.click();
     await page.getByText('已应用：QA 第二模板', { exact: true }).waitFor();
+    assert(await page.getByRole('radio', { name: '已选表', exact: true }).isChecked());
     await page.getByRole('button', { name: '再次应用模板', exact: true }).waitFor();
     for (const width of [1904, 1488, 1180, 900]) {
       await page.setViewportSize({ width, height: 1056 });
@@ -1542,6 +1566,72 @@ async function refreshAndTemplateQA(browser, theme) {
     await context.close();
   }
 }
+async function templateWorkspaceQA(browser, theme) {
+  const context = await browser.newContext({
+    viewport: { width: 1180, height: 760 },
+    colorScheme: theme,
+  });
+  const page = await context.newPage();
+  observe(page);
+  try {
+    await page.goto('http://127.0.0.1:4183/?preview=1');
+    await page.getByRole('heading', { level: 1, name: '差异预览', exact: true }).waitFor();
+    await page.getByText('remark', { exact: true }).first().waitFor();
+    await page.getByRole('button', { name: '管理工作区', exact: true }).click();
+    await page.getByRole('heading', { level: 1, name: '工作区管理', exact: true }).waitFor();
+    await page.getByRole('button', { name: '编辑工作区 跨境电商项目', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: '编辑工作区', exact: true });
+    await editor.waitFor();
+    await modalSettled(page);
+    await editor.getByLabel('工作区名称', { exact: true }).fill('');
+    await editor.getByLabel('说明', { exact: true }).fill('');
+    for (const [dialog, mode] of [
+      [editor, 'edit'],
+      [null, 'create'],
+    ]) {
+      if (!dialog) await page.getByRole('button', { name: /新建工作区/ }).click();
+      const form = dialog || page.getByRole('dialog', { name: '新建工作区', exact: true });
+      await modalSettled(page);
+      assert.equal(
+        await form.getByLabel('工作区名称', { exact: true }).getAttribute('placeholder'),
+        '请输入工作区名称，例如：业务系统',
+      );
+      assert.equal(
+        await form.getByLabel('说明', { exact: true }).getAttribute('placeholder'),
+        '请输入工作区说明（选填）',
+      );
+      if (!dialog) assert.equal(await form.getByText('选择关联连接', { exact: true }).count(), 1);
+      await shot(page, `workspace-${mode}-placeholders-${theme}`);
+      await form.getByRole('button', { name: /取\s*消/ }).click();
+      await form.waitFor({ state: 'hidden' });
+      report.browser.push({ check: `workspace-${mode}-placeholders-minimum`, theme, passed: true });
+    }
+    await page.getByRole('menuitem', { name: /同步模板/ }).click();
+    await page.getByRole('button', { name: '应用模板 基础字典与菜单', exact: true }).click();
+    await page.getByText('已应用：基础字典与菜单', { exact: true }).waitFor();
+    const selected = page.getByRole('radio', { name: '已选表', exact: true });
+    assert(await selected.isChecked());
+    assert.equal(
+      await page.locator('.scope-table').getByText('orders', { exact: true }).count(),
+      0,
+    );
+    await page.locator('.scope-table-search').scrollIntoViewIfNeeded();
+    await shot(page, `template-selected-tables-minimum-${theme}`);
+    await footerCheck(page, `template-selected-tables-minimum-${theme}`);
+    await page.locator('.scope-table-search').getByText('全部表', { exact: true }).click();
+    await page.locator('.scope-table').getByText('orders', { exact: true }).waitFor();
+    await page.getByRole('button', { name: '再次应用模板', exact: true }).click();
+    await page.getByText('已应用：基础字典与菜单', { exact: true }).waitFor();
+    assert(await selected.isChecked());
+    report.browser.push({
+      check: 'apply-and-reapply-template-selects-selected-table-filter',
+      theme,
+      passed: true,
+    });
+  } finally {
+    await context.close();
+  }
+}
 async function browserQA() {
   const log = await fs.open(path.join(repo, '.local-data', 'ui-qa-preview.log'), 'w');
   const vite = spawn(
@@ -1566,6 +1656,10 @@ async function browserQA() {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     browser = await chromium.launch({ headless: true, executablePath });
+    if (process.argv.includes('--multi-database')) {
+      await multiDatabaseQA(browser, { report, observe, shot, modalSettled });
+      return;
+    }
     if (process.argv.includes('--updates')) {
       await updatesQA(browser, { repo, report, observe, shot, footerCheck });
       return;
@@ -1599,6 +1693,12 @@ async function browserQA() {
     }
     if (process.argv.includes('--context-feedback')) {
       for (const theme of ['light', 'dark']) await contextFeedbackQA(browser, theme);
+      return;
+    }
+    if (process.argv.includes('--template-workspace')) {
+      for (const theme of ['light', 'dark']) {
+        await templateWorkspaceQA(browser, theme);
+      }
       return;
     }
     if (process.argv.includes('--sync-modes')) {
@@ -1762,7 +1862,7 @@ async function browserQA() {
           (label) =>
             [...document.querySelectorAll('[role="treeitem"]')].some(
               (el) =>
-                el.querySelector('.tree-label')?.textContent === label &&
+                el.querySelector('.tree-label')?.getAttribute('title') === label &&
                 el.getAttribute('aria-expanded') === 'true',
             ),
           label,
@@ -1826,6 +1926,8 @@ async function browserQA() {
       await page.getByRole('button', { name: '应用模板 基础字典与菜单', exact: true }).click();
       await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
       await page.getByText('目标缺失', { exact: true }).first().waitFor();
+      assert(await page.getByRole('radio', { name: '已选表', exact: true }).isChecked());
+      await shot(page, `template-selected-tables-${workflowTheme}`);
       report.browser.push({ check: 'missing-target-scope-indication', passed: true });
       assert.equal(await page.getByRole('textbox', { name: 'sys_dict 匹配键' }).count(), 0);
       const dictRow = page
@@ -1981,7 +2083,10 @@ async function browserQA() {
       assert(await page.getByRole('button', { name: '执行所选回滚', exact: true }).isDisabled());
       await rollback.nth(0).check();
       await page.getByRole('button', { name: '执行所选回滚', exact: true }).click();
-      const confirmation = page.getByRole('dialog', { name: '执行回滚', exact: true });
+      const confirmation = page.getByRole('dialog', {
+        name: '模拟恢复（只修改内存示例）',
+        exact: true,
+      });
       await confirmation.waitFor();
       await modalSettled(page);
       assert(
@@ -2253,25 +2358,29 @@ try {
     path.join(
       repo,
       'docs',
-      native
-        ? 'react-desktop-qa.json'
-        : process.argv.includes('--updates')
-          ? 'updates-ui-qa.json'
-          : process.argv.includes('--record-confirmation')
-            ? 'record-confirmation-ui-qa.json'
-            : process.argv.includes('--connection-form')
-              ? 'connection-form-ui-qa.json'
-              : process.argv.includes('--performance')
-                ? 'performance-ui-qa.json'
-                : process.argv.includes('--tree-organization')
-                  ? 'tree-organization-qa.json'
-                  : process.argv.includes('--context-feedback')
-                    ? 'context-feedback-qa.json'
-                    : process.argv.includes('--sync-modes')
-                      ? 'sync-mode-ui-qa.json'
-                      : process.argv.includes('--diff-scroll')
-                        ? 'diff-scroll-ui-qa.json'
-                        : 'react-ui-qa.json',
+      process.argv.includes('--template-workspace')
+        ? 'template-workspace-ui-qa.json'
+        : native
+          ? 'react-desktop-qa.json'
+          : process.argv.includes('--multi-database')
+            ? 'multi-database-ui-qa.json'
+            : process.argv.includes('--updates')
+              ? 'updates-ui-qa.json'
+              : process.argv.includes('--record-confirmation')
+                ? 'record-confirmation-ui-qa.json'
+                : process.argv.includes('--connection-form')
+                  ? 'connection-form-ui-qa.json'
+                  : process.argv.includes('--performance')
+                    ? 'performance-ui-qa.json'
+                    : process.argv.includes('--tree-organization')
+                      ? 'tree-organization-qa.json'
+                      : process.argv.includes('--context-feedback')
+                        ? 'context-feedback-qa.json'
+                        : process.argv.includes('--sync-modes')
+                          ? 'sync-mode-ui-qa.json'
+                          : process.argv.includes('--diff-scroll')
+                            ? 'diff-scroll-ui-qa.json'
+                            : 'react-ui-qa.json',
     ),
     JSON.stringify(report, null, 2) + '\n',
   );

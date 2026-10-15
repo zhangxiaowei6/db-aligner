@@ -3,9 +3,17 @@ package io.dbaligner;
 import java.util.*;
 
 public final class Model {
-  public record DbRef(String connectionId, String database) {
+  @com.fasterxml.jackson.annotation.JsonInclude(
+      com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+  public record DbRef(String connectionId, String database, String schema) {
+    public DbRef(String connectionId, String database) {
+      this(connectionId, database, null);
+    }
+
     public String key() {
-      return connectionId + "/" + database;
+      return schema == null
+          ? connectionId + "/" + database
+          : "pg:" + Json.write(List.of(connectionId, database, schema));
     }
   }
 
@@ -27,6 +35,9 @@ public final class Model {
   public record ForeignKey(String name, String definition, String referencedTable) {}
 
   public static class Table {
+    public String databaseType = "mysql";
+    public List<String> primaryKeyColumns = new ArrayList<>();
+    public Map<String, Object> attributes = new LinkedHashMap<>();
     public String name, createSql, engine, charset, collation, comment;
     public boolean exists = true, supported = true;
     public List<String> issues = new ArrayList<>();
@@ -37,6 +48,7 @@ public final class Model {
     public Map<String, String> keyTokens = new LinkedHashMap<>();
 
     public List<String> primaryKey() {
+      if (databaseType.equals("postgresql")) return primaryKeyColumns;
       return indexes.stream()
           .filter(i -> i.name().equals("PRIMARY"))
           .findFirst()
@@ -94,6 +106,7 @@ public final class Model {
   }
 
   public static class Change {
+    public List<String> statements = new ArrayList<>();
     public String id, targetKey, table, kind, label, sql, reason = "";
     public boolean risk, selected, blocked;
     public List<String> rollbackSql = new ArrayList<>();
@@ -110,6 +123,7 @@ public final class Model {
   }
 
   public static class TargetPlan {
+    public String databaseType = "mysql", adapterVersion = "1", driverId = "", driverVersion = "";
     public DbRef ref;
     public String label, error = "", serverVersion = "";
     public Map<String, Object> connectionIdentity = new LinkedHashMap<>();
@@ -119,6 +133,9 @@ public final class Model {
   }
 
   public static class SyncPlan {
+    public String sourceDriverId = "", sourceDriverVersion = "";
+    public int formatVersion = 1;
+    public String databaseType = "mysql", adapterVersion = "1";
     public String id, workspaceId, createdAt;
     public DbRef source;
     public List<TableChoice> tables = new ArrayList<>();

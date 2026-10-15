@@ -1,3 +1,5 @@
+import { DriverInstaller } from '../components/DriverInstaller';
+import { DatabaseTypeIcon } from '../components/DatabaseTypeIcon';
 import { AsyncButton as Button } from '../components/AsyncButton';
 import {
   StructureOptionsEditor,
@@ -100,6 +102,7 @@ export function WorkspacesPage() {
           <Field label="工作区名称" required>
             <Input
               value={form.name}
+              placeholder="请输入工作区名称，例如：业务系统"
               onChange={(e) => c.patch('workspaceForm', { name: e.target.value })}
             />
           </Field>
@@ -107,6 +110,7 @@ export function WorkspacesPage() {
             <Input.TextArea
               rows={3}
               value={form.description}
+              placeholder="请输入工作区说明（选填）"
               onChange={(e) => c.patch('workspaceForm', { description: e.target.value })}
             />
           </Field>
@@ -170,6 +174,15 @@ export function ConnectionsPage() {
           locale={{ emptyText: '新建连接或导入已有会话' }}
           columns={[
             { title: '连接名称', dataIndex: 'name' },
+            {
+              title: '数据库类型',
+              width: 150,
+              render: (_, row) => (
+                <Tag icon={<DatabaseTypeIcon databaseType={row.databaseType} />}>
+                  {row.databaseType === 'postgresql' ? 'PostgreSQL' : 'MySQL'}
+                </Tag>
+              ),
+            },
             { title: '地址', render: (_, row) => `${row.host}:${row.port}` },
             { title: '分组', dataIndex: 'group' },
             {
@@ -287,6 +300,42 @@ export function ConnectionEditor() {
             c.patch('connectionForm', { port: portFromText(String(values.port)) });
         }}
       >
+        <Field label="数据库类型">
+          <Select
+            placeholder="选择数据库类型"
+            aria-label="数据库类型"
+            value={f.databaseType || 'mysql'}
+            options={[
+              { value: 'mysql', label: 'MySQL' },
+              { value: 'postgresql', label: 'PostgreSQL' },
+            ]}
+            onChange={(databaseType) => {
+              const port = databaseType === 'postgresql' ? 5432 : 3306;
+              c.patch('connectionForm', {
+                databaseType,
+                port,
+                driverId: databaseType === 'postgresql' ? 'postgresql' : 'mariadb',
+                driverVersion: databaseType === 'postgresql' ? '42.7.8' : '3.5.10',
+                initialDatabase: databaseType === 'postgresql' ? 'postgres' : '',
+              });
+              connectionFields.setFieldValue('port', String(port));
+            }}
+          />
+        </Field>
+        <Field label="数据库驱动">
+          <DriverInstaller
+            driverId={f.driverId || (f.databaseType === 'postgresql' ? 'postgresql' : 'mariadb')}
+          />
+        </Field>
+        {f.databaseType === 'postgresql' && (
+          <Field label="初始连接数据库">
+            <Input
+              value={f.initialDatabase || ''}
+              placeholder="例如：postgres"
+              onChange={(e) => c.patch('connectionForm', { initialDatabase: e.target.value })}
+            />
+          </Field>
+        )}
         <Form.Item
           label="连接名称"
           name="name"
@@ -325,7 +374,13 @@ export function ConnectionEditor() {
               },
             ]}
           >
-            <Input inputMode="numeric" autoComplete="off" placeholder="请输入端口，默认 3306" />
+            <Input
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder={
+                f.databaseType === 'postgresql' ? '请输入端口，默认 5432' : '请输入端口，默认 3306'
+              }
+            />
           </Form.Item>
         </div>
         <div className="form-pair">
@@ -381,11 +436,21 @@ export function ConnectionEditor() {
         </Form.Item>
         {f.ssl && (
           <>
-            <Field label="CA 证书（PEM，可留空使用系统信任）">
+            <Field
+              label={
+                f.databaseType === 'postgresql'
+                  ? 'CA 证书（PEM，启用 SSL 时必填）'
+                  : 'CA 证书（PEM，可留空使用系统信任）'
+              }
+            >
               <Space.Compact block>
                 <Input
                   value={f.ca}
-                  placeholder="请选择 PEM 证书文件，留空使用系统信任"
+                  placeholder={
+                    f.databaseType === 'postgresql'
+                      ? '请选择 CA 的 PEM 证书文件'
+                      : '请选择 PEM 证书文件，留空使用系统信任'
+                  }
                   onChange={(e) => c.patch('connectionForm', { ca: e.target.value })}
                 />
                 <Button onClick={() => c.chooseCertificate('ca')}>选择</Button>
@@ -499,7 +564,7 @@ export function ImportPage() {
                     <Input.Password
                       value={row.password}
                       aria-label={`${row.name} 密码`}
-                      placeholder={row.credentialStatus}
+                      placeholder={row.credentialStatus || '请输入连接密码'}
                       onChange={(e) => c.updateImport(row.id, { password: e.target.value })}
                     />
                   ),
@@ -536,6 +601,7 @@ export function ImportPage() {
             <Field label="导入工作区" required>
               <Select
                 mode="multiple"
+                placeholder="选择要导入的工作区"
                 value={m.importWorkspaceIds}
                 options={m.state.workspaces.map((w) => ({ value: w.id, label: w.name }))}
                 onChange={(ids) => c.set('importWorkspaceIds', ids)}
@@ -544,6 +610,7 @@ export function ImportPage() {
             <Field label="导入分组">
               <AutoComplete
                 style={{ width: '100%' }}
+                placeholder="选择或输入连接分组"
                 value={m.importGroup}
                 options={m.state.connectionGroups.map((group) => ({ value: group.name }))}
                 onChange={(name) => c.set('importGroup', name)}
@@ -551,6 +618,7 @@ export function ImportPage() {
             </Field>
             <Field label="重复连接">
               <Select
+                placeholder="选择重复连接的处理方式"
                 value={m.duplicateMode}
                 options={[
                   { label: '跳过', value: 'skip' },
@@ -680,6 +748,7 @@ export function TemplateEditor() {
         <Field label="模板名称" required>
           <Input
             value={f.name}
+            placeholder="请输入模板名称，例如：基础字典同步"
             onChange={(e) => c.patch('templateForm', { name: e.target.value })}
           />
         </Field>
@@ -687,12 +756,14 @@ export function TemplateEditor() {
           <Input.TextArea
             value={f.description}
             rows={3}
+            placeholder="填写模板用途与适用范围（选填）"
             onChange={(e) => c.patch('templateForm', { description: e.target.value })}
           />
         </Field>
         <Field label="来源数据库" required>
           <Select
             showSearch
+            placeholder="选择来源数据库或 schema"
             optionFilterProp="label"
             value={m.templateSource || undefined}
             options={options}
@@ -702,9 +773,18 @@ export function TemplateEditor() {
         <Field label="目标数据库" required>
           <Select
             mode="multiple"
+            placeholder="选择同类型的目标数据库或 schema"
             optionFilterProp="label"
             value={m.templateTargets}
-            options={options.filter((o) => o.value !== m.templateSource)}
+            options={options
+              .filter((o) => o.value !== m.templateSource)
+              .map((option) => ({
+                ...option,
+                disabled:
+                  !!m.templateSource &&
+                  option.databaseType !==
+                    (m.templateSource.startsWith('pg:') ? 'postgresql' : 'mysql'),
+              }))}
             onChange={(value) => c.set('templateTargets', value)}
           />
         </Field>

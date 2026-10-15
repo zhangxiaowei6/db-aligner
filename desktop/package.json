@@ -1,6 +1,6 @@
 {
   "name": "db-aligner-desktop",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
@@ -101,7 +101,7 @@
       "releaseType": "draft"
     }
   },
-  "description": "DBAligner desktop tool for auditable MySQL schema and reference data alignment",
+  "description": "DBAligner desktop tool for auditable MySQL and PostgreSQL schema and reference data alignment",
   "author": "DBAligner contributors",
   "license": "Apache-2.0",
   "repository": {

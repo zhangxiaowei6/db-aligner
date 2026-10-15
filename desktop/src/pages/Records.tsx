@@ -1,3 +1,4 @@
+import { fromKey, namespaceLabel } from '../model';
 import { recordRefreshKey } from '../model';
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
 import {
@@ -30,7 +31,20 @@ export function TablePage() {
   const indexes = (
     <DataTable
       rowKey="name"
-      dataSource={table.indexes}
+      dataSource={
+        table.databaseType === 'postgresql' && table.primaryKeyColumns?.length
+          ? [
+              {
+                name: 'PRIMARY',
+                unique: true,
+                type: 'btree',
+                columns: table.primaryKeyColumns,
+                definition: 'PRIMARY KEY (' + table.primaryKeyColumns.join(', ') + ')',
+              },
+              ...table.indexes,
+            ]
+          : table.indexes
+      }
       columns={[
         { title: '索引名', dataIndex: 'name' },
         {
@@ -48,7 +62,7 @@ export function TablePage() {
     <>
       <div className="table-summary">
         <span>
-          数据库 <strong>{tab.ref.database}</strong>
+          数据库 <strong>{namespaceLabel(tab.ref)}</strong>
         </span>
         <span>
           引擎 <strong>{table.engine}</strong>
@@ -82,9 +96,10 @@ export function TablePage() {
                 dataIndex: 'name',
                 render: (name: string) => (
                   <>
-                    {table.indexes.some(
-                      (i) => i.name === 'PRIMARY' && i.columns.includes(name),
-                    ) && <KeyOutlined className="warning-text" />}{' '}
+                    {(table.primaryKeyColumns?.includes(name) ||
+                      table.indexes.some(
+                        (i) => i.name === 'PRIMARY' && i.columns.includes(name),
+                      )) && <KeyOutlined className="warning-text" />}{' '}
                     {name}
                   </>
                 ),
@@ -326,7 +341,7 @@ export function RecordPage() {
           <span>{modeLabel(m, record)}</span>
           <span>{date(record.createdAt)}</span>
           <span>
-            {source?.database} →{' '}
+            {source ? namespaceLabel(source) : ''} →{' '}
             {selectedTargets?.length ?? record.targetCount ?? record.results.length} 个目标库
           </span>
           <span>{record.plan?.tables.length ?? record.tables?.length ?? 0} 张表</span>
@@ -344,7 +359,7 @@ export function RecordPage() {
                       (item) => item.id === target.ref.connectionId,
                     );
                     return connection
-                      ? `${connection.name} / ${target.ref.database}`
+                      ? `${connection.name} / ${namespaceLabel(target.ref)}`
                       : target.ref.database;
                   })
                   .join('；')}
@@ -381,7 +396,10 @@ export function RecordPage() {
           {scriptFiles.map((file) => {
             const folder = file.replaceAll('\\', '/').split('/').slice(0, -1).join('/');
             const ref = m.recordScriptTargets[folder];
-            const target = ref?.database || folder.replace(/^[a-f0-9]{12}-/, '') || '目标数据库';
+            const target =
+              (ref ? namespaceLabel(ref) : '') ||
+              folder.replace(/^[a-f0-9]{12}-/, '') ||
+              '目标数据库';
             const connection = m.state.connections.find((item) => item.id === ref?.connectionId);
             return (
               <section
@@ -465,7 +483,7 @@ export function RecordPage() {
               ),
             }}
             columns={[
-              { title: '目标库', render: (_, row) => row.ref.database },
+              { title: '目标库', render: (_, row) => namespaceLabel(row.ref) },
               {
                 title: '进度',
                 width: 220,
@@ -612,6 +630,7 @@ export function RecordDrawers() {
             <Field label="已有版本">
               <Select
                 value={m.versionForm.id || undefined}
+                placeholder="选择要追加记录的版本"
                 options={versions.map((v) => ({ value: v.id, label: v.number }))}
                 onChange={(id) => c.patch('versionForm', { id })}
               />
@@ -629,6 +648,7 @@ export function RecordDrawers() {
                 <Input.TextArea
                   rows={4}
                   value={m.versionForm.description}
+                  placeholder="填写版本包含的变更与注意事项（选填）"
                   onChange={(e) => c.patch('versionForm', { description: e.target.value })}
                 />
               </Field>
@@ -678,7 +698,7 @@ export function RecordDrawers() {
           onChange={(ids) => c.set('externalIds', ids as string[])}
           options={changes.map((ch) => ({
             value: ch.id,
-            label: `${ch.targetKey.split('/').slice(1).join('/')} / ${ch.table} / ${ch.label}`,
+            label: `${namespaceLabel(fromKey(ch.targetKey))} / ${ch.table} / ${ch.label}`,
           }))}
         />
         <Input.TextArea

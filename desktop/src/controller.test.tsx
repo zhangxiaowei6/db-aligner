@@ -149,6 +149,19 @@ beforeEach(() => {
   ];
   bridge.invoke.mockImplementation(async (method: string, params: Record<string, unknown> = {}) => {
     if (method === 'state.load') return structuredClone(state);
+    if (method === 'drivers.get')
+      return {
+        id: 'mariadb',
+        name: 'MariaDB Connector/J（MySQL）',
+        databaseType: 'mysql',
+        version: '3.5.10',
+        builtin: true,
+        status: 'installed',
+        revision: 1,
+        bytes: 0,
+        message: '内置驱动已安装',
+        license: 'LGPL-2.1-or-later',
+      };
     if (method === 'appearance.set') {
       const result: Appearance = {
         themeMode: params.themeMode as Appearance['themeMode'],
@@ -752,6 +765,40 @@ it('selects among several templates without changing scope and applies only the 
   expect(controller.m.appliedTemplate).toBeUndefined();
 });
 
+it.each(['structure', 'data'] as const)(
+  'shows only selected tables after applying and reapplying a %s template',
+  async (mode) => {
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation((method, params) =>
+      method === 'tables.list'
+        ? Promise.resolve([
+            { name: 'dict', comment: '字典' },
+            { name: 'unselected', comment: '未选表' },
+          ])
+        : original(method, params),
+    );
+    const template = structuredClone(state.templates[0]);
+    template.tables[0].structure = mode === 'structure';
+    template.tables[0].data = mode === 'data';
+    await ready(<ScopePage />);
+    await act(async () => controller.applyTemplate(template));
+    expect((screen.getByRole('radio', { name: '已选表' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText('unselected')).toBeNull();
+    expect(screen.getByText('dict', { exact: true })).toBeTruthy();
+    await userEvent.click(screen.getByRole('radio', { name: '全部表' }).closest('label')!);
+    expect(screen.getByText('unselected', { exact: true })).toBeTruthy();
+    expect(
+      controller.m.scopeTables.filter((table) => table[mode]).map((table) => table.name),
+    ).toEqual(['dict']);
+    await act(async () => controller.applyTemplate(template));
+    expect((screen.getByRole('radio', { name: '已选表' }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByText('unselected')).toBeNull();
+    act(() => controller.setScopeMode(mode === 'structure' ? 'data' : 'structure'));
+    act(() => controller.setScopeMode(mode));
+    expect(controller.m.scopeTableFilter).toBe('selected');
+  },
+);
+
 describe('comparison confirmation and cancellation', () => {
   async function setup(data = true) {
     await ready(
@@ -1190,6 +1237,38 @@ describe('React business state and protocol', () => {
       1,
     );
   });
+  it('refreshes only the selected database family and disables PG-only limitations before source selection', async () => {
+    state.connections.push({
+      ...state.connections[0],
+      id: 'pg',
+      name: 'PG',
+      databaseType: 'postgresql',
+    });
+    const original = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'schemas.list') throw new Error('PostgreSQL 驱动未安装');
+      return original(method, params);
+    });
+    await ready(<ScopePage />);
+    await act(async () => {
+      await controller.loadDatabaseOptions();
+    });
+    bridge.invoke.mockClear();
+    await act(async () => {
+      await controller.refreshDatabaseOptions('sync:test');
+    });
+    expect(controller.m.refreshResults['sync:test']?.status).toBe('success');
+    expect(bridge.invoke.mock.calls.filter(([method]) => method === 'databases.list')).toEqual([
+      ['databases.list', { connectionId: 'source' }],
+    ]);
+    act(() => controller.switchDatabaseType('postgresql'));
+    const order = screen.getByRole('checkbox', {
+      name: '字段顺序',
+    }) as HTMLInputElement;
+    expect(order.disabled).toBe(true);
+    expect(order.checked).toBe(false);
+    expect(controller.m.sourceKey).toBe('');
+  });
   it('replaces the current table when another table opens and ignores a refresh for the prior table', async () => {
     await ready();
     const node = (table: string): TreeNode => ({
@@ -1440,7 +1519,9 @@ describe('React business state and protocol', () => {
     await userEvent.click(screen.getByRole('button', { name: '保存连接' }));
     await screen.findByText('请输入连接名称');
     expect(screen.getByText('请输入用户名')).toBeTruthy();
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(
+      screen.getByRole('dialog').querySelector('.connection-dialog-footer [role="status"]'),
+    ).toBeNull();
     expect(
       bridge.invoke.mock.calls.filter(([method]) => method === 'connections.test'),
     ).toHaveLength(0);
@@ -1452,7 +1533,9 @@ describe('React business state and protocol', () => {
     await screen.findByText('连接成功 · 8.4');
     await userEvent.clear(screen.getByLabelText('服务器地址'));
     expect((button as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(
+      screen.getByRole('dialog').querySelector('.connection-dialog-footer [role="status"]'),
+    ).toBeNull();
   });
   it('keeps modal feedback near its footer and shows success or failure icons inside the test button', async () => {
     await ready(<ConnectionsPage />);
@@ -1485,7 +1568,9 @@ describe('React business state and protocol', () => {
     ).toHaveLength(3);
     act(() => controller.patch('connectionForm', { password: 'changed' }));
     expect(screen.getByRole('button', { name: '测试连接' }).querySelector('.anticon')).toBeNull();
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(
+      screen.getByRole('dialog').querySelector('.connection-dialog-footer [role="status"]'),
+    ).toBeNull();
   });
   it('tests a saved connection in its row without opening the editor and clears stale modal results', async () => {
     await ready(<ConnectionsPage />);
@@ -2791,7 +2876,7 @@ describe('missing target tables in the sync scope', () => {
     await act(async () => controller.loadTargetTables(true));
     expect(controller.missingTargets('orders')).toEqual([]);
     expect(screen.getByRole('button', { name: '重试' })).toBeTruthy();
-    expect(screen.getByText('来源 / b：目标不可达')).toBeTruthy();
+    expect(screen.getByText('来源 · MySQL / b：目标不可达')).toBeTruthy();
     await act(async () => controller.loadTargetTables(true));
     expect(controller.missingTargets('orders')).toEqual(['source/b']);
     state.connections[0].port = 13306;
@@ -2963,7 +3048,7 @@ describe('group editing and creation', () => {
     const group = controller.m.state.connectionGroups[0];
     act(() => controller.editGroup(group));
     await userEvent.clear(screen.getByLabelText('分组名称'));
-    await userEvent.type(screen.getByLabelText('分组名称'), ' 新名称 ');
+    fireEvent.change(screen.getByLabelText('分组名称'), { target: { value: ' 新名称 ' } });
     await userEvent.click(screen.getByRole('button', { name: /^保\s*存$/ }));
     await screen.findByText('分组保存失败');
     expect(controller.m.groupDialog).toBe(true);
@@ -3292,6 +3377,83 @@ it('prefers local rollback scripts independently for each target and retains leg
 });
 
 describe('module-owned operation feedback', () => {
+  it.each(['template', 'export'] as const)(
+    'refreshes only the selected %s database family and shows only its failures',
+    async (scope) => {
+      state.connections.push({
+        ...state.connections[0],
+        id: 'pg',
+        name: 'PG',
+        databaseType: 'postgresql',
+      });
+      const original = bridge.invoke.getMockImplementation()!;
+      bridge.invoke.mockImplementation((method, params) => {
+        if (method === 'schemas.list') return Promise.reject(new Error('PostgreSQL 驱动未安装'));
+        return original(method, params);
+      });
+      await ready(<DatabaseOptionsStatus scope={scope} />);
+      const sourceField = scope === 'template' ? 'templateSource' : 'exportSource';
+      const feedbackKey = () =>
+        document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!;
+      const refresh = async () => {
+        bridge.invoke.mockClear();
+        await act(async () => controller.refreshDatabaseOptions(feedbackKey()));
+        return bridge.invoke.mock.calls
+          .filter(([method]) => method === 'databases.list')
+          .map(([, params]) => params.connectionId);
+      };
+      expect(controller.m.dbErrors.pg).toBe('PostgreSQL 驱动未安装');
+      act(() => controller.set(sourceField, 'source/a'));
+      expect(screen.queryByText(/PG：PostgreSQL 驱动未安装/)).toBeNull();
+      expect(await refresh()).toEqual(['source']);
+      expect(controller.m.refreshResults[feedbackKey()]?.status).toBe('success');
+
+      act(() => controller.set(sourceField, 'pg:["pg","a","public"]'));
+      expect(screen.getByText(/PG：PostgreSQL 驱动未安装/)).toBeTruthy();
+      expect(await refresh()).toEqual(['pg']);
+      expect(controller.m.refreshResults[feedbackKey()]?.status).toBe('error');
+
+      act(() => controller.set(sourceField, ''));
+      expect(await refresh()).toEqual(['source', 'pg']);
+      expect(screen.getByText(/PG：PostgreSQL 驱动未安装/)).toBeTruthy();
+      expect(controller.m.refreshResults[feedbackKey()]?.status).toBe('error');
+    },
+  );
+
+  it.each(['template', 'export'] as const)(
+    'discards pending %s refresh feedback after changing the database family',
+    async (scope) => {
+      await ready(<DatabaseOptionsStatus scope={scope} />);
+      const sourceField = scope === 'template' ? 'templateSource' : 'exportSource';
+      act(() => controller.set(sourceField, 'source/a'));
+      const key = document.querySelector('[data-feedback-key]')!.getAttribute('data-feedback-key')!;
+      const pending = deferred<string[]>();
+      const original = bridge.invoke.getMockImplementation()!;
+      bridge.invoke.mockImplementation((method, params) =>
+        method === 'databases.list' ? pending.promise : original(method, params),
+      );
+      let refresh!: ReturnType<Controller['refreshDatabaseOptions']>;
+      act(() => {
+        refresh = controller.refreshDatabaseOptions(key);
+      });
+      expect(screen.getByRole('button', { name: /刷新数据库/ }).className).toContain(
+        'ant-btn-loading',
+      );
+      act(() => controller.set(sourceField, 'pg:["pg","a","public"]'));
+      expect(screen.getByRole('button', { name: /刷新数据库/ }).className).not.toContain(
+        'ant-btn-loading',
+      );
+      await act(async () => {
+        pending.resolve(['late']);
+        await refresh;
+      });
+      expect(controller.m.refreshResults[key]).toBeUndefined();
+      expect(
+        screen.getByRole('button', { name: /刷新数据库/ }).querySelector('.anticon-check'),
+      ).toBeNull();
+    },
+  );
+
   it('does not keep a clicked refresh button spinning in a different workspace', async () => {
     await ready(<DatabaseOptionsStatus scope="sync" />);
     const pending = deferred<string[]>();

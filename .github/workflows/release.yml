@@ -10,6 +10,7 @@ concurrency:
 jobs:
   build:
     runs-on: windows-2022
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -35,17 +36,22 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run dist
-      - name: 三版本隔离真库与打包客户端验收
+      - name: MySQL 与 PostgreSQL 完整预览交互
+        run: npm run qa:ui -w desktop -- --multi-database
+      - name: 两种数据库隔离真库与打包客户端验收
         run: |
-          try {
-            ./scripts/mysql-test-server.ps1 -Version 5.7.44 -Port 33957
-            ./scripts/mysql-test-server.ps1 -Version 8.0.45 -Port 33980
-            ./scripts/mysql-test-server.ps1 -Version 8.4.8 -Port 33984
-            ./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.electron.smoke=true'
-            if ($LASTEXITCODE -ne 0) { throw '隔离真库或打包客户端验收失败' }
-          } finally {
-            ./scripts/mysql-test-stop.ps1
-          }
+          ./scripts/mysql-test-server.ps1 -Version 5.7.44 -Port 33957
+          ./scripts/mysql-test-server.ps1 -Version 8.0.45 -Port 33980
+          ./scripts/mysql-test-server.ps1 -Version 8.4.8 -Port 33984
+          ./scripts/postgresql-test-server.ps1 -Port 33917
+          ./scripts/mvn.ps1 test '-Ddbaligner.mysql.versions=5.7.44,8.0.45,8.4.8' '-Ddbaligner.postgresql.test=true' '-Ddbaligner.electron.smoke=true'
+          if ($LASTEXITCODE -ne 0) { throw '隔离真库或打包客户端验收失败' }
+      - name: 停止项目 MySQL 隔离实例
+        if: always()
+        run: ./scripts/mysql-test-stop.ps1
+      - name: 停止项目 PostgreSQL 隔离实例
+        if: always()
+        run: ./scripts/postgresql-test-stop.ps1
       - run: npm run release:files
       - uses: actions/upload-artifact@v4
         with:
@@ -58,6 +64,18 @@ jobs:
             release/latest.yml
             release/DBAligner-*-win-x64.zip
             release/SHA256SUMS.txt
+            release/RELEASE_NOTES.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-validation
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            docs/multi-database-ui-qa.json
+            docs/native-smoke-result.json
+            docs/postgresql-native-smoke.json
+            docs/postgresql-native-cached-smoke.json
+            docs/screenshots/react-ant-design/multi-db-*.png
   draft:
     needs: build
     runs-on: windows-2022

@@ -1,6 +1,7 @@
 export interface DbRef {
   connectionId: string;
   database: string;
+  schema?: string;
 }
 export interface Workspace {
   id: string;
@@ -9,6 +10,10 @@ export interface Workspace {
   connectionIds?: string[];
 }
 export interface ConnectionInfo {
+  databaseType?: 'mysql' | 'postgresql';
+  driverId?: string;
+  driverVersion?: string;
+  initialDatabase?: string;
   id: string;
   name: string;
   host: string;
@@ -43,6 +48,9 @@ export interface Column {
   collation?: string;
 }
 export interface Table {
+  databaseType?: 'mysql' | 'postgresql';
+  primaryKeyColumns?: string[];
+  attributes?: Record<string, unknown>;
   name: string;
   exists: boolean;
   createSql: string;
@@ -90,6 +98,8 @@ export interface CompareTask {
   plan?: SyncPlan;
 }
 export interface Change {
+  statements?: string[];
+  matchColumns?: string[];
   id: string;
   targetKey: string;
   table: string;
@@ -116,6 +126,11 @@ export interface TargetPlan {
   skippedTables?: string[];
 }
 export interface SyncPlan {
+  formatVersion?: number;
+  databaseType?: 'mysql' | 'postgresql';
+  adapterVersion?: string;
+  sourceDriverId?: string;
+  sourceDriverVersion?: string;
   id: string;
   workspaceId: string;
   createdAt: string;
@@ -235,6 +250,19 @@ export interface UpdateState {
 export interface Appearance {
   themeMode: ThemeMode;
   resolvedTheme: 'light' | 'dark';
+}
+export interface DriverState {
+  id: string;
+  databaseType: string;
+  name: string;
+  version: string;
+  builtin: boolean;
+  license: string;
+  licenseUrl: string;
+  status: 'missing' | 'downloading' | 'installed' | 'error' | 'cancelled';
+  revision: number;
+  bytes: number;
+  message: string;
 }
 declare global {
   interface Window {

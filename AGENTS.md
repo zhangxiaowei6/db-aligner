@@ -4,7 +4,7 @@
 
 ## 1. 项目概况与规范分工
 
-DBAligner 是按工作区组织的 MySQL 结构与基础数据同步桌面工具：比较一个源库与多个目标库，预览所选表的差异，保存脚本或执行同步，并保留记录、恢复资料和版本归档。当前面向 Windows x64。
+DBAligner 是按工作区组织的 MySQL / PostgreSQL 结构与基础数据同步桌面工具：比较一个源库与多个目标库，预览所选表的差异，保存脚本或执行同步，并保留记录、恢复资料和版本归档。当前面向 Windows x64。
 
 - 桌面端：Electron、React 19、TypeScript、Ant Design 6、Vite。
 - 引擎：Java 21、Spring Boot 4 非 Web 模式、JDBC；SQLite 保存本地配置与记录。
@@ -81,7 +81,8 @@ DBAligner 是按工作区组织的 MySQL 结构与基础数据同步桌面工具
 
 - 代码修改按[贡献说明](CONTRIBUTING.md)运行 `npm run typecheck`、`npm test`，按构建及交互影响追加检查。纯文档修改核对事实、命令、链接与格式，无需数据库、UI 验收或完整构建。
 - 比较、执行、归档或回滚变更必须运行 MySQL 5.7.44／8.0.45／8.4.8 三版本隔离真库回归，不用模拟对象替代；命令和前置条件见[验证技能](.agents/skills/verification/SKILL.md)。
-- 真库测试仅使用 `.tools/mysql-test` 内绑定 `127.0.0.1` 的隔离实例，不注册服务，只创建和清理自己的 `ds_it_*` 数据库。保留 SSL 回归所需 OpenSSL 检查，不提交随机凭据。
+- MySQL 真库测试仅使用 `.tools/mysql-test` 内绑定 `127.0.0.1` 的隔离实例，不注册服务，只创建和清理自己的 `ds_it_*` 数据库。保留 SSL 回归所需 OpenSSL 检查，不提交随机凭据。
+- PostgreSQL 真库使用 `.tools/postgresql-test` 内绑定 `127.0.0.1` 的隔离 17.x 实例及 `ds_it_*` 数据库，不注册服务，不访问用户实例；新增适配器必须验证比较、执行、核验及恢复，命令见 README。
 - 浏览器 UI 验收先构建前端与 Electron，桌面验收还需可用引擎构建；打包客户端测试先完成根目录 `npm run dist`。原生测试使用独立资料目录，不能替代干净 Windows 安装验收，发布前完成贡献说明要求的安装验收。
 - UI 变更更新截图和 [design-qa.md](design-qa.md)；协议、支持范围或业务交互变化更新对应文档。报告实际命令、环境、结果、跳过项和限制，不以历史结果或虚构预览声称本次真实执行通过。
 - 添加依赖时更新锁文件和[第三方说明](THIRD_PARTY_NOTICES.md)，运行 `npm run licenses`。MariaDB Connector/J 保持独立、未修改 JAR，并保留匹配源码与 LGPL 材料；Java 运行时保留法律文件及对应源码地址。

@@ -1,0 +1,5 @@
+{
+  "passed" : true,
+  "checks" : [ "isolated preload bridge", "real renderer IPC through trusted main frame", "smoke disables real update requests", "disabled update check does not access network", "internal engine update preparation is not exposed to renderer", "renderer cannot override update source", "offline built-in MySQL driver", "renderer cannot override JDBC catalogue", "PostgreSQL driver cache on startup", "pinned PostgreSQL driver installation or offline reuse", "no password in renderer state", "import credentials remain in main process", "system-encrypted password file", "real packaged JDBC connection", "packaged schema namespace discovery", "both JDBC drivers work in the same packaged process", "exact BIGINT and DECIMAL presentation over packaged IPC", "real engine comparison", "save-only record", "packaged execution and archive", "verified recovery material", "packaged rollback", "default schema export has no DROP", "UTF-8 Chinese object names across packaged IPC", "explicit DROP export", "native archive recovery" ],
+  "at" : "2026-10-13T12:32:18.655Z"
+}

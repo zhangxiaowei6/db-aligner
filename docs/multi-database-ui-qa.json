@@ -1,0 +1,82 @@
+{
+  "browser": [
+    {
+      "check": "multi-database-light-1488",
+      "databases": [
+        "postgresql"
+      ],
+      "driver": "memory simulation",
+      "schemaTree": true,
+      "comparison": true,
+      "executionConfirmation": true,
+      "record": true,
+      "recovery": true
+    },
+    {
+      "check": "mysql-complete-light-1488",
+      "database": "mysql",
+      "comparison": true,
+      "execution": true,
+      "recovery": true
+    },
+    {
+      "check": "multi-database-light-1180",
+      "databases": [
+        "postgresql"
+      ],
+      "driver": "memory simulation",
+      "schemaTree": true,
+      "comparison": true,
+      "executionConfirmation": true,
+      "record": true,
+      "recovery": true
+    },
+    {
+      "check": "mysql-complete-light-1180",
+      "database": "mysql",
+      "comparison": true,
+      "execution": true,
+      "recovery": true
+    },
+    {
+      "check": "multi-database-dark-1488",
+      "databases": [
+        "postgresql"
+      ],
+      "driver": "memory simulation",
+      "schemaTree": true,
+      "comparison": true,
+      "executionConfirmation": true,
+      "record": true,
+      "recovery": true
+    },
+    {
+      "check": "mysql-complete-dark-1488",
+      "database": "mysql",
+      "comparison": true,
+      "execution": true,
+      "recovery": true
+    },
+    {
+      "check": "multi-database-dark-1180",
+      "databases": [
+        "postgresql"
+      ],
+      "driver": "memory simulation",
+      "schemaTree": true,
+      "comparison": true,
+      "executionConfirmation": true,
+      "record": true,
+      "recovery": true
+    },
+    {
+      "check": "mysql-complete-dark-1180",
+      "database": "mysql",
+      "comparison": true,
+      "execution": true,
+      "recovery": true
+    }
+  ],
+  "desktop": [],
+  "errors": []
+}

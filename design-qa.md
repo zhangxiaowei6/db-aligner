@@ -2,6 +2,22 @@
 
 > 下方历史文字中的产品名称已统一为当前名称；历史截图、日期和验证范围仍保留原始证据，不据此声称本次验收通过。
 
+## 2026-10-13：应用模板展示已选表与工作区填写提示
+
+应用模板成功后自动切到“已选表”，再次应用恢复同一筛选，仍可手动切到“全部表”添加范围。
+新建、编辑工作区共用名称、说明和关联连接的填写提示；编辑项有值时保留已保存值，清空后显示提示。
+
+已复核 1180 × 760 最小窗口的浅色／深色截图：表格只展示模板选中的三张表，
+表筛选与底部操作可达；新建与编辑工作区的名称、说明提示清晰，关联连接沿用多选组件，
+弹窗底部取消／保存可见，名称为空时保存禁用。取消编辑不保存为验收而清空的字段。
+
+- [已选表浅色](docs/screenshots/react-ant-design/template-selected-tables-minimum-light.png)、[深色](docs/screenshots/react-ant-design/template-selected-tables-minimum-dark.png)。
+- [新建工作区浅色](docs/screenshots/react-ant-design/workspace-create-placeholders-light.png)、[深色](docs/screenshots/react-ant-design/workspace-create-placeholders-dark.png)。
+- [编辑工作区浅色](docs/screenshots/react-ant-design/workspace-edit-placeholders-light.png)、[深色](docs/screenshots/react-ant-design/workspace-edit-placeholders-dark.png)。
+
+实际命令、重试、失败和验证边界见[验证记录](docs/validation.md)。截图使用内存虚构资料，
+不证明真实数据库同步、原生客户端或安装包已验收。
+
 ## 2026-10-12：新建同步清空旧会话
 
 侧栏“新建同步”在没有运行中比较时清空来源、目标、结构／数据双草稿、
@@ -350,3 +366,40 @@ final result: passed
 同日版本修复后再次运行更新 UI 专项，4 个主题／窗口组合、8 条检查通过，截图刷新为 `0.1.1`。复核当前浅色常规窗口与深色最小窗口，版本、演示状态和操作均可见；演示中的 `0.1.2` 为虚构更新，不表示已有远程正式版本。
 
 `0.1.2` 工具探测修复后专项再次通过，当前四张截图更新为该版本；演示中的下一版本仍为虚构数据，没有进行网络下载或安装。
+
+## 2026-10-13 多数据库完整流程
+
+连接表单与连接列表显示 MySQL／PostgreSQL，分别使用 3306／5432；驱动安装状态与数据库能力
+分开显示。PostgreSQL 连接树展示连接、数据库、schema、表；新建同步先确定数据库类型，
+来源和目标只展示相同类型，结构细项按能力禁用。确认、SQL、历史记录、文件和恢复范围保留
+完整命名空间，不展示内部 JSON 标识。
+
+本次生产预览专项在浅色／深色、1488／1180 窗口下完成八组流程，全部通过且无控制台错误，
+涵盖驱动安装、树展开、schema 选择、数据比较、实际模拟执行和模拟恢复。切换回 MySQL 时
+确认页没有遗留 PostgreSQL 的来源／目标。虚构模拟标识在标题栏、确认及记录中保留。
+复核浅色范围页、深色最小窗口恢复页与 MySQL 差异截图，表格、SQL、底部操作和完整 schema
+标识可见。浏览器模拟与真实数据库／打包验证分别记录于 docs/validation.md。
+
+- [驱动安装与草稿](docs/screenshots/react-ant-design/multi-db-driver-light-1488.png)
+- [PostgreSQL 连接树](docs/screenshots/react-ant-design/multi-db-tree-light-1488.png)
+- [PostgreSQL 同步范围](docs/screenshots/react-ant-design/multi-db-scope-light-1488.png)
+- [深色最小窗口恢复](docs/screenshots/react-ant-design/multi-db-recovery-dark-1180.png)
+- [MySQL 差异](docs/screenshots/react-ant-design/multi-db-mysql-diff-light-1488.png)
+- [八组专项报告](docs/multi-database-ui-qa.json)
+
+## 2026-10-15 数据库图标与全表单提示
+
+连接树和连接管理列表分别使用海豚表示 MySQL、大象表示 PostgreSQL，并保留类型文字。
+复核最终 0.2.0 构建的浅色／深色常规窗口截图，两种轮廓与标签清楚可辨；1180 宽度下列表
+继续在表格内部横向滚动，连接树图标和层级仍可见。图标继承当前主题颜色。
+
+补齐输入、选择、数字和多行控件的中文 placeholder，覆盖工作区、连接、模板、导入、导出、
+版本、设置和筛选等入口。提示保留已有值、默认值、已存密码和标签语义；相关约束已加入前端
+技能和交互规范。最终全量 UI 131 条检查、多数据库八组流程均通过，控制台错误为零。
+
+- [浅色连接图标与 schema 树](docs/screenshots/react-ant-design/multi-db-tree-light-1488.png)
+- [深色连接图标与 schema 树](docs/screenshots/react-ant-design/multi-db-tree-dark-1488.png)
+- [连接表单提示](docs/screenshots/react-ant-design/connection-placeholders-light.png)
+- [工作区表单提示](docs/screenshots/react-ant-design/workspace-create-placeholders-light.png)
+
+这些截图使用虚构预览数据；真实数据库、打包和待完成的安装验收边界见验证记录。

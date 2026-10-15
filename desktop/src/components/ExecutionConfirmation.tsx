@@ -1,3 +1,5 @@
+import { namespaceLabel } from '../model';
+import { refKey } from '../model';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Select } from 'antd';
 import type { ConnectionInfo, DbRef } from '../types';
@@ -19,15 +21,16 @@ export function ExecutionConfirmation({
   summary: ReactNode;
 }) {
   const [targetKey, setTargetKey] = useState('');
-  const target =
-    targets.find((item) => item.ref.connectionId + '/' + item.ref.database === targetKey) ||
-    targets[0];
+  const target = targets.find((item) => refKey(item.ref) === targetKey) || targets[0];
   const script = useMemo(() => target?.script() || '', [target]);
   function database(ref: DbRef) {
     const connection = connections.find((item) => item.id === ref.connectionId);
     return (
       <div className="sync-confirm-database">
-        <strong>{ref.database}</strong>
+        <strong>
+          {ref.database}
+          {ref.schema !== undefined ? ' / ' + ref.schema : ''}
+        </strong>
         <span>{connection?.name || ref.connectionId}</span>
         {connection && (
           <small>
@@ -51,7 +54,7 @@ export function ExecutionConfirmation({
         </h3>
         <ul className="sync-confirm-targets">
           {targets.map((item) => (
-            <li key={item.ref.connectionId + '/' + item.ref.database}>
+            <li key={refKey(item.ref)}>
               {database(item.ref)}
               <span className="sync-confirm-count">{item.count} 项变更</span>
             </li>
@@ -64,21 +67,19 @@ export function ExecutionConfirmation({
         <p className="hint">切换目标库查看全部已选变更的 SQL，可分页查看并复制完整内容。</p>
         <Select
           aria-label="执行脚本目标库"
+          placeholder="选择要查看脚本的目标库"
           className="script-target-select"
-          value={target ? target.ref.connectionId + '/' + target.ref.database : undefined}
+          value={target ? refKey(target.ref) : undefined}
           onChange={setTargetKey}
           options={targets.map((item) => ({
-            value: item.ref.connectionId + '/' + item.ref.database,
-            label: `${connections.find((connection) => connection.id === item.ref.connectionId)?.name || item.ref.connectionId} / ${item.ref.database} · ${item.count} 项变更`,
+            value: refKey(item.ref),
+            label: `${connections.find((connection) => connection.id === item.ref.connectionId)?.name || item.ref.connectionId} / ${namespaceLabel(item.ref)} · ${item.count} 项变更`,
           }))}
         />
         {target && (
-          <section
-            key={target.ref.connectionId + '/' + target.ref.database}
-            aria-label={`${target.ref.database} 执行脚本`}
-          >
+          <section key={refKey(target.ref)} aria-label={`${namespaceLabel(target.ref)} 执行脚本`}>
             <h4>
-              {target.ref.database} · {target.count} 项变更
+              {namespaceLabel(target.ref)} · {target.count} 项变更
             </h4>
             <SqlView sql={script} />
           </section>

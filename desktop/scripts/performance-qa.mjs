@@ -74,7 +74,7 @@ export async function performanceQA(browser, { repo, report, observe, shot, foot
           (label) =>
             [...document.querySelectorAll('[role="treeitem"]')].some(
               (element) =>
-                element.querySelector('.tree-label')?.textContent === label &&
+                element.querySelector('.tree-label')?.getAttribute('title') === label &&
                 element.getAttribute('aria-expanded') === 'true',
             ),
           label,

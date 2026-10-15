@@ -1,3 +1,12 @@
+import {
+  namespaceKey,
+  postgresCreate,
+  postgresPlan,
+  postgresSnapshot,
+  postgresTables,
+  quotePg,
+} from './preview-postgres';
+import driverCatalogue from '../../engine/src/main/resources/drivers.json';
 import type {
   Appearance,
   CompareTask,
@@ -6,8 +15,12 @@ import type {
   State,
   Table,
   SyncPlan,
+  SyncRecord,
+  Change,
+  TargetResult,
   ThemeMode,
   DbRef,
+  DriverState,
   UpdateState,
   TableChoice,
 } from './types';
@@ -17,6 +30,19 @@ import { executionScript } from './sync-scripts';
 import { effectiveOptions, fullStructure } from './structure-options';
 import { previewStructureChange } from './preview-structure';
 import { connectionGroupName, orderedConnections } from './connection-organization';
+const previewDrivers = new Map<string, DriverState>(
+  driverCatalogue.map((entry) => [
+    entry.id,
+    {
+      ...entry,
+      status: entry.builtin ? 'installed' : 'missing',
+      revision: 0,
+      bytes: 0,
+      message: '虚构驱动状态，不下载文件',
+    } as DriverState,
+  ]),
+);
+const previewInstalls = new Map<string, { token: object; promise: Promise<DriverState> }>();
 const listeners = new Set<(event: Record<string, unknown>) => void>();
 let previewUpdate: UpdateState = {
   version,
@@ -353,6 +379,16 @@ const previewRollback: Record<string, string> = {
   x1: "ALTER TABLE `shop_b`.`sys_user` COMMENT='旧用户表说明';",
   x2: 'DROP TABLE `shop_c`.`sys_user`;',
 };
+previewPlan.sourceSnapshot.sys_dict.rows = [
+  { id: 7, code: 'ORDER_STATUS', dict_name: '订单状态', sort: 20, remark: null },
+  { id: 8, code: 'PAYMENT_TYPE', dict_name: '支付方式', sort: 0, remark: null },
+];
+for (const target of previewPlan.targets) {
+  target.before.sys_dict.rows = [
+    { id: 8007, code: 'ORDER_STATUS', dict_name: '订单状态（旧）', sort: 10, remark: null },
+    { id: 8009, code: 'LEGACY_FLAG', dict_name: '旧标记', sort: 0, remark: null },
+  ];
+}
 for (const target of previewPlan.targets) {
   for (const change of target.changes) {
     change.rollbackSql = previewRollback[change.id] ? [previewRollback[change.id]] : [];
@@ -366,7 +402,15 @@ const previewTables = [
   { name: 'order_items', comment: '订单明细表' },
   { name: 'order_refund_schedule_with_a_long_table_name', comment: '长表名截断示例' },
 ];
+const previewOverrides = new Map<string, Table>();
+const previewRestored = new Map<string, Set<string>>();
+const previewVerification = new Map<string, unknown>();
+const previewFolder = (ref: DbRef) =>
+  ref.database + (ref.schema === undefined ? '' : '/' + encodeURIComponent(ref.schema));
 function previewSnapshot(ref: DbRef, name: string): Table {
+  const overridden = previewOverrides.get(namespaceKey(ref) + '/' + name);
+  if (overridden) return structuredClone(overridden);
+  if (ref.schema !== undefined) return postgresSnapshot(ref, name);
   const target = previewPlan.targets.find(
     (item) => item.ref.connectionId === ref.connectionId && item.ref.database === ref.database,
   );
@@ -374,7 +418,10 @@ function previewSnapshot(ref: DbRef, name: string): Table {
   const snapshot = structuredClone(target?.before[name] || source);
   // Current examples share one catalog across browsing, scope selection and comparison.
   if (ref.connectionId === 'target1' && ref.database === 'shop_b') {
-    if (name === 'sys_dict') Object.assign(snapshot, structuredClone(source));
+    if (name === 'sys_dict') {
+      const rows = snapshot.rows;
+      Object.assign(snapshot, structuredClone(source), { rows });
+    }
     if (['sys_menu', 'orders'].includes(name)) {
       Object.assign(snapshot, {
         exists: false,
@@ -415,6 +462,13 @@ export function buildPreviewPlan(
     )
   )
     throw new Error('请至少选择一项结构细项');
+  const sourcePg = source.schema !== undefined;
+  if (targets.some((ref) => (ref.schema !== undefined) !== sourcePg))
+    throw new Error('仅支持同类型数据库同步');
+  if (targets.some((ref) => namespaceKey(ref) === namespaceKey(source)))
+    throw new Error('源库不能同时作为目标库');
+  if (new Set(targets.map(namespaceKey)).size !== targets.length) throw new Error('目标库重复');
+  if (sourcePg) return postgresPlan(source, targets, tables, workspaceId, previewSnapshot);
   const plan = structuredClone(previewPlan);
   plan.id = 'PREVIEW-PLAN-' + crypto.randomUUID();
   plan.createdAt = new Date().toISOString();
@@ -538,6 +592,79 @@ export function buildPreviewPlan(
                 ? `匹配键排序规则不同，请先同步字段结构：${collationKey}`
                 : '表无主键，请指定唯一业务键',
         });
+      } else if (choice.data) {
+        fixture.changes = fixture.changes.filter((item) => item.table !== choice.name);
+        const quote = (name: string) => '`' + name.replaceAll('`', '``') + '`';
+        const literal = (v: unknown) =>
+          v === null || v === undefined
+            ? 'NULL'
+            : typeof v === 'number'
+              ? String(v)
+              : typeof v === 'boolean'
+                ? v
+                  ? '1'
+                  : '0'
+                : "'" + String(v).replaceAll('\\', '\\\\').replaceAll("'", "''") + "'";
+        const q = `${quote(ref.database)}.${quote(choice.name)}`;
+        const key = (row: Record<string, unknown>) => JSON.stringify(keys.map((k) => row[k]));
+        const where = (row: Record<string, unknown>) =>
+          Object.entries(row)
+            .map(([field, v]) => `${quote(field)} <=> ${literal(v)}`)
+            .join(' AND ');
+        const insert = (row: Record<string, unknown>) =>
+          `INSERT INTO ${q} (${Object.keys(row).map(quote).join(',')}) VALUES (${Object.values(row).map(literal).join(',')});`;
+        const push = (
+          kind: string,
+          old: Record<string, unknown>,
+          after: Record<string, unknown>,
+          sql: string,
+          inverse: string,
+        ) => {
+          const row = kind === 'DELETE_ROW' ? old : after;
+          fixture.changes.push({
+            ...change(
+              `${namespaceKey(ref)}/${choice.name}/${kind}/${key(row)}`,
+              choice.name,
+              kind,
+              keys.map((k) => `${k} = ${row[k]}`).join(' / '),
+              sql,
+              kind === 'DELETE_ROW',
+            ),
+            targetKey: namespaceKey(ref),
+            before: old,
+            after,
+            matchColumns: keys,
+            rollbackSql: [inverse],
+          });
+        };
+        const primary =
+          sourceTable.indexes.find((index) => index.name === 'PRIMARY')?.columns || [];
+        for (const row of sourceTable.rows) {
+          const old = targetTable.rows.find((entry) => key(entry) === key(row));
+          const after = { ...row };
+          if (old && JSON.stringify(keys) !== JSON.stringify(primary))
+            primary.forEach((field) => {
+              after[field] = old[field];
+            });
+          if (!old)
+            push('ADD_ROW', {}, after, insert(after), `DELETE FROM ${q} WHERE ${where(after)};`);
+          else if (
+            Object.keys(after).some(
+              (field) => JSON.stringify(after[field]) !== JSON.stringify(old[field]),
+            )
+          ) {
+            const fields = Object.keys(after).filter(
+              (field) => JSON.stringify(after[field]) !== JSON.stringify(old[field]),
+            );
+            const update = (values: Record<string, unknown>, match: Record<string, unknown>) =>
+              `UPDATE ${q} SET ${fields.map((field) => `${quote(field)}=${literal(values[field])}`).join(',')} WHERE ${where(match)};`;
+            push('UPDATE_ROW', old, after, update(after, old), update(old, after));
+          }
+        }
+        for (const row of targetTable.rows.filter(
+          (old) => !sourceTable.rows.some((entry) => key(entry) === key(old)),
+        ))
+          push('DELETE_ROW', row, {}, `DELETE FROM ${q} WHERE ${where(row)};`, insert(row));
       }
       if (
         (!choice.structure || !fullStructure(choice.structureOptions)) &&
@@ -570,10 +697,31 @@ const state: State = {
   workspaces: [
     { id: 'default', name: '跨境电商项目', description: '管理字典、菜单和各站点数据库' },
   ],
-  connections,
+  connections: [
+    ...connections,
+    ...['source', 'target'].map((role) => ({
+      id: 'pg-' + role,
+      name: role === 'source' ? 'PostgreSQL 来源（虚构）' : 'PostgreSQL 目标（虚构）',
+      databaseType: 'postgresql' as const,
+      host: '192.0.2.' + (role === 'source' ? 50 : 51),
+      port: 5432,
+      user: 'sync_user',
+      group: 'PostgreSQL 演示',
+      databases: [role === 'source' ? 'demo_pg' : 'demo_pg_target'],
+      initialDatabase: 'postgres',
+      driverId: 'postgresql',
+      driverVersion: '42.7.8',
+      workspaceIds: ['default'],
+      ssl: false,
+      ca: '',
+      clientCert: '',
+      hasPassword: true,
+    })),
+  ],
   connectionGroups: [
     { id: 'preview-source-group', name: '测试环境', sortOrder: 0 },
     { id: 'preview-target-group', name: '目标环境', sortOrder: 1 },
+    { id: 'preview-pg-group', name: 'PostgreSQL 演示', sortOrder: 2 },
   ],
   templates: [
     {
@@ -653,10 +801,175 @@ const previewEvent = (task: CompareTask) =>
       progress: task.progress,
     }),
   );
+function simulateChange(table: Table, source: Table, change: Change, inverse = false) {
+  const kind = change.kind;
+  if (kind === 'CREATE_TABLE') {
+    if (inverse) {
+      table.exists = false;
+      table.columns = [];
+      table.rows = [];
+      table.indexes = [];
+      table.foreignKeys = [];
+    } else {
+      Object.assign(table, structuredClone(source));
+      table.rows = [];
+      if (table.databaseType === 'postgresql') {
+        table.indexes = [];
+        table.foreignKeys = [];
+      }
+    }
+  } else if (kind === 'ADD_COLUMN' || kind === 'DROP_COLUMN' || kind === 'MODIFY_COLUMN') {
+    const dropping = inverse ? kind === 'ADD_COLUMN' : kind === 'DROP_COLUMN';
+    if (dropping) {
+      table.columns = table.columns.filter((column) => column.name !== change.label);
+      table.rows.forEach((row) => delete row[change.label]);
+    } else {
+      const column = (inverse ? change.before.column : change.after.column) as unknown as
+        | Table['columns'][number]
+        | undefined;
+      const effective = column || source.columns.find((col) => col.name === change.label);
+      if (effective) {
+        const index = table.columns.findIndex((col) => col.name === change.label);
+        if (index < 0) table.columns.push(structuredClone(effective));
+        else table.columns[index] = structuredClone(effective);
+      }
+    }
+  } else if (kind === 'TABLE_COMMENT')
+    table.comment = inverse ? String(change.before.comment ?? table.comment) : source.comment;
+  else if (kind.includes('FK'))
+    table.foreignKeys = inverse
+      ? table.foreignKeys.filter((key) => key.name !== change.label)
+      : structuredClone(source.foreignKeys);
+  else if (kind.includes('INDEX'))
+    table.indexes = inverse
+      ? table.indexes.filter((index) => index.name !== change.label)
+      : structuredClone(source.indexes);
+  else if (kind.endsWith('_ROW')) {
+    const remove = inverse ? kind === 'ADD_ROW' : kind === 'DELETE_ROW';
+    const match = inverse ? change.after : change.before;
+    const keys = change.matchColumns?.length ? change.matchColumns : Object.keys(match);
+    const index = table.rows.findIndex(
+      (row) =>
+        keys.length > 0 &&
+        keys.every((key) => JSON.stringify(row[key]) === JSON.stringify(match[key])),
+    );
+    if (index >= 0) table.rows.splice(index, 1);
+    if (!remove) table.rows.push(structuredClone(inverse ? change.before : change.after));
+  }
+}
+function simulateExecution(plan: SyncPlan, selectedIds: string[]): TargetResult[] {
+  return plan.targets.map((target) => {
+    const changes = target.changes.filter(
+      (change) => selectedIds.includes(change.id) && !change.blocked,
+    );
+    for (const name of new Set(changes.map((change) => change.table))) {
+      const table = previewSnapshot(target.ref, name);
+      for (const change of changes.filter((change) => change.table === name))
+        simulateChange(table, plan.sourceSnapshot[name], change);
+      if (target.ref.schema !== undefined && table.exists)
+        table.createSql = postgresCreate(target.ref, table);
+      previewOverrides.set(namespaceKey(target.ref) + '/' + name, table);
+    }
+    return {
+      ref: target.ref,
+      status: changes.length ? 'SUCCESS' : 'SKIPPED',
+      error: '',
+      backups: {},
+      expected: {},
+      steps: changes.map((change) => ({
+        changeId: change.id,
+        status: 'DONE',
+        error: '',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+      })),
+    };
+  });
+}
 export const previewBridge: DesktopBridge = {
   async invoke<T>(method: string, p: Record<string, unknown> = {}): Promise<T> {
     let result: unknown;
     switch (method) {
+      case 'drivers.list':
+        result = [...previewDrivers.values()];
+        break;
+      case 'drivers.get':
+        result = previewDrivers.get(String(p.driverId));
+        if (!result) throw new Error('不支持的驱动标识');
+        break;
+      case 'drivers.install': {
+        const id = String(p.driverId);
+        const old = previewDrivers.get(id);
+        if (!old) throw new Error('不支持的驱动标识');
+        if (old.status === 'installed') {
+          result = old;
+          break;
+        }
+        const pending = previewInstalls.get(id);
+        if (pending) {
+          result = await pending.promise;
+          break;
+        }
+        const token = {};
+        const update = (status: DriverState['status'], message: string) => {
+          const previous = previewDrivers.get(id)!;
+          const next = { ...previous, revision: previous.revision + 1, status, message };
+          previewDrivers.set(id, next);
+          listeners.forEach((fn) => fn({ event: 'driver-state', state: next }));
+          return next;
+        };
+        update('downloading', '正在模拟下载驱动，不访问网络');
+        const promise = (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 700));
+          if (previewInstalls.get(id)?.token !== token) return previewDrivers.get(id)!;
+          const next = p.simulateFailure
+            ? update('error', '虚构网络失败，可重新安装')
+            : update('installed', '虚构安装完成，可测试连接；没有下载文件');
+          previewInstalls.delete(id);
+          return next;
+        })();
+        previewInstalls.set(id, { token, promise });
+        result = await promise;
+        break;
+      }
+      case 'drivers.cancel': {
+        const id = String(p.driverId),
+          old = previewDrivers.get(id);
+        if (!old) throw new Error('不支持的驱动标识');
+        if (previewInstalls.delete(id)) {
+          const next: DriverState = {
+            ...old,
+            status: 'cancelled',
+            revision: old.revision + 1,
+            message: '虚构安装已取消，可以重试',
+          };
+          previewDrivers.set(id, next);
+          listeners.forEach((fn) => fn({ event: 'driver-state', state: next }));
+          result = next;
+        } else result = old;
+        break;
+      }
+      case 'schemas.list':
+        if (previewDrivers.get('postgresql')?.status !== 'installed')
+          throw new Error('请先在连接表单安装 PostgreSQL 驱动（虚构演示）');
+        result = ['public', 'reference'];
+        break;
+      case 'database.capabilities': {
+        const ref = p.ref as DbRef;
+        const pg = ref.schema !== undefined;
+        result = {
+          databaseType: pg ? 'postgresql' : 'mysql',
+          serverVersion: pg ? '17.x · 虚构预览' : '8.4.8 · 虚构预览',
+          adapterVersion: '1',
+          structure: true,
+          data: true,
+          recovery: true,
+          unsupported: pg
+            ? ['columnOrder', 'tableCollation', 'identity', 'serial', 'complexObjects']
+            : ['complexObjects'],
+        };
+        break;
+      }
       case 'updates.get':
         result = previewUpdate;
         break;
@@ -717,7 +1030,15 @@ export const previewBridge: DesktopBridge = {
           (!value.password && connectionFailures.get(value.id))
         )
           throw new Error('密码验证失败（虚构预览数据）');
-        result = { serverVersion: '8.4.8 · 虚构预览数据' };
+        if (
+          value.databaseType === 'postgresql' &&
+          previewDrivers.get('postgresql')?.status !== 'installed'
+        )
+          throw new Error('请先安装 PostgreSQL 驱动（虚构预览）');
+        result = {
+          serverVersion:
+            value.databaseType === 'postgresql' ? '17.x · 虚构预览数据' : '8.4.8 · 虚构预览数据',
+        };
         break;
       }
       case 'ping':
@@ -737,6 +1058,15 @@ export const previewBridge: DesktopBridge = {
       case 'tables.list': {
         await new Promise((resolve) => setTimeout(resolve, 150));
         const ref = p.ref as DbRef;
+        if (ref.schema !== undefined) {
+          if (previewDrivers.get('postgresql')?.status !== 'installed')
+            throw new Error('请先安装 PostgreSQL 驱动（虚构演示）');
+          result = postgresTables
+            .map((name) => previewSnapshot(ref, name))
+            .filter((table) => table.exists)
+            .map((table) => ({ name: table.name, comment: table.comment }));
+          break;
+        }
         result = previewTables.flatMap((table) => {
           const snapshot = previewSnapshot(ref, table.name);
           return snapshot.exists ? [{ name: table.name, comment: snapshot.comment }] : [];
@@ -747,6 +1077,11 @@ export const previewBridge: DesktopBridge = {
         result = previewSnapshot(p.ref as DbRef, String(p.table));
         break;
       case 'sync.compare': {
+        if (
+          (p.source as DbRef).schema !== undefined &&
+          previewDrivers.get('postgresql')?.status !== 'installed'
+        )
+          throw new Error('请先安装 PostgreSQL 驱动（虚构演示）');
         result = buildPreviewPlan(
           p.source as DbRef,
           p.targets as DbRef[],
@@ -757,6 +1092,11 @@ export const previewBridge: DesktopBridge = {
         break;
       }
       case 'sync.compare.start': {
+        if (
+          (p.source as DbRef).schema !== undefined &&
+          previewDrivers.get('postgresql')?.status !== 'installed'
+        )
+          throw new Error('请先安装 PostgreSQL 驱动（虚构演示）');
         if (
           [...compareTasks.values()].some((task) => ['RUNNING', 'CANCELLING'].includes(task.status))
         )
@@ -979,8 +1319,8 @@ export const previewBridge: DesktopBridge = {
         break;
       }
       case 'sync.save': {
-        if (p.mode === 'EXECUTE_AND_SAVE')
-          throw new Error('浏览器预览不会执行数据库操作，请使用桌面客户端');
+        if (!['SAVE_ONLY', 'EXECUTE_AND_SAVE'].includes(String(p.mode)))
+          throw new Error('无效保存方式');
         const plan = comparedPlans.get(String(p.planId));
         if (!plan) throw new Error('比较结果已失效，请重新比较');
         const selectedIds = [...new Set(p.selectedIds as string[])];
@@ -1005,11 +1345,13 @@ export const previewBridge: DesktopBridge = {
           tables: plan.tables,
           targetCount: plan.targets.length,
           createdAt: new Date().toISOString(),
-          mode: 'SAVE_ONLY',
-          status: 'UNEXECUTED',
-          results: [],
+          mode: p.mode,
+          status: p.mode === 'EXECUTE_AND_SAVE' ? 'SUCCESS' : 'UNEXECUTED',
+          results: p.mode === 'EXECUTE_AND_SAVE' ? simulateExecution(plan, selectedIds) : [],
           selectedIds,
-          remark: String(p.remark || ''),
+          remark:
+            (p.mode === 'EXECUTE_AND_SAVE' ? '【虚构模拟执行】' : '【浏览器预览】') +
+            String(p.remark || ''),
         };
         state.records.unshift(result as State['records'][number]);
         break;
@@ -1024,8 +1366,13 @@ export const previewBridge: DesktopBridge = {
             opts.tables
               .map(
                 (t) =>
-                  (opts.includeDrop ? 'DROP TABLE IF EXISTS `' + t + '`;\n' : '') +
-                  previewSnapshot(opts.source, t).createSql,
+                  (opts.includeDrop
+                    ? 'DROP TABLE IF EXISTS ' +
+                      (opts.source.schema !== undefined
+                        ? quotePg(opts.source.schema) + '.' + quotePg(t)
+                        : '`' + t + '`') +
+                      ';\n'
+                    : '') + previewSnapshot(opts.source, t).createSql,
               )
               .join('\n\n'),
         };
@@ -1036,7 +1383,13 @@ export const previewBridge: DesktopBridge = {
         if (!record) throw new Error('同步记录不存在');
         result = {
           record,
-          events: [],
+          events: [
+            {
+              time: record.createdAt,
+              event: { type: 'preview-simulation', message: '虚构演示记录，未连接数据库' },
+            },
+          ],
+          verification: previewVerification.get(record.id),
           external: state.external.find((e) => e.id === p.id) || {},
           files: [
             'README.txt',
@@ -1046,7 +1399,7 @@ export const previewBridge: DesktopBridge = {
               )
                 ? ['target.json', '02_sync.sql', '04_rollback.sql']
                 : ['target.json', '00_full_diff.sql']
-              ).map((name) => `${target.ref.database}/${name}`),
+              ).map((name) => `${previewFolder(target.ref)}/${name}`),
             ),
           ],
         };
@@ -1057,7 +1410,7 @@ export const previewBridge: DesktopBridge = {
         if (!record) throw new Error('同步记录不存在');
         const file = String(p.file);
         const target = record?.plan?.targets.find((item) =>
-          file.startsWith(item.ref.database + '/'),
+          file.startsWith(previewFolder(item.ref) + '/'),
         );
         const selected =
           target?.changes.filter((c) => record?.selectedIds.includes(c.id) && !c.blocked) || [];
@@ -1092,19 +1445,143 @@ export const previewBridge: DesktopBridge = {
         result = v;
         break;
       }
+      case 'external.declare': {
+        const record = state.records.find((item) => item.id === p.id);
+        const ids = p.confirmedIds as string[];
+        if (
+          !record?.plan ||
+          record.mode !== 'SAVE_ONLY' ||
+          !ids.length ||
+          ids.some((id) => !record.selectedIds.includes(id))
+        )
+          throw new Error('外部声明范围无效');
+        const proof = simulateExecution(record.plan, ids);
+        const declaration = {
+          id: record.id,
+          confirmedIds: ids,
+          verified: false,
+          remark: '【虚构外部执行声明】' + String(p.remark || ''),
+          declaredAt: new Date().toISOString(),
+          results: proof,
+        };
+        state.external = [...state.external.filter((item) => item.id !== record.id), declaration];
+        result = declaration;
+        break;
+      }
+      case 'external.verify': {
+        const declaration = state.external.find((item) => item.id === p.id);
+        if (!declaration) throw new Error('请先登记模拟外部执行范围');
+        declaration.verified = true;
+        declaration.checks = [
+          {
+            target: '虚构内存目标',
+            table: '',
+            valid: true,
+            recoveryAvailable: true,
+            message: '虚构声明范围已核验，原记录仍为未执行',
+          },
+        ];
+        result = declaration;
+        break;
+      }
+      case 'record.verify': {
+        const record = state.records.find((item) => item.id === p.id);
+        if (!record) throw new Error('同步记录不存在');
+        result = {
+          id: record.id,
+          notice: '虚构当前状态核验，不改变原执行事实',
+          checks: record.results.map((target) => ({
+            target: namespaceKey(target.ref),
+            table: '',
+            currentState: '内存示例状态已核验',
+            recoveryStatus: '虚构恢复资料可用',
+          })),
+        };
+        previewVerification.set(record.id, result);
+        break;
+      }
+      case 'rollback.execute': {
+        const original = state.records.find((item) => item.id === p.id);
+        if (!original?.plan) throw new Error('同步记录不存在');
+        const ids = p.selectedIds as string[];
+        const preview = await previewBridge.invoke<{ items: { id: string; eligible: boolean }[] }>(
+          'rollback.preview',
+          { id: original.id },
+        );
+        if (
+          !ids.length ||
+          ids.some((id) => !preview.items.some((item) => item.id === id && item.eligible))
+        )
+          throw new Error('存在无法恢复的项');
+        for (const target of original.plan.targets) {
+          const changes = target.changes.filter((change) => ids.includes(change.id));
+          for (const name of new Set(changes.map((change) => change.table))) {
+            const key = namespaceKey(target.ref) + '/' + name;
+            const structural = changes.some(
+              (change) => change.table === name && !change.kind.endsWith('_ROW'),
+            );
+            const current = structural
+              ? structuredClone(target.before[name])
+              : previewSnapshot(target.ref, name);
+            if (!structural)
+              for (const change of [...changes].reverse().filter((change) => change.table === name))
+                simulateChange(current, original.plan.sourceSnapshot[name], change, true);
+            previewOverrides.set(key, current);
+          }
+        }
+        const restored = previewRestored.get(original.id) || new Set<string>();
+        ids.forEach((id) => restored.add(id));
+        previewRestored.set(original.id, restored);
+        const record: SyncRecord = {
+          ...structuredClone(original),
+          id: 'PREVIEW-ROLL-' + crypto.randomUUID(),
+          parentId: original.id,
+          mode: 'ROLLBACK',
+          status: 'SUCCESS',
+          createdAt: new Date().toISOString(),
+          selectedIds: ids,
+          remark: '【虚构模拟恢复】' + String(p.remark || ''),
+          results: original.plan.targets.map((target) => ({
+            ref: target.ref,
+            status: 'SUCCESS',
+            error: '',
+            backups: {},
+            expected: {},
+            steps: ids
+              .filter((id) => target.changes.some((change) => change.id === id))
+              .map((changeId) => ({
+                changeId,
+                status: 'DONE',
+                error: '',
+                startedAt: new Date().toISOString(),
+                finishedAt: new Date().toISOString(),
+              })),
+          })),
+        };
+        state.records.unshift(record);
+        result = record;
+        break;
+      }
       case 'rollback.preview': {
         const record = state.records.find((r) => r.id === p.id);
         if (!record) throw new Error('同步记录不存在');
+        if (record.mode === 'ROLLBACK') throw new Error('恢复记录不能再次反向执行，请重新比较');
+        const external = state.external.find((item) => item.id === record.id);
+        const proofs =
+          record.mode === 'SAVE_ONLY' && external?.verified
+            ? (external.results as TargetResult[])
+            : record.results;
         result = {
           id: 'PREVIEW-ROLLBACK',
           recordId: p.id,
           items: (record.plan?.targets || []).flatMap((target) => {
             const completed = new Set(
-              record.results
+              proofs
                 .find(
                   (result) =>
                     result.ref.connectionId === target.ref.connectionId &&
-                    result.ref.database === target.ref.database,
+                    result.ref.database === target.ref.database &&
+                    result.ref.schema === target.ref.schema,
                 )
                 ?.steps.filter((step) => step.status === 'DONE')
                 .map((step) => step.changeId),
@@ -1112,11 +1589,14 @@ export const previewBridge: DesktopBridge = {
             return [...target.changes]
               .reverse()
               .filter(
-                (change) => record.selectedIds.includes(change.id) && completed.has(change.id),
+                (change) =>
+                  record.selectedIds.includes(change.id) &&
+                  completed.has(change.id) &&
+                  !previewRestored.get(record.id)?.has(change.id),
               )
               .map((change) => ({
                 id: change.id,
-                targetKey: `${target.ref.connectionId}/${target.ref.database}`,
+                targetKey: namespaceKey(target.ref),
                 table: change.table,
                 label: change.label,
                 eligible: !change.blocked && change.rollbackSql.length > 0,

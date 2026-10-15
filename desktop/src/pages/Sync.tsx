@@ -1,3 +1,6 @@
+import { namespaceLabel } from '../model';
+import { DatabaseCapabilities } from '../components/DatabaseCapabilities';
+import { refKey } from '../model';
 import { targetRefreshKey } from '../model';
 import { useEffect, useMemo, useRef } from 'react';
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
@@ -74,7 +77,7 @@ export function ScopePage() {
         </Space>
       </div>
     );
-  const options = dbOptions(m);
+  const options = dbOptions(m).filter((option) => option.databaseType === m.syncDatabaseType);
   const filtered = m.scopeTables.filter(
     (table) =>
       scopeTableMatches(table, m.tableSearch) &&
@@ -137,11 +140,8 @@ export function ScopePage() {
             {selectedTemplate && (
               <p className="hint template-summary">
                 {selectedTemplate.name} · 来源：
-                {options.find(
-                  (o) =>
-                    o.value ===
-                    `${selectedTemplate.source.connectionId}/${selectedTemplate.source.database}`,
-                )?.label || selectedTemplate.source.database}
+                {options.find((o) => o.value === refKey(selectedTemplate.source))?.label ||
+                  namespaceLabel(selectedTemplate.source)}
                 {' · '}
                 {selectedTemplate.targets.length} 个目标库 · {selectedTemplate.tables.length} 张表
                 {selectedTemplate.description ? ` · ${selectedTemplate.description}` : ''}
@@ -160,6 +160,18 @@ export function ScopePage() {
             {m.templateApplyError && <Alert type="error" showIcon title={m.templateApplyError} />}
           </div>
 
+          <Field label="同步数据库类型">
+            <Radio.Group
+              aria-label="同步数据库类型"
+              value={m.syncDatabaseType}
+              disabled={comparing}
+              options={[
+                { value: 'mysql', label: 'MySQL' },
+                { value: 'postgresql', label: 'PostgreSQL' },
+              ]}
+              onChange={(event) => c.switchDatabaseType(event.target.value)}
+            />
+          </Field>
           <DatabaseOptionsStatus scope="sync" />
           <Form layout="vertical">
             <div className="source-target-form">
@@ -168,6 +180,7 @@ export function ScopePage() {
                   disabled={comparing}
                   showSearch
                   optionFilterProp="label"
+                  aria-label="来源数据库"
                   placeholder="选择来源数据库"
                   loading={Object.values(m.dbLoading).some(Boolean)}
                   value={m.sourceKey || undefined}
@@ -179,18 +192,28 @@ export function ScopePage() {
               <Field label="目标数据库（可多选）">
                 <Select
                   className="target-database-select"
+                  aria-label="目标数据库"
                   disabled={comparing}
                   mode="multiple"
                   loading={Object.values(m.dbLoading).some(Boolean)}
                   optionFilterProp="label"
                   value={m.targetKeys}
                   placeholder="选择目标库"
-                  options={options.filter((o) => o.value !== m.sourceKey)}
+                  options={options
+                    .filter((o) => o.value !== m.sourceKey)
+                    .map((option) => ({
+                      ...option,
+                      disabled:
+                        !!m.sourceKey &&
+                        option.databaseType !==
+                          (m.sourceKey.startsWith('pg:') ? 'postgresql' : 'mysql'),
+                    }))}
                   onChange={(keys) => void c.setTargets(keys)}
                 />
               </Field>
             </div>
           </Form>
+          <DatabaseCapabilities namespaceKey={m.sourceKey} />
           <div className="section-heading">
             <h2>选择需要比较的表</h2>
           </div>
@@ -260,6 +283,7 @@ export function ScopePage() {
             <div className="structure-defaults">
               <strong>统一结构默认</strong>
               <StructureOptionsEditor
+                databaseType={m.syncDatabaseType}
                 value={m.structureDefaults}
                 disabled={comparing}
                 onChange={(options) => c.set('structureDefaults', options)}
@@ -382,6 +406,7 @@ export function ScopePage() {
                 render: (_, row) =>
                   m.scopeMode === 'structure' ? (
                     <TableStructureOptions
+                      databaseType={m.sourceKey.startsWith('pg:') ? 'postgresql' : 'mysql'}
                       label={`${row.name} 结构细项`}
                       value={row.structureOptions}
                       disabled={comparing || !row.structure}
@@ -511,7 +536,7 @@ export function DiffPage() {
         <div className="source-summary">
           <DatabaseOutlined />
           <div>
-            <strong>{plan.source.database}</strong>
+            <strong>{namespaceLabel(plan.source)}</strong>
             <small>
               {m.state.connections.find((conn) => conn.id === plan.source.connectionId)?.name}
             </small>
@@ -524,7 +549,7 @@ export function DiffPage() {
               包括{' '}
               {plan.targets
                 .slice(0, 3)
-                .map((t) => t.ref.database)
+                .map((t) => namespaceLabel(t.ref))
                 .join('、')}
             </small>
           </div>
@@ -559,10 +584,10 @@ export function DiffPage() {
           .map((t) => (
             <Alert
               className="bottom-gap"
-              key={`${t.ref.connectionId}/${t.ref.database}`}
+              key={refKey(t.ref)}
               type="error"
               showIcon
-              title={`${t.ref.database}：${t.error}`}
+              title={`${namespaceLabel(t.ref)}：${t.error}`}
             />
           ))}
         {plan.targets.map((target) => {
@@ -576,10 +601,10 @@ export function DiffPage() {
           return (
             <Alert
               className="bottom-gap missing-data-tables"
-              key={`missing:${target.ref.connectionId}/${target.ref.database}`}
+              key={`missing:${refKey(target.ref)}`}
               type="warning"
               showIcon
-              title={`${target.ref.database}${connection ? `（${connection.name}）` : ''}：目标缺少数据同步表`}
+              title={`${namespaceLabel(target.ref)}${connection ? `（${connection.name}）` : ''}：目标缺少数据同步表`}
               description={
                 <ul>
                   {missing.map((table) => (

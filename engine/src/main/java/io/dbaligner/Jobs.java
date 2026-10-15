@@ -157,6 +157,24 @@ public final class Jobs implements AutoCloseable {
         result.status = "RUNNING";
         persist(r, "target-started", Map.of("target", tp.ref.key()));
       }
+      if (tp.ref.schema() != null) {
+        new PostgresExecution(db, archives)
+            .run(
+                r,
+                tp,
+                result,
+                token,
+                (type, details) -> {
+                  synchronized (r) {
+                    persist(r, type, details);
+                  }
+                });
+        synchronized (r) {
+          result.status = "SUCCESS";
+          persist(r, "target-finished", Map.of("target", tp.ref.key()));
+        }
+        return;
+      }
       try (var c = db.openBound(tp.ref, tp.connectionIdentity)) {
         db.supportedServer(c);
         var tables = selected.stream().map(x -> x.table).distinct().toList();
@@ -391,7 +409,7 @@ public final class Jobs implements AutoCloseable {
                         i.table.equals(x.table)
                             && i.kind.equals("ADD_COLUMN")
                             && !ids.contains(i.id)
-                            && x.sql.contains(Sql.id(i.label))))
+                            && x.sql.contains(Sql.id(tp.ref, i.label))))
           throw new IllegalArgumentException("索引或外键依赖未选择的新增字段");
       }
     }
@@ -658,6 +676,37 @@ public final class Jobs implements AutoCloseable {
       var tr = new TargetResult();
       tr.ref = tp.ref;
       r.results.add(tr);
+      if (tp.ref.schema() != null) {
+        var proof =
+            evidence(original).stream().filter(t -> t.ref.equals(tp.ref)).findFirst().orElseThrow();
+        try {
+          new PostgresExecution(db, archives)
+              .rollback(
+                  original,
+                  r,
+                  tp,
+                  tr,
+                  proof,
+                  items,
+                  (type, details) -> persist(r, type, details),
+                  (connection, change, evidence, digest) -> {
+                    if (Archives.needsValueRestore(change)
+                        && !Archives.valueRestoreAvailable(original, tp, evidence, change.table))
+                      throw new IllegalArgumentException("恢复资料缺失或摘要不符");
+                    if (change.kind.endsWith("_ROW")) {
+                      String reason =
+                          dataRecoveryReason(connection, tp.ref, evidence, change, digest);
+                      if (!reason.isBlank()) throw new IllegalArgumentException(reason);
+                    } else if (!Objects.equals(evidence.expected.get(change.table), digest))
+                      throw new IllegalArgumentException("回滚前状态发生变化");
+                  });
+        } catch (Exception error) {
+          tr.status = "FAILED";
+          tr.error = Planner.safeMessage(error);
+        }
+        persist(r, "rollback-target-finished", Map.of("target", tp.ref.key(), "status", tr.status));
+        continue;
+      }
       try (var c = db.openBound(tp.ref, tp.connectionIdentity)) {
         var tables = items.stream().map(i -> i.table).distinct().toList();
         var locks = new ArrayList<String>();

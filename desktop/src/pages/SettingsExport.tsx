@@ -26,6 +26,7 @@ export function SettingsPage() {
               <Field label="最大并行目标库">
                 <InputNumber
                   value={f.concurrency}
+                  placeholder="输入 1–16"
                   min={1}
                   max={16}
                   precision={0}
@@ -37,6 +38,7 @@ export function SettingsPage() {
               <Field label="单服务器并行">
                 <InputNumber
                   value={f.perHost}
+                  placeholder="输入 1–8"
                   min={1}
                   max={8}
                   precision={0}
@@ -49,6 +51,7 @@ export function SettingsPage() {
                 <Space>
                   <InputNumber
                     value={f.batchSize}
+                    placeholder="输入 1–5000"
                     min={1}
                     max={5000}
                     precision={0}
@@ -70,6 +73,7 @@ export function SettingsPage() {
               <Space.Compact block>
                 <Input
                   value={f.archivePath}
+                  placeholder="输入或选择记录与恢复资料的保存目录"
                   onChange={(e) => c.patch('settingsForm', { archivePath: e.target.value })}
                 />
                 <Button icon={<FolderOpenOutlined />} onClick={() => c.selectDirectory()}>
@@ -81,6 +85,7 @@ export function SettingsPage() {
             <Field label="保留策略">
               <Select
                 value="forever"
+                placeholder="选择保留策略"
                 disabled
                 options={[{ value: 'forever', label: '永久保留' }]}
                 style={{ width: 220 }}
@@ -154,6 +159,7 @@ export function ExportPage() {
             <Field label="来源数据库">
               <Select
                 value={m.exportSource || undefined}
+                placeholder="选择要导出的数据库或 schema"
                 showSearch
                 optionFilterProp="label"
                 options={dbOptions(m)}
@@ -210,6 +216,7 @@ export function ExportPage() {
                 <Field label="文件名">
                   <Input
                     value={m.exportFilename}
+                    placeholder="请输入文件名，例如：schema.sql"
                     onChange={(e) => c.set('exportFilename', e.target.value)}
                   />
                 </Field>

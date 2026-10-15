@@ -30,6 +30,7 @@ export function ConnectionOrganizationDialogs() {
             <Input
               ref={nameInput}
               aria-label="分组名称"
+              placeholder="请输入分组名称，例如：开发环境"
               autoFocus
               disabled={m.groupSubmitting}
               value={m.groupName}
@@ -54,6 +55,7 @@ export function ConnectionOrganizationDialogs() {
         </p>
         <Select
           aria-label="目标分组"
+          placeholder="选择要移入的连接分组"
           showSearch
           optionFilterProp="label"
           style={{ width: '100%' }}

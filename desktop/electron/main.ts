@@ -10,6 +10,7 @@ import type { Appearance, ThemeMode } from '../src/types.js';
 import { connectionTestError } from '../src/connection-validation.js';
 import { storagePaths } from './storage-paths.js';
 import updater from 'electron-updater';
+import { Drivers } from './drivers.js';
 import { Updates } from './updates.js';
 import { UpdateInstallGate } from './update-install.js';
 
@@ -53,6 +54,10 @@ const smokeMode = app.commandLine.hasSwitch('smoke-test');
 const { root, userData } = storagePaths(app.getPath('appData'), repo, process.env, smokeMode);
 mkdirSync(userData, { recursive: true });
 app.setPath('userData', userData);
+const drivers = new Drivers(root, (state) => {
+  if (win && !win.isDestroyed())
+    win.webContents.send('dbaligner:event', { event: 'driver-state', state });
+});
 let encrypted: Record<string, string> = {};
 const importFiles = new Map<string, string>();
 const importPasswords = new Map<string, string>();
@@ -67,6 +72,8 @@ const methods = new Set([
   'entity.delete',
   'connections.test',
   'databases.list',
+  'schemas.list',
+  'database.capabilities',
   'tables.list',
   'table.get',
   'imports.parse',
@@ -223,6 +230,21 @@ async function invoke(method: string, params: Record<string, unknown> = {}) {
 }
 
 async function invokeBusiness(method: string, params: Record<string, unknown> = {}) {
+  if (method.startsWith('drivers.')) {
+    if (method === 'drivers.list') {
+      if (Object.keys(params).length) throw new Error('驱动列表不接受参数');
+      return drivers.list();
+    }
+    if (
+      Object.keys(params).some((key) => key !== 'driverId') ||
+      typeof params.driverId !== 'string'
+    )
+      throw new Error('驱动接口仅接受目录标识');
+    if (method === 'drivers.get') return drivers.get(params.driverId);
+    if (method === 'drivers.install') return drivers.install(params.driverId);
+    if (method === 'drivers.cancel') return drivers.cancel(params.driverId);
+    throw new Error('不允许的驱动接口');
+  }
   if (method === 'appearance.get') return appearance();
   if (method === 'appearance.set') {
     const selected = params.themeMode;

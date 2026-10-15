@@ -1,3 +1,5 @@
+import { namespaceLabel } from '../model';
+import { refKey } from '../model';
 import { Alert, Empty, Space, Tag } from 'antd';
 import { DataTable } from './shared';
 import SqlView from './SqlView';
@@ -62,8 +64,7 @@ export function DiffInspector({
   const selected = new Set(selectedIds);
   const change = node.change;
   const target = plan.targets.find(
-    (item) =>
-      `${item.ref.connectionId}/${item.ref.database}` === (change?.targetKey || node.targetKey),
+    (item) => refKey(item.ref) === (change?.targetKey || node.targetKey),
   );
   if (!target) return <Empty description="没有可查看的差异" />;
   const changes = target.changes.filter(
@@ -74,7 +75,7 @@ export function DiffInspector({
     return (
       <>
         <h2>
-          {target.ref.database}
+          {namespaceLabel(target.ref)}
           {node.type === 'table' ? ` / ${node.label}` : ''} · 全部差异
         </h2>
         <Space wrap size={8} className="bottom-gap">
@@ -216,13 +217,13 @@ export function DiffInspector({
   return (
     <>
       <h2>
-        {target.ref.database} / {change.table} / {change.label}
+        {namespaceLabel(target.ref)} / {change.table} / {change.label}
       </h2>
       <dl className="metadata">
         <dt>源库</dt>
-        <dd>{plan.source.database}</dd>
+        <dd>{namespaceLabel(plan.source)}</dd>
         <dt>目标库</dt>
-        <dd>{target.ref.database}</dd>
+        <dd>{namespaceLabel(target.ref)}</dd>
         <dt>变更类型</dt>
         <dd>{kindLabels[change.kind] || change.kind}</dd>
       </dl>

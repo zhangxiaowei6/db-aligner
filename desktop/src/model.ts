@@ -34,7 +34,7 @@ export type Page =
 export interface TreeNode {
   key: string;
   title: string;
-  type: 'group' | 'connection' | 'database' | 'table';
+  type: 'group' | 'connection' | 'database' | 'schema' | 'table';
   ref?: DbRef;
   table?: string;
   connectionId?: string;
@@ -99,6 +99,7 @@ export type ImportRow = ConnectionInfo & {
   connectionTest?: ConnectionTestResult;
 };
 export interface Model {
+  syncDatabaseType: 'mysql' | 'postgresql';
   state: State;
   workspaceId: string;
   page: Page;
@@ -113,6 +114,7 @@ export interface Model {
   refreshing: Record<string, boolean>;
   refreshResults: Record<string, ConnectionTestResult>;
   engineError: string;
+  schemaCache: Record<string, string[]>;
   dbCache: Record<string, string[]>;
   dbLoading: Record<string, boolean>;
   dbErrors: Record<string, string>;
@@ -262,10 +264,12 @@ export function initialModel(): Model {
     refreshing: {},
     refreshResults: {},
     engineError: '',
+    schemaCache: {},
     dbCache: {},
     dbLoading: {},
     dbErrors: {},
     treeChildren: {},
+    syncDatabaseType: 'mysql',
     sourceKey: '',
     targetKeys: [],
     targetTables: {},
@@ -360,8 +364,19 @@ export function initialModel(): Model {
 }
 export type ModelAction = { type: 'replace'; value: Model };
 export const modelReducer = (_state: Model, action: ModelAction): Model => action.value;
-export const refKey = (r: DbRef) => `${r.connectionId}/${r.database}`;
+export const refKey = (r: DbRef) =>
+  r.schema === undefined
+    ? `${r.connectionId}/${r.database}`
+    : `pg:${JSON.stringify([r.connectionId, r.database, r.schema])}`;
+export const namespaceLabel = (ref: DbRef) =>
+  ref.database + (ref.schema === undefined ? '' : ' / ' + ref.schema);
+export const connectionOwnsKey = (key: string, id: string) =>
+  key === id || key.startsWith(id + '/') || key.startsWith('pg:[' + JSON.stringify(id) + ',');
 export function fromKey(key: string): DbRef {
+  if (key.startsWith('pg:')) {
+    const [connectionId, database, schema] = JSON.parse(key.slice(3)) as string[];
+    return { connectionId, database, schema };
+  }
   const at = key.indexOf('/');
   return { connectionId: key.slice(0, at), database: key.slice(at + 1) };
 }
@@ -371,13 +386,15 @@ export const splitKeys = (text: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 export const displayValue = (v: unknown) =>
-  v === undefined
-    ? '—'
-    : v === null
-      ? 'NULL'
-      : typeof v === 'object'
-        ? JSON.stringify(v)
-        : String(v);
+  v && typeof v === 'object' && '$pgType' in v && 'value' in v
+    ? String(v.value)
+    : v === undefined
+      ? '—'
+      : v === null
+        ? 'NULL'
+        : typeof v === 'object'
+          ? JSON.stringify(v)
+          : String(v);
 export const date = (s: string) =>
   s ? new Date(s).toLocaleString('zh-CN', { hour12: false }) : '—';
 export const kindLabels: Record<string, string> = {
@@ -486,7 +503,9 @@ export function reviewNodes(m: Model): ReviewNode[] {
       ? [
           {
             id: targetKey,
-            label: target.ref.database,
+            label:
+              target.ref.database +
+              (target.ref.schema !== undefined ? ' / ' + target.ref.schema : ''),
             type: 'database',
             targetKey,
             children,
@@ -503,7 +522,7 @@ export function recoveryNodes(m: Model): ReviewNode[] {
     if (!target) {
       target = {
         id: item.targetKey,
-        label: item.targetKey.split('/').slice(1).join('/'),
+        label: namespaceLabel(fromKey(item.targetKey)),
         type: 'database',
         children: [],
       };
@@ -549,10 +568,25 @@ export function dbOptions(m: Model) {
   return organizedConnections(m.state)
     .filter((c) => c.workspaceIds.includes(m.workspaceId))
     .flatMap((c) =>
-      [...new Set([...c.databases, ...(m.dbCache[c.id] || [])])].map((database) => ({
-        value: `${c.id}/${database}`,
-        label: `${c.name} / ${database}`,
-      })),
+      [...new Set([...c.databases, ...(m.dbCache[c.id] || [])])].flatMap<{
+        value: string;
+        label: string;
+        databaseType: 'mysql' | 'postgresql';
+      }>((database) =>
+        c.databaseType === 'postgresql'
+          ? (m.schemaCache[refKey({ connectionId: c.id, database })] || []).map((schema) => ({
+              value: refKey({ connectionId: c.id, database, schema }),
+              label: `${c.name} · PostgreSQL / ${database} / ${schema}`,
+              databaseType: 'postgresql' as const,
+            }))
+          : [
+              {
+                value: refKey({ connectionId: c.id, database }),
+                label: `${c.name} · MySQL / ${database}`,
+                databaseType: 'mysql' as const,
+              },
+            ],
+      ),
     );
 }
 export const pageTitles: Record<Page, string> = {

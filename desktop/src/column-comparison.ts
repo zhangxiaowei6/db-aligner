@@ -1,3 +1,4 @@
+import { refKey } from './model';
 import type { Change, Column, SyncPlan, Table } from './types';
 
 export type ComparisonRow = { name: string; source: unknown; target: unknown; changed: boolean };
@@ -43,9 +44,7 @@ function columnRows(sourceTable?: Table, targetTable?: Table, label?: string): C
 }
 
 export function plannedColumnTables(plan: SyncPlan, change: Change) {
-  const target = plan.targets.find(
-    (item) => `${item.ref.connectionId}/${item.ref.database}` === change.targetKey,
-  );
+  const target = plan.targets.find((item) => refKey(item.ref) === change.targetKey);
   if (!target) return {};
   let sourceTable = plan.sourceSnapshot[change.table];
   const targetTable = target.before[change.table];

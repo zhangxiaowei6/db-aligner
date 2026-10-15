@@ -1,0 +1,30 @@
+[
+  {
+    "id": "mariadb",
+    "databaseType": "mysql",
+    "name": "MariaDB Connector/J（MySQL）",
+    "version": "3.5.10",
+    "driverClass": "org.mariadb.jdbc.Driver",
+    "builtin": true,
+    "files": [],
+    "license": "LGPL-2.1-or-later",
+    "licenseUrl": "https://github.com/mariadb-corporation/mariadb-connector-j/blob/3.5.10/LICENSE"
+  },
+  {
+    "id": "postgresql",
+    "databaseType": "postgresql",
+    "name": "PostgreSQL JDBC",
+    "version": "42.7.8",
+    "driverClass": "org.postgresql.Driver",
+    "builtin": false,
+    "files": [
+      {
+        "name": "postgresql-42.7.8.jar",
+        "url": "https://repo.maven.apache.org/maven2/org/postgresql/postgresql/42.7.8/postgresql-42.7.8.jar",
+        "sha256": "2a32a9dcbc42d67a50ad3a0de5efd102c8d2be46720045f2cbd6689f160ab7c7"
+      }
+    ],
+    "license": "BSD-2-Clause",
+    "licenseUrl": "https://github.com/pgjdbc/pgjdbc/blob/REL42.7.8/LICENSE"
+  }
+]

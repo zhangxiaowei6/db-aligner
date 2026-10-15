@@ -117,6 +117,8 @@ public final class Archives {
             result.add(valueRestoreRowSql(tp, x, row, pk));
       }
     }
+    if (tp.ref.schema() != null && x.before.containsKey("restoreFinalize"))
+      result.addAll(Json.strings(Json.node(x.before.get("restoreFinalize"))));
     return result;
   }
 
@@ -142,11 +144,11 @@ public final class Archives {
     return "UPDATE "
         + Sql.qualified(tp.ref, x.table)
         + " SET "
-        + Sql.id(x.label)
+        + Sql.id(tp.ref, x.label)
         + "="
-        + Sql.value(value)
+        + Sql.value(tp.ref, value)
         + " WHERE "
-        + Sql.where(row, pk);
+        + Sql.where(tp.ref, row, pk);
   }
 
   public Path prepare(SyncRecord r) throws Exception {
@@ -173,9 +175,9 @@ public final class Archives {
                     .collect(java.util.stream.Collectors.joining("\n")));
         continue;
       }
-      var apply = new StringBuilder(Sql.header());
-      var rollback = new StringBuilder(Sql.header());
-      var full = new StringBuilder(Sql.header());
+      var apply = new StringBuilder(Sql.header(tp.ref));
+      var rollback = new StringBuilder(Sql.header(tp.ref));
+      var full = new StringBuilder(Sql.header(tp.ref));
       for (var x : selected)
         apply
             .append("-- ")
@@ -248,7 +250,7 @@ public final class Archives {
                 proof.recoveryRows,
                 "digests",
                 proof.recoveryDigests)));
-    var rollback = new StringBuilder(Sql.header());
+    var rollback = new StringBuilder(Sql.header(tp.ref));
     rollback
         .append("-- 包含已选计划的逆向 SQL，不证明所有步骤已执行。\n")
         .append("-- 请先在 DBAligner 核验实际完成范围、恢复资料和后续修改，仅恢复实际完成项。\n");

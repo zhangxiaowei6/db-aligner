@@ -127,12 +127,18 @@ it('compares structure and data in separate plans', () => {
     'DELETE_ROW',
   ]);
   expect(dataOnly.targets[0].changes[1].after).toEqual({
+    id: 8,
     code: 'PAYMENT_TYPE',
     dict_name: '支付方式',
+    sort: 0,
+    remark: null,
   });
   expect(dataOnly.targets[0].changes[2].before).toEqual({
+    id: 8009,
     code: 'LEGACY_FLAG',
     dict_name: '旧标记',
+    sort: 0,
+    remark: null,
   });
 });
 
