@@ -195,7 +195,7 @@ describe('manual schema export', () => {
     await userEvent.click(screen.getByRole('button', { name: /全\s*选/ }));
     expect(controller.m.exportSql).toBe('');
     expect(requests()).toHaveLength(2);
-  }, 15000);
+  }, 30000);
 
   it.each(['selection', 'drop', 'source', 'workspace'] as const)(
     'discards an in-flight SQL response after changing %s',

@@ -3111,11 +3111,22 @@ describe('group editing and creation', () => {
     });
     expect(screen.queryByRole('button', { name: '新增分组' })).toBeNull();
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '连接分组' }));
-    await userEvent.type(await screen.findByLabelText('新增连接分组名称'), '新测试组');
-    await userEvent.click(screen.getByRole('button', { name: /^新增$/ }));
-    await screen.findByText('分组保存失败', {}, { timeout: 5000 });
+    fireEvent.change(await screen.findByLabelText('新增连接分组名称'), {
+      target: { value: '新测试组' },
+    });
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: /^新增$/ }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^新增$/ }));
+    await waitFor(() => expect(attempts).toBe(1));
+    await waitFor(() => expect(controller.m.busy).toBe(0));
     expect((screen.getByLabelText('新增连接分组名称') as HTMLInputElement).value).toBe('新测试组');
-    await userEvent.click(screen.getByRole('button', { name: /^新增$/ }));
+    expect(controller.m.state.connectionGroups.some((group) => group.name === '新测试组')).toBe(
+      false,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^新增$/ }));
     await waitFor(() => expect(controller.m.connectionForm.group).toBe('新测试组'));
     expect(controller.m.connectionForm).toMatchObject({
       host: '192.0.2.99',

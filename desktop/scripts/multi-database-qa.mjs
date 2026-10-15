@@ -64,14 +64,13 @@ export async function multiDatabaseQA(browser, { report, observe, shot, modalSet
         .click();
       await page.getByRole('combobox', { name: '目标数据库', exact: true }).press('Escape');
       await page.getByRole('tab', { name: '同步数据', exact: true }).click();
+      await page.getByText('正在检查目标库表清单…', { exact: true }).waitFor({ state: 'hidden' });
       await page.locator('[data-row-key="sys_dict"] input[type="checkbox"]').check();
       await page.getByRole('textbox', { name: 'sys_dict 匹配键', exact: true }).fill('code');
       await page.locator('.page-scroll').evaluate((element) => {
         element.scrollTop = 0;
       });
       await shot(page, `multi-db-scope-${theme}-${width}`);
-      await page.getByText('正在检查目标库表清单…', { exact: true }).waitFor({ state: 'hidden' });
-      await shot(page, `multi-db-mysql-scope-${theme}-${width}`);
       await page.getByRole('button', { name: '开始比较', exact: true }).click();
       const confirmation = page.getByRole('dialog', { name: '确认比较范围' });
       await modalSettled(page);
@@ -131,9 +130,10 @@ export async function multiDatabaseQA(browser, { report, observe, shot, modalSet
         .click();
       await page.getByRole('combobox', { name: '目标数据库', exact: true }).press('Escape');
       await page.getByRole('tab', { name: '同步数据', exact: true }).click();
+      await page.getByText('正在检查目标库表清单…', { exact: true }).waitFor({ state: 'hidden' });
       await page.locator('[data-row-key="sys_dict"] input[type="checkbox"]').check();
       await page.getByRole('textbox', { name: 'sys_dict 匹配键', exact: true }).fill('code');
-      await page.getByText('正在检查目标库表清单…', { exact: true }).waitFor({ state: 'hidden' });
+      await shot(page, `multi-db-mysql-scope-${theme}-${width}`);
       await page.getByRole('button', { name: '开始比较', exact: true }).click();
       const mysqlConfirm = page.getByRole('dialog', { name: '确认比较范围' });
       await mysqlConfirm.waitFor();

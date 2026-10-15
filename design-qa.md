@@ -2,6 +2,16 @@
 
 > 下方历史文字中的产品名称已统一为当前名称；历史截图、日期和验证范围仍保留原始证据，不据此声称本次验收通过。
 
+## 2026-10-16：多数据库预览范围复核
+
+修复验收脚本在目标表清单尚未稳定时勾选 MySQL 表的时序，并将原先误在 PostgreSQL
+阶段拍摄的 MySQL 范围截图移到实际 MySQL 范围步骤。重新构建前端后，八组 MySQL／
+PostgreSQL、浅色／深色、1488／1180 宽度的浏览器虚构流程通过，控制台错误 0。
+已查看[浅色 MySQL 范围](docs/screenshots/react-ant-design/multi-db-mysql-scope-light-1488.png)
+与[深色最小窗口 MySQL 范围](docs/screenshots/react-ant-design/multi-db-mysql-scope-dark-1180.png)：
+来源和目标均显示 MySQL，选中表、匹配键及底部操作可辨识、可达。浏览器预览只使用内存
+数据；真实数据库验收与发布工作流另见[验证记录](docs/validation.md)。
+
 ## 2026-10-16：原生标题栏、页面动画与弹窗恢复
 
 正式客户端使用 Windows 原生标题栏显示图标、名称和窗口按钮；页面内部移除重复的
