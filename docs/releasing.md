@@ -12,6 +12,8 @@ GitHub 主仓库为 [zhangxiaowei6/db-aligner](https://github.com/zhangxiaowei6/
 
 `v0.1.0` 因缺少 Electron 运行时失败，`v0.1.1` 完成打包后因 runner 存在多个 OpenSSL 而未能启动真库验收；两次均未生成 Release。保留失败标签作为证据，没有重新指向旧标签。首个正式版本 [v0.1.2](https://github.com/zhangxiaowei6/db-aligner/releases/tag/v0.1.2) 已于 2026-10-13 在维护者确认验收完成后公开。
 
+多数据库正式版本 [v0.2.0](https://github.com/zhangxiaowei6/db-aligner/releases/tag/v0.2.0) 于 2026-10-15 在维护者确认验收没有问题并要求正式发布后公开，已设为 Latest；实际构建、附件核验及确认来源见[验证记录](validation.md)。
+
 ## 创建版本草稿
 
 1. 同步根 `package.json`、`desktop/package.json` 和 `engine/pom.xml` 的版本，通过 npm 更新 `package-lock.json`，在根 [CHANGELOG.md](../CHANGELOG.md) 添加对应的 `## X.Y.Z - YYYY-MM-DD` 中文版本记录。运行 `npm run release:check`，同时检查版本一致及当前版本记录唯一、非空。引擎版本由 Maven 资源过滤生成，不手工修改响应字符串。
@@ -28,7 +30,9 @@ GitHub 主仓库为 [zhangxiaowei6/db-aligner](https://github.com/zhangxiaowei6/
 4. 标签工作流核对标签与版本、主分支祖先关系，完整构建、运行多数据库预览、两种数据库的隔离真库和打包客户端 smoke，再生成 Release 草稿。独立 `release-validation` Artifact 保留该次验收报告和截图 14 天。
 5. 核对附件：安装包、`.blockmap`、`latest.yml`、完整无需安装 ZIP、`RELEASE_NOTES.md`、`SHA256SUMS.txt`。版本说明从本次标签的 `CHANGELOG.md` 对应段落生成，原有中文分类与内容保留，文档链接指向同一版本的源码；Release 正文与该附件一致，附件摘要也纳入清单。完成下节人工验收后，在 GitHub Releases 编辑草稿并发布。
 
-发布脚本使用 `gh release view --json isDraft` 识别已有草稿；REST 按标签查询不能可靠读取草稿。后续标签继承修复，不移动旧标签。`v0.1.2` 已公开，禁止重新上传、覆盖附件或复用该标签；修复已发布版本时必须增加版本号。
+草稿公开前可根据维护者的实际验收确认更新发布说明，并同步 `RELEASE_NOTES.md`、清单中该附件的摘要和源码更新记录；客户端二进制、blockmap、更新元数据和版本标签保持原样。记录修改前后证据，公开后不再覆盖附件。
+
+发布脚本使用 `gh release view --json isDraft` 识别已有草稿；REST 按标签查询不能可靠读取草稿。后续标签继承修复，不移动旧标签。`v0.1.2` 和 `v0.2.0` 已公开，禁止重新上传、覆盖附件或复用这些标签；修复已发布版本时必须增加版本号。
 
 发布作业仅使用自动提供的 `GITHUB_TOKEN` 并授予 `contents: write`；其他作业保持读取权限。无需个人 Token或签名证书。公开仓库需启用 Actions和私密漏洞报告，并检查仓库／组织策略允许发布作业写入内容。建议启用 GitHub秘密扫描与推送保护。
 

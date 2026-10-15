@@ -4,13 +4,13 @@
 
 按项目组织的 MySQL / PostgreSQL 结构和基础数据同步桌面工具。选择表后比较一个源库与多个目标库，预览差异，保存脚本或直接执行，保留每次操作的记录、恢复资料和版本归档。
 
-当前源码版本：**0.2.0，Windows x64**。版本变化见[更新记录](CHANGELOG.md)。Electron / React 19 / TypeScript / Ant Design 6，Java 21 / Spring Boot 4 非 Web 引擎，SQLite 本地存储。生产客户端不启动 HTTP 服务，不需要预装 Java 或 Maven。
+当前版本：**0.2.0，Windows x64**。版本变化见[更新记录](CHANGELOG.md)。Electron / React 19 / TypeScript / Ant Design 6，Java 21 / Spring Boot 4 非 Web 引擎，SQLite 本地存储。生产客户端不启动 HTTP 服务，不需要预装 Java 或 Maven。
 
 ![结构差异界面](docs/screenshots/react-ant-design/diff-light.png)
 
 ## 安装与使用
 
-从 [GitHub Releases](https://github.com/zhangxiaowei6/db-aligner/releases) 下载 Windows x64 正式安装包；尚未公开的版本不在下载列表中。本地构建结果在 `release/DBAligner Setup 0.2.0.exe`。安装包随附 Java 运行时，无需系统 Java／Maven；首版未签名，Windows 可能显示未知发布者提示。卸载默认保留应用资料。
+从 [v0.2.0 正式版本](https://github.com/zhangxiaowei6/db-aligner/releases/tag/v0.2.0) 下载 Windows x64 安装包或完整便携 ZIP。本地构建结果在 `release/DBAligner Setup 0.2.0.exe`。安装包随附 Java 运行时，无需系统 Java／Maven；当前版本未签名，Windows 可能显示未知发布者提示。卸载默认保留应用资料。
 
 安装版启动后自动检查一次正式版本，在“设置 → 关于”确认下载，再确认重启安装。有运行、排队或取消中的任务时不能安装；网络失败不阻塞数据库功能。更新访问 GitHub，不上传连接、密码、SQL、记录或档案。旧的本地客户端需先手动安装含更新能力的版本。干净安装及真实两版本更新的实际验收范围见[验证记录](docs/validation.md)。
 

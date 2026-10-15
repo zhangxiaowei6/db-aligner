@@ -26,7 +26,7 @@
 - PostgreSQL 首版限制为 17.x 普通表及已支持的内置标量类型。字段物理顺序、序列／identity／serial 相关变更及复杂对象会被阻止；详细条件见[支持范围](docs/limitations.md)。
 - 暂不支持 MySQL 与 PostgreSQL 之间的跨类型同步、任意 JDBC JAR 导入和第三方适配器插件。基础数据仍限制每表 20,000 行，删除与高风险结构变更默认不选。
 - 浏览器预览使用内存虚构数据，刷新重置；真实连接与同步须使用桌面客户端。
-- Windows x64 安装包未签名。干净 Windows 安装、覆盖升级和真实自动更新验收完成前，GitHub Release 保持草稿。
+- Windows x64 安装包未签名。维护者于 2026-10-15 确认验收没有问题后正式发布，附件见 [v0.2.0](https://github.com/zhangxiaowei6/db-aligner/releases/tag/v0.2.0)。
 
 ## 0.1.2 - 2026-10-13
 
