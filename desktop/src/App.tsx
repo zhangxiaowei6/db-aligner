@@ -1,3 +1,8 @@
+import { breadcrumbs } from './navigation';
+import { RecordManagementDialogs } from './components/RecordManagementDialogs';
+import { ContentTransition } from './components/ContentTransition';
+import { useTreeExpansion } from './components/useTreeExpansion';
+import { treeMotion, useReducedMotion } from './motion';
 import { AsyncButton as Button, RefreshButton } from './components/AsyncButton';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type Key } from 'react';
 import { Alert, Breadcrumb, Dropdown, Empty, Menu, Select, Space, Spin, Tree } from 'antd';
@@ -34,6 +39,7 @@ import {
   ImportPage,
   TemplatesPage,
   WorkspacesPage,
+  WorkspaceEditor,
 } from './pages/Management';
 import { DiffPage, RollbackPage, ScopePage } from './pages/Sync';
 import { HistoryPage, RecordDrawers, RecordPage, TablePage } from './pages/Records';
@@ -58,8 +64,6 @@ function Shell() {
   const sidebarDrag = useRef<{ x: number; width: number } | null>(null);
   const [selectedTreeKeys, setSelectedTreeKeys] = useState<Key[]>([]);
   const [expandedTreeKeys, setExpandedTreeKeys] = useState<Key[]>([]);
-  const [loadingTreeKeys, setLoadingTreeKeys] = useState<Key[]>([]);
-  const treeLoads = useRef(new Map<Key, object>());
   const menuSerial = useRef(0);
   const activeMenu = useRef<{ key: string; serial: number } | undefined>(undefined);
   const [contextMenu, setContextMenu] = useState<{
@@ -106,6 +110,21 @@ function Shell() {
   const c = useController();
   const { m } = c;
   useEffect(() => {
+    const scroll = document.querySelector('.page-scroll');
+    if (scroll) scroll.scrollTop = 0;
+  }, [m.pageEntry]);
+  const treeExpansion = useTreeExpansion(m.workspaceId);
+  const loadingTreeKeys = treeExpansion.loadingKeys;
+  // 分组忙碌提示结束不改变展开列表的引用，避免虚拟树提前中断短过渡。
+  const loadingTreeQueryIdentity = JSON.stringify(
+    loadingTreeKeys.filter((key) => !String(key).startsWith('group:')),
+  );
+  const visibleExpandedTreeKeys = useMemo(() => {
+    const pending = new Set<Key>(JSON.parse(loadingTreeQueryIdentity));
+    return expandedTreeKeys.filter((key) => !pending.has(key));
+  }, [expandedTreeKeys, loadingTreeQueryIdentity]);
+  const reducedMotion = useReducedMotion();
+  useEffect(() => {
     const existing = new Set(m.state.connectionGroups.map((group) => `group:${group.id}`));
     const retained = (key: Key) => !String(key).startsWith('group:') || existing.has(String(key));
     setSelectedTreeKeys((keys) => keys.filter(retained));
@@ -119,33 +138,24 @@ function Shell() {
     closeMenu();
     setSelectedTreeKeys([]);
     setExpandedTreeKeys([]);
-    setLoadingTreeKeys([]);
-    treeLoads.current.clear();
-    return () => treeLoads.current.clear();
   }, [m.workspaceId]);
   function reloadExpandedNode(node: TreeNode) {
-    if (!['connection', 'database', 'schema'].includes(node.type)) return;
-    const token = {};
-    const startedAt = Date.now();
-    treeLoads.current.set(node.key, token);
-    setLoadingTreeKeys((keys) => [...keys.filter((key) => key !== node.key), node.key]);
-    void c.loadTree(node, true).finally(async () => {
-      await new Promise((resolve) =>
-        setTimeout(resolve, Math.max(0, 300 - (Date.now() - startedAt))),
-      );
-      if (treeLoads.current.get(node.key) !== token) return;
-      treeLoads.current.delete(node.key);
-      setLoadingTreeKeys((keys) => keys.filter((key) => key !== node.key));
-    });
+    treeExpansion.begin(node, () => c.loadTree(node, true));
   }
   const comparing = !!m.compareTask && ['RUNNING', 'CANCELLING'].includes(m.compareTask.status);
-  const workspace = m.state.workspaces.find((w) => w.id === m.workspaceId);
   const connections = m.state.connections.filter((conn) =>
     conn.workspaceIds.includes(m.workspaceId),
   );
   const tab = m.currentTable;
-  const title =
-    m.page === 'table'
+  const currentVersion =
+    m.page === 'history' && m.historyTab === 'versions'
+      ? m.state.versions.find(
+          (version) => version.id === m.currentVersionId && version.workspaceId === m.workspaceId,
+        )
+      : undefined;
+  const title = currentVersion
+    ? '版本详情'
+    : m.page === 'table'
       ? tab?.table || pageTitles.table
       : m.page === 'diff' && m.diffTab === 'data'
         ? '基础数据差异'
@@ -391,12 +401,14 @@ function Shell() {
             else c.navigate('history');
           }}
         />
-        <Menu
-          className="activity-menu activity-menu-bottom"
-          selectedKeys={[m.page]}
-          items={[{ key: 'settings', icon: <SettingOutlined />, label: '设置' }]}
-          onClick={() => c.navigate('settings')}
-        />
+        <div className="activity-menu-bottom">
+          <Menu
+            className="activity-menu"
+            selectedKeys={[m.page]}
+            items={[{ key: 'settings', icon: <SettingOutlined />, label: '设置' }]}
+            onClick={() => c.navigate('settings')}
+          />
+        </div>
       </nav>
       <aside className="sidebar">
         <div className="workspace-picker">
@@ -453,14 +465,28 @@ function Shell() {
                 style={{ background: 'transparent' }}
                 height={treeViewport.height}
                 virtual
+                motion={
+                  reducedMotion
+                    ? {
+                        motionName: '',
+                        motionAppear: false,
+                        motionEnter: false,
+                        motionLeave: false,
+                      }
+                    : treeMotion
+                }
                 key={m.workspaceId}
                 treeData={tree}
                 selectedKeys={selectedTreeKeys}
-                expandedKeys={expandedTreeKeys}
+                expandedKeys={visibleExpandedTreeKeys}
                 autoExpandParent={false}
-                onExpand={(keys, { node, expanded }) => {
-                  setExpandedTreeKeys(expanded ? keys : collapseTreeBranch(keys, node));
-                  if (expanded && !expandedTreeKeys.includes(node.key)) reloadExpandedNode(node);
+                onExpand={(_, { node, expanded }) => {
+                  const closing = !expanded || expandedTreeKeys.includes(node.key);
+                  setExpandedTreeKeys((keys) =>
+                    closing ? collapseTreeBranch(keys, node) : [...new Set([...keys, node.key])],
+                  );
+                  if (closing) treeExpansion.clear(node);
+                  else reloadExpandedNode(node);
                 }}
                 onSelect={(keys) => setSelectedTreeKeys(keys.slice(0, 1))}
                 blockNode
@@ -474,6 +500,7 @@ function Shell() {
                       }
                 }
                 onDragStart={({ node }) => {
+                  treeExpansion.clear(node);
                   setSelectedTreeKeys([]);
                   setExpandedTreeKeys((keys) => collapseTreeBranch(keys, node));
                 }}
@@ -549,7 +576,9 @@ function Shell() {
                 icon={(props) => {
                   const node = { ...props, key: props.eventKey } as unknown as TreeNode;
                   return loadingTreeKeys.includes(node.key) ? (
-                    <LoadingOutlined aria-label="正在加载最新清单" />
+                    <LoadingOutlined
+                      aria-label={node.type === 'group' ? '正在展开分组' : '正在加载最新清单'}
+                    />
                   ) : node.type === 'group' ? (
                     <FolderOutlined />
                   ) : node.type === 'table' ? (
@@ -681,39 +710,58 @@ function Shell() {
             }
           />
         )}
-        <div
+        <ContentTransition
+          identity={`${m.workspaceId}/${m.pageEntry}/${m.page}/${m.page === 'table' ? m.currentTable?.id : m.page === 'record' ? m.detail?.record.id : m.page === 'rollback' ? m.rollback?.recordId : m.page === 'diff' ? m.plan?.id : ''}`}
           className={`page-scroll${m.page === 'export' ? ' export-page-scroll' : (m.page === 'diff' && m.plan) || (m.page === 'rollback' && m.rollback) ? ' diff-page-scroll' : ''}`}
         >
+          {m.state.pendingDeletions?.map((item) => (
+            <Alert
+              key={item.id}
+              type="warning"
+              showIcon
+              title={`档案处理待完成：${item.id}`}
+              description={item.message}
+              action={<Button onClick={() => c.retryRecordDeletion(item.id)}>重试清理</Button>}
+            />
+          ))}
           <Breadcrumb
-            key={`breadcrumb-${m.page}`}
-            items={
-              m.page === 'scope' || m.page === 'diff'
-                ? [
-                    { title: workspace?.name || '工作区' },
-                    {
-                      title: (
-                        <span aria-current={m.page === 'scope' ? 'page' : undefined}>新建同步</span>
-                      ),
-                    },
-                    ...(m.page === 'diff'
-                      ? [{ title: <span aria-current="page">差异预览</span> }]
-                      : []),
-                  ]
-                : [
-                    { title: workspace?.name || '工作区' },
-                    {
-                      title:
-                        m.page === 'table'
-                          ? tab?.ref.database
-                          : m.page === 'record'
-                            ? m.detail?.record.id
-                            : m.page === 'rollback'
-                              ? m.rollback?.recordId
-                              : title,
-                    },
-                  ]
-            }
+            aria-label="页面路径"
+            className="page-breadcrumb"
+            items={breadcrumbs(m).map((item, index, items) => ({
+              key: item.key,
+              title: item.target ? (
+                <span
+                  role="link"
+                  tabIndex={0}
+                  className="breadcrumb-link"
+                  title={item.label}
+                  aria-current={index === items.length - 1 ? 'page' : undefined}
+                  aria-disabled={!!m.entering && !m.entryError}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      void c.enterPage(item.target!);
+                    }
+                  }}
+                  onClick={() => c.enterPage(item.target!)}
+                >
+                  {item.label}
+                </span>
+              ) : (
+                <span className="breadcrumb-context" title={item.label}>
+                  {item.label}
+                </span>
+              ),
+            }))}
           />
+          {m.entryError && m.entering && (
+            <Alert
+              type="error"
+              showIcon
+              title={m.entryError}
+              action={<Button onClick={() => c.enterPage(m.entering!)}>重新进入</Button>}
+            />
+          )}
           <div className="page-heading" key={`heading-${m.page}`}>
             <div>
               <h1>{title}</h1>
@@ -722,9 +770,46 @@ function Shell() {
               {m.page === 'export' && (
                 <p className="hint">选择需要导出的表，预览后保存为 SQL 文件。</p>
               )}
-              {m.page === 'table' && <p className="hint">{tab?.model.comment}</p>}
+              {m.page === 'table' && (
+                <p className="hint">
+                  {[
+                    m.state.connections.find(
+                      (connection) => connection.id === tab?.ref.connectionId,
+                    )?.name,
+                    tab?.ref.database,
+                    tab?.ref.schema,
+                    tab?.model.comment,
+                  ]
+                    .filter(Boolean)
+                    .join(' / ')}
+                </p>
+              )}
             </div>
             <Space wrap>
+              {currentVersion && (
+                <>
+                  <Button onClick={() => c.set('currentVersionId', '')}>返回版本列表</Button>
+                  <Button onClick={() => c.set('historyTab', 'records')}>追加记录</Button>
+                  <Button
+                    type="primary"
+                    disabled={
+                      !m.state.records.some(
+                        (record) => m.state.versionLinks[record.id] === currentVersion.id,
+                      )
+                    }
+                    onClick={() =>
+                      c.exportRecords(
+                        m.state.records
+                          .filter((record) => m.state.versionLinks[record.id] === currentVersion.id)
+                          .map((record) => record.id),
+                        currentVersion.number + '-scripts.zip',
+                      )
+                    }
+                  >
+                    导出版本脚本
+                  </Button>
+                </>
+              )}
               {m.page === 'table' && tab && (
                 <>
                   <RefreshButton
@@ -781,16 +866,21 @@ function Shell() {
               )}
             </Space>
           </div>
-          <Spin spinning={m.loading}>
-            <div className="page-body" key={m.page}>
+          <Spin
+            spinning={m.loading || !!m.openingTable || (!!m.entering && !m.entryError)}
+            description={m.openingTable ? `正在加载表结构：${m.openingTable}` : undefined}
+          >
+            <div className="page-body" key={`${m.page}/${m.pageEntry}`}>
               {content}
             </div>
           </Spin>
-        </div>
+        </ContentTransition>
         <div id="page-footer" />
       </main>
       <ConnectionEditor />
+      {m.page !== 'workspaces' && <WorkspaceEditor />}
       <RecordDrawers />
+      <RecordManagementDialogs />
       <ConnectionOrganizationDialogs />
     </div>
   );

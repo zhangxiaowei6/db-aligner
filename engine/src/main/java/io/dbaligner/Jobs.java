@@ -26,6 +26,10 @@ public final class Jobs implements AutoCloseable {
     this.emitter = emitter;
   }
 
+  public boolean busy(String id) {
+    return active.containsKey(id);
+  }
+
   public boolean busy() {
     return !active.isEmpty();
   }

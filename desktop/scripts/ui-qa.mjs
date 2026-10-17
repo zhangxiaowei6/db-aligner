@@ -1,3 +1,6 @@
+import { navigationQA } from './navigation-qa.mjs';
+import { interactionRevisionsQA } from './interaction-revisions-qa.mjs';
+import { motionQA } from './motion-qa.mjs';
 import { multiDatabaseQA } from './multi-database-qa.mjs';
 /** Browser UI acceptance against the production React bundle.
  * Requires npm run build. Uses a local Chrome/Edge installation (or Playwright's browser).
@@ -557,7 +560,7 @@ async function organizationQA(browser, theme) {
     await modalSettled(page);
     assert.equal(await manager.getByRole('textbox').inputValue(), '测试环境');
     await shot(page, `group-edit-${theme}`);
-    await manager.getByRole('button', { name: /取\s*消/ }).click();
+    await manager.getByRole('button', { name: /^取\s*消$/ }).click();
     await manager.waitFor({ state: 'hidden' });
     await groupLabel('preview-source-group').click({ button: 'right' });
     await page.getByRole('menuitem', { name: '新增分组', exact: true }).click();
@@ -776,7 +779,7 @@ async function organizationQA(browser, theme) {
     await page.getByRole('button', { name: '新增', exact: true }).click();
     await page.locator('.ant-select-content').filter({ hasText: 'QA 下拉新增' }).waitFor();
     await page.keyboard.press('Escape');
-    await editor.getByRole('button', { name: /取\s*消/ }).click();
+    await editor.getByRole('button', { name: /^取\s*消$/ }).click();
     await editor.waitFor({ state: 'hidden' });
     report.browser.push({ check: 'group-edit-icon-and-dropdown-create', theme, passed: true });
     await page.getByRole('menuitem', { name: /新建同步/ }).click();
@@ -864,7 +867,7 @@ async function connectionFormQA(browser, theme) {
       .boundingBox();
     assert(saveBounds && saveBounds.y + saveBounds.height <= 760);
     await shot(page, `connection-ssl-minimum-${theme}`);
-    await editor.getByRole('button', { name: /取\s*消/ }).click();
+    await editor.getByRole('button', { name: /^取\s*消$/ }).click();
     await editor.waitFor({ state: 'hidden' });
     assert.equal(await page.locator('h1').innerText(), '差异预览');
     const group = page.locator('.tree-label[data-node-type="group"]').first();
@@ -883,7 +886,7 @@ async function connectionFormQA(browser, theme) {
     const confirmation = page.getByRole('dialog', { name: '删除分组', exact: true });
     await confirmation.waitFor();
     await shot(page, `group-delete-confirmation-${theme}`);
-    await confirmation.getByRole('button', { name: /取\s*消/ }).click();
+    await confirmation.getByRole('button', { name: /^取\s*消$/ }).click();
     await confirmation.waitFor({ state: 'hidden' });
     await empty.waitFor();
     await empty.click({ button: 'right' });
@@ -924,7 +927,7 @@ async function connectionFormQA(browser, theme) {
       ]);
       await shot(page, `connection-new-in-place-${heading}-${theme}`);
       await page.keyboard.press('Escape');
-      await editor.getByRole('button', { name: /取\s*消/ }).click();
+      await editor.getByRole('button', { name: /^取\s*消$/ }).click();
       await editor.waitFor({ state: 'hidden' });
       assert.equal(await page.locator('h1').innerText(), originalHeading);
       await page.locator('aside').getByRole('button', { name: '新建连接', exact: true }).click();
@@ -932,6 +935,7 @@ async function connectionFormQA(browser, theme) {
       await modalSettled(page);
       await editor.getByPlaceholder('请输入连接名称，例如：开发环境').fill(`QA ${heading}`);
       await editor.getByPlaceholder('请输入数据库用户名').fill('qa');
+      await editor.getByLabel('密码', { exact: true }).fill('fixture-only');
       await editor.getByRole('button', { name: '保存连接', exact: true }).click();
       await editor.waitFor({ state: 'hidden' });
       assert.equal(await page.locator('h1').innerText(), originalHeading);
@@ -970,25 +974,34 @@ async function reducedMotionModalQA(browser) {
       await dialog.waitFor();
       await dialog.getByPlaceholder('请输入连接名称，例如：开发环境').fill(`减少动态效果 ${index}`);
       if (index === 0) await shot(page, 'connection-reduced-motion');
-      await dialog.getByRole('button', { name: /取\s*消/ }).click();
+      await dialog.getByRole('button', { name: /^取\s*消$/ }).click();
       await page.locator('.ant-modal-wrap').waitFor({ state: 'detached', timeout: 3000 });
     }
     await page.evaluate(() => {
       window.__pageAnimations = [];
-      document.addEventListener('animationstart', (event) => {
-        if (event.animationName === 'page-enter')
-          window.__pageAnimations.push(String(event.target.className));
-      });
+      const animate = Element.prototype.animate;
+      Element.prototype.animate = function (...args) {
+        if (this.dataset.transition) window.__pageAnimations.push(this.dataset.transition);
+        return animate.apply(this, args);
+      };
     });
     await page.getByRole('menuitem', { name: /同步模板/ }).click();
     await page.getByRole('heading', { level: 1, name: '同步模板' }).waitFor();
-    await page.waitForFunction(
-      () => window.__pageAnimations.filter((item) => item === 'page-body').length >= 1,
-    );
     await page.getByRole('menuitem', { name: /同步历史/ }).click();
     await page.getByRole('heading', { level: 1, name: '同步历史' }).waitFor();
-    await page.waitForFunction(
-      () => window.__pageAnimations.filter((item) => item === 'page-body').length >= 2,
+    assert.equal(
+      await page.evaluate(() => window.__pageAnimations.length),
+      0,
+      '减少动态效果时不应播放页面动效',
+    );
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.getByRole('menuitem', { name: /同步模板/ }).click();
+    await page.waitForFunction(() =>
+      window.__pageAnimations.some((identity) => identity.includes('/templates/')),
+    );
+    await page.getByRole('menuitem', { name: /同步历史/ }).click();
+    await page.waitForFunction(() =>
+      window.__pageAnimations.some((identity) => identity.includes('/history/')),
     );
     report.browser.push({
       check: 'reduced-motion-modal-twice-and-page-navigation-animation',
@@ -1131,7 +1144,7 @@ async function connectionActionsQA(browser, theme) {
     await row.getByRole('button', { name: '编辑连接 测试服务器', exact: true }).click();
     const editor = page.getByRole('dialog', { name: '编辑连接', exact: true });
     await modalSettled(page);
-    assert.equal(await editor.getByPlaceholder('已保存；留空保留原密码').count(), 1);
+    assert.equal(await editor.getByLabel('密码', { exact: true }).inputValue(), '********');
     await editor.getByLabel('密码', { exact: true }).fill('preview-fail');
     await editor.getByRole('button', { name: '保存连接', exact: true }).click();
     await editor.waitFor({ state: 'hidden' });
@@ -1177,7 +1190,7 @@ async function connectionActionsQA(browser, theme) {
     assert.equal(await workspaceEditor.getByRole('button', { name: /删\s*除/ }).count(), 0);
     await workspaceEditor.getByLabel('工作区名称', { exact: true }).fill('未保存草稿');
     await shot(page, `workspace-edit-${theme}`);
-    await workspaceEditor.getByRole('button', { name: /取\s*消/ }).click();
+    await workspaceEditor.getByRole('button', { name: /^取\s*消$/ }).click();
     await workspaceEditor.waitFor({ state: 'hidden' });
     await workspaceRow.getByText('跨境电商项目', { exact: true }).click();
     await workspaceRow.getByText('跨境电商项目', { exact: true }).dblclick();
@@ -1208,7 +1221,7 @@ async function connectionActionsQA(browser, theme) {
     assert.equal(await newWorkspace.getByText('选择关联连接', { exact: true }).count(), 1);
     await shot(page, `workspace-create-placeholders-${theme}`);
     assert.equal(await newWorkspace.getByLabel('工作区名称', { exact: true }).inputValue(), '');
-    await newWorkspace.getByRole('button', { name: /取\s*消/ }).click();
+    await newWorkspace.getByRole('button', { name: /^取\s*消$/ }).click();
     report.browser.push({
       check: 'workspace-list-button-only-edit-save-cancel-and-create',
       theme,
@@ -1230,7 +1243,7 @@ async function connectionActionsQA(browser, theme) {
       .getByRole('button', { name: '保存模板', exact: true })
       .boundingBox();
     assert(bounds.y + bounds.height < 1056);
-    await templateEditor.getByRole('button', { name: /取\s*消/ }).click();
+    await templateEditor.getByRole('button', { name: /^取\s*消$/ }).click();
     await templateEditor.waitFor({ state: 'hidden' });
     await templateRow.getByText('基础字典与菜单', { exact: true }).click();
     await templateRow.getByText('基础字典与菜单', { exact: true }).dblclick();
@@ -1248,7 +1261,7 @@ async function connectionActionsQA(browser, theme) {
     await page.getByRole('button', { name: /新建模板/ }).click();
     const templateCreator = page.getByRole('dialog', { name: '新建同步模板', exact: true });
     assert.equal(await templateCreator.getByLabel('模板名称', { exact: true }).inputValue(), '');
-    await templateCreator.getByRole('button', { name: /取\s*消/ }).click();
+    await templateCreator.getByRole('button', { name: /^取\s*消$/ }).click();
     report.browser.push({
       check: 'template-list-button-only-edit-save-cancel-create-and-external-delete',
       theme,
@@ -1380,7 +1393,7 @@ async function contextFeedbackQA(browser, theme) {
         page,
         `connection-edit-in-place-${heading === '差异预览' ? 'diff' : 'scope'}-${theme}`,
       );
-      if (heading === '差异预览') await editor.getByRole('button', { name: /取\s*消/ }).click();
+      if (heading === '差异预览') await editor.getByRole('button', { name: /^取\s*消$/ }).click();
       else await editor.getByRole('button', { name: '保存连接', exact: true }).click();
       await editor.waitFor({ state: 'hidden' });
       assert.equal(await page.locator('h1').innerText(), heading);
@@ -1412,7 +1425,7 @@ async function contextFeedbackQA(browser, theme) {
     assert.equal(await syncRefresh.getAttribute('class'), before);
     await templateRefresh.locator('.anticon-check').waitFor();
     await shot(page, `refresh-module-isolation-${theme}`);
-    await template.getByRole('button', { name: /取\s*消/ }).click();
+    await template.getByRole('button', { name: /^取\s*消$/ }).click();
     await template.waitFor({ state: 'hidden' });
     await open(database);
     await item('导出表结构').click();
@@ -1524,7 +1537,7 @@ async function refreshAndTemplateQA(browser, theme) {
     await modalSettled(page);
     await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
     await shot(page, `template-save-in-scope-${theme}`);
-    await editor.getByRole('button', { name: /取\s*消/ }).click();
+    await editor.getByRole('button', { name: /^取\s*消$/ }).click();
     await editor.waitFor({ state: 'hidden' });
     await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
     await page.getByRole('button', { name: '将当前范围保存为模板', exact: true }).click();
@@ -1660,7 +1673,7 @@ async function templateWorkspaceQA(browser, theme) {
       );
       if (!dialog) assert.equal(await form.getByText('选择关联连接', { exact: true }).count(), 1);
       await shot(page, `workspace-${mode}-placeholders-${theme}`);
-      await form.getByRole('button', { name: /取\s*消/ }).click();
+      await form.getByRole('button', { name: /^取\s*消$/ }).click();
       await form.waitFor({ state: 'hidden' });
       report.browser.push({ check: `workspace-${mode}-placeholders-minimum`, theme, passed: true });
     }
@@ -1708,12 +1721,26 @@ async function browserQA() {
   let browser, lastPage;
   try {
     for (let attempt = 0; attempt < 60; attempt++) {
+      if (vite.exitCode !== null)
+        throw new Error('UI QA 预览服务已退出，请确认 4183 端口未被其他验收占用');
       try {
         if ((await fetch('http://127.0.0.1:4183')).ok) break;
       } catch {}
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
     browser = await chromium.launch({ headless: true, executablePath });
+    if (process.argv.includes('--navigation')) {
+      await navigationQA(browser, { desktop, report, observe, shot, modalSettled });
+      return;
+    }
+    if (process.argv.includes('--motion')) {
+      await motionQA(browser, { desktop, report, observe, shot, modalSettled });
+      return;
+    }
+    if (process.argv.includes('--interaction-revisions')) {
+      await interactionRevisionsQA(browser, { desktop, report, observe, shot, modalSettled });
+      return;
+    }
     if (process.argv.includes('--multi-database')) {
       await multiDatabaseQA(browser, { report, observe, shot, modalSettled });
       return;
@@ -1975,7 +2002,7 @@ async function browserQA() {
       await templateName.fill('QA 模板草稿');
       await page
         .getByRole('dialog', { name: '编辑同步模板' })
-        .getByRole('button', { name: /取\s*消/ })
+        .getByRole('button', { name: /^取\s*消$/ })
         .click();
       await page.getByRole('cell', { name: '基础字典与菜单', exact: true }).dblclick();
       assert.equal(await page.getByRole('dialog').count(), 0);
@@ -1983,7 +2010,7 @@ async function browserQA() {
       assert.equal(await templateName.inputValue(), '基础字典与菜单');
       await page
         .getByRole('dialog', { name: '编辑同步模板' })
-        .getByRole('button', { name: /取\s*消/ })
+        .getByRole('button', { name: /^取\s*消$/ })
         .click();
       await page.getByRole('button', { name: '应用模板 基础字典与菜单', exact: true }).click();
       await page.getByRole('heading', { level: 1, name: '新建同步', exact: true }).waitFor();
@@ -2066,7 +2093,7 @@ async function browserQA() {
       const external = page.getByRole('dialog', { name: '登记外部执行', exact: true });
       await external.waitFor();
       assert((await external.getByRole('checkbox').count()) > 0);
-      await external.getByRole('button', { name: /取\s*消/ }).click();
+      await external.getByRole('button', { name: /^取\s*消$/ }).click();
       await external.waitFor({ state: 'hidden' });
       report.browser.push({
         check: 'template-options-confirm-data-compare-cancel-navigation-retry-copy-save-record',
@@ -2079,12 +2106,18 @@ async function browserQA() {
       await page.getByRole('dialog', { name: '标记版本', exact: true }).waitFor();
       await page.getByRole('textbox', { name: '版本号' }).fill('v-qa');
       await page.getByRole('textbox', { name: '版本说明' }).fill('页面验收');
+      await page.getByRole('checkbox', { name: '将已属于其他版本的记录移动至此版本' }).check();
       await page.getByRole('button', { name: '确认标记', exact: true }).click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('tab', { name: '版本', exact: true }).click();
       await page.getByRole('button', { name: /v-qa/ }).click();
-      await page.getByRole('heading', { name: 'v-qa', exact: true }).waitFor();
-      await page.getByRole('button', { name: '编辑说明', exact: true }).click();
+      await page.getByRole('heading', { name: '版本详情', exact: true }).waitFor();
+      await page.getByRole('button', { name: '返回版本列表', exact: true }).click();
+      await page
+        .getByRole('row')
+        .filter({ has: page.getByRole('button', { name: 'v-qa', exact: true }) })
+        .getByRole('button', { name: /^编\s*辑$/ })
+        .click();
       await page.getByRole('textbox', { name: '版本说明' }).fill('更新说明');
       await page.getByRole('button', { name: /保\s*存/ }).click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -2092,6 +2125,7 @@ async function browserQA() {
       await page.locator('aside').getByRole('button', { name: '新建连接', exact: true }).click();
       await page.getByLabel('连接名称', { exact: true }).fill('QA 连接');
       await page.getByRole('textbox', { name: '用户名' }).fill('qa_user');
+      await page.getByLabel('密码', { exact: true }).fill('fixture-only');
       await page.getByRole('button', { name: '保存连接', exact: true }).click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('heading', { level: 1, name: '同步历史', exact: true }).waitFor();
@@ -2106,7 +2140,7 @@ async function browserQA() {
       await page.getByLabel('连接名称', { exact: true }).fill('未保存');
       await page
         .getByRole('dialog')
-        .getByRole('button', { name: /取\s*消/, exact: true })
+        .getByRole('button', { name: /^取\s*消$/, exact: true })
         .click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('cell', { name: 'QA 连接', exact: true }).click();
@@ -2119,7 +2153,7 @@ async function browserQA() {
       await page.getByText('客户端证书（PKCS#12，可选）', { exact: true }).waitFor();
       await page
         .getByRole('dialog')
-        .getByRole('button', { name: /取\s*消/, exact: true })
+        .getByRole('button', { name: /^取\s*消$/, exact: true })
         .click();
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
       await page.getByRole('button', { name: '管理工作区', exact: true }).click();
@@ -2179,7 +2213,7 @@ async function browserQA() {
       assert(await executeButton.isVisible());
       await executeButton.hover();
       await shot(page, `rollback-execution-confirmation-minimum-${workflowTheme}`);
-      await confirmation.getByRole('button', { name: /取\s*消/ }).click();
+      await confirmation.getByRole('button', { name: /^取\s*消$/ }).click();
       await confirmation.waitFor({ state: 'hidden' });
       await footerCheck(page, `rollback-${workflowTheme}`);
       report.browser.push({
@@ -2231,29 +2265,35 @@ try {
       : path.join(
           repo,
           'docs',
-          process.argv.includes('--template-workspace')
-            ? 'template-workspace-ui-qa.json'
-            : process.argv.includes('--multi-database')
-              ? 'multi-database-ui-qa.json'
-              : process.argv.includes('--updates')
-                ? 'updates-ui-qa.json'
-                : process.argv.includes('--record-confirmation')
-                  ? 'record-confirmation-ui-qa.json'
-                  : process.argv.includes('--connection-form')
-                    ? 'connection-form-ui-qa.json'
-                    : process.argv.includes('--reduced-motion')
-                      ? 'reduced-motion-ui-qa.json'
-                      : process.argv.includes('--performance')
-                        ? 'performance-ui-qa.json'
-                        : process.argv.includes('--tree-organization')
-                          ? 'tree-organization-qa.json'
-                          : process.argv.includes('--context-feedback')
-                            ? 'context-feedback-qa.json'
-                            : process.argv.includes('--sync-modes')
-                              ? 'sync-mode-ui-qa.json'
-                              : process.argv.includes('--diff-scroll')
-                                ? 'diff-scroll-ui-qa.json'
-                                : 'react-ui-qa.json',
+          process.argv.includes('--navigation')
+            ? 'navigation-ui-qa.json'
+            : process.argv.includes('--motion')
+              ? 'motion-interaction-ui-qa.json'
+              : process.argv.includes('--interaction-revisions')
+                ? 'interaction-revisions-ui-qa.json'
+                : process.argv.includes('--template-workspace')
+                  ? 'template-workspace-ui-qa.json'
+                  : process.argv.includes('--multi-database')
+                    ? 'multi-database-ui-qa.json'
+                    : process.argv.includes('--updates')
+                      ? 'updates-ui-qa.json'
+                      : process.argv.includes('--record-confirmation')
+                        ? 'record-confirmation-ui-qa.json'
+                        : process.argv.includes('--connection-form')
+                          ? 'connection-form-ui-qa.json'
+                          : process.argv.includes('--reduced-motion')
+                            ? 'reduced-motion-ui-qa.json'
+                            : process.argv.includes('--performance')
+                              ? 'performance-ui-qa.json'
+                              : process.argv.includes('--tree-organization')
+                                ? 'tree-organization-qa.json'
+                                : process.argv.includes('--context-feedback')
+                                  ? 'context-feedback-qa.json'
+                                  : process.argv.includes('--sync-modes')
+                                    ? 'sync-mode-ui-qa.json'
+                                    : process.argv.includes('--diff-scroll')
+                                      ? 'diff-scroll-ui-qa.json'
+                                      : 'react-ui-qa.json',
         ),
     JSON.stringify(report, null, 2) + '\n',
   );

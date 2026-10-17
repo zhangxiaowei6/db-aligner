@@ -41,6 +41,9 @@ const ENGINE_METHODS: &[&str] = &[
     "sync.compare.cancel",
     "sync.save",
     "record.get",
+    "record.updateRemark",
+    "record.delete",
+    "version.delete",
     "record.file",
     "record.cancel",
     "record.verify",
@@ -54,6 +57,8 @@ const ENGINE_METHODS: &[&str] = &[
     "config.import",
     "archives.clear",
 ];
+
+const REPOSITORY_URL: &str = "https://github.com/zhangxiaowei6/db-aligner";
 
 pub struct Host {
     pub engine: Engine,
@@ -152,6 +157,10 @@ impl Host {
         }
         let _request = self.admit()?;
         match method {
+            "app.openRepository" => {
+                empty_params(&params)?;
+                return open_repository();
+            }
             "drivers.list" => {
                 empty_params(&params)?;
                 return serde_json::to_value(self.drivers.list().await?)
@@ -227,6 +236,7 @@ impl Host {
     }
 
     async fn call_business(&self, method: &str, params: &mut Value) -> Result<Value, String> {
+        validate_history_request(method, params)?;
         // Serialize credential mutations across the Java commit and the encrypted file update.
         let _mutation = if (method == "entity.save"
             && params.get("kind").and_then(Value::as_str) == Some("connection"))
@@ -287,6 +297,8 @@ impl Host {
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .or(imported);
+            validate_connection(&value)?;
+            validate_saved_password(&value, password.as_deref(), next.contains_key(&id))?;
             if let Some(password) = password {
                 next.insert(id.clone(), credentials::encrypt(&password)?);
             }
@@ -317,7 +329,8 @@ impl Host {
         }
 
         let mut secrets = self.credentials.lock().await.decrypted();
-        if method == "connections.test" && params.get("config").is_some() {
+        if matches!(method, "connections.test" | "databases.list") && params.get("config").is_some()
+        {
             let mut config = params
                 .get("config")
                 .and_then(Value::as_object)
@@ -348,7 +361,13 @@ impl Host {
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .or(imported)
-                .or_else(|| secrets.get(&original).cloned())
+                .or_else(|| {
+                    if config.get("clearPassword").and_then(Value::as_bool) == Some(true) {
+                        None
+                    } else {
+                        secrets.get(&original).cloned()
+                    }
+                })
                 .unwrap_or_default();
             let certificate = config
                 .get("certificatePassword")
@@ -672,6 +691,38 @@ fn empty_params(params: &Value) -> Result<(), String> {
     }
 }
 
+fn validate_saved_password(
+    value: &Map<String, Value>,
+    password: Option<&str>,
+    has_saved_password: bool,
+) -> Result<(), String> {
+    if value.get("clearPassword").and_then(Value::as_bool) == Some(true)
+        || (!has_saved_password && password.is_none_or(str::is_empty))
+    {
+        return Err("请输入连接密码".into());
+    }
+    Ok(())
+}
+
+fn open_repository() -> Result<Value, String> {
+    // 固定 URL，渲染进程不能选择网址、命令或参数。
+    let url: Vec<u16> = REPOSITORY_URL.encode_utf16().chain(Some(0)).collect();
+    let result = unsafe {
+        windows_sys::Win32::UI::Shell::ShellExecuteW(
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            url.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL,
+        )
+    };
+    if result as usize <= 32 {
+        return Err("无法打开 GitHub 仓库，请稍后重试".into());
+    }
+    Ok(Value::Bool(true))
+}
+
 fn driver_id(params: &Value) -> Result<&str, String> {
     let object = params.as_object().ok_or("驱动接口仅接受目录标识")?;
     if object.len() != 1 {
@@ -848,6 +899,26 @@ fn timestamp_millis() -> u128 {
         .as_millis()
 }
 
+fn validate_history_request(method: &str, params: &Value) -> Result<(), String> {
+    let field = match method {
+        "record.updateRemark" => "remark",
+        "record.delete" | "version.delete" => "confirmation",
+        _ => return Ok(()),
+    };
+    let object = params.as_object().ok_or("历史管理参数无效")?;
+    if object.keys().any(|key| key != "id" && key != field)
+        || object
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .is_none()
+        || object.get(field).and_then(Value::as_str).is_none()
+    {
+        return Err("历史管理参数必须包含对象标识与文本，不接受额外路径或字段".into());
+    }
+    Ok(())
+}
+
 pub fn confirm_close_before_renderer(app: &AppHandle) -> bool {
     app.dialog()
         .message("客户端正在启动，确认关闭？")
@@ -863,6 +934,65 @@ pub fn confirm_close_before_renderer(app: &AppHandle) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repository_has_a_fixed_destination_and_requires_empty_parameters() {
+        assert_eq!(
+            REPOSITORY_URL,
+            "https://github.com/zhangxiaowei6/db-aligner"
+        );
+        assert!(empty_params(&json!({})).is_ok());
+        assert!(empty_params(&json!({"url":"https://example.test"})).is_err());
+        assert!(!ENGINE_METHODS.contains(&"app.openRepository"));
+    }
+
+    #[test]
+    fn saving_requires_real_password_material_not_renderer_flags() {
+        let value = json!({"hasPassword":true});
+        let value = value.as_object().unwrap();
+        assert!(validate_saved_password(value, None, false).is_err());
+        assert!(validate_saved_password(value, Some(""), false).is_err());
+        assert!(validate_saved_password(value, Some("new password"), false).is_ok());
+        assert!(validate_saved_password(value, None, true).is_ok());
+        assert!(validate_saved_password(value, Some("  "), false).is_ok());
+        assert!(validate_saved_password(
+            json!({"clearPassword":true}).as_object().unwrap(),
+            None,
+            true
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn history_commands_require_text_and_cannot_accept_archive_paths() {
+        for method in ["record.delete", "version.delete"] {
+            assert!(ENGINE_METHODS.contains(&method));
+            assert!(validate_history_request(
+                method,
+                &json!({"id":"SYNC-one","confirmation":"SYNC-one"})
+            )
+            .is_ok());
+            assert!(
+                validate_history_request(method, &json!({"id":"SYNC-one","confirmation":1}))
+                    .is_err()
+            );
+            assert!(validate_history_request(
+                method,
+                &json!({"id":"SYNC-one","confirmation":"SYNC-one","archivePath":"C:/"})
+            )
+            .is_err());
+        }
+        assert!(validate_history_request(
+            "record.updateRemark",
+            &json!({"id":"SYNC-one","remark":"中文备注"})
+        )
+        .is_ok());
+        assert!(validate_history_request(
+            "record.updateRemark",
+            &json!({"id":"SYNC-one","remark":{}})
+        )
+        .is_err());
+    }
 
     #[test]
     fn renderer_cannot_choose_driver_url_or_extra_fields() {

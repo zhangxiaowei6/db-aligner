@@ -111,3 +111,10 @@ export function dropPlacement(input: DropPlacementInput): ConnectionDrop | null 
   }
   return null;
 }
+
+/** Discovery is independent of display organization and the currently selected database filter. */
+export function discoverySignature(connection: ConnectionInfo) {
+  const { id, name, group, sortOrder, workspaceIds, databases, hasPassword, ...parameters } =
+    connection;
+  return JSON.stringify(parameters);
+}

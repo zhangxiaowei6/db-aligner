@@ -10,6 +10,7 @@ import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import SqlView from '../components/SqlView';
 import type { ThemeMode } from '../types';
 import { UpdateSection } from '../updates';
+import { RepositoryLink } from '../components/RepositoryLink';
 
 export function SettingsPage() {
   const c = useController();
@@ -23,7 +24,7 @@ export function SettingsPage() {
           <h2>同步执行</h2>
           <Form layout="vertical">
             <div className="settings-grid">
-              <Field label="最大并行目标库">
+              <Field label="最大并行目标库" required>
                 <InputNumber
                   value={f.concurrency}
                   placeholder="输入 1–16"
@@ -35,7 +36,7 @@ export function SettingsPage() {
                   }}
                 />
               </Field>
-              <Field label="单服务器并行">
+              <Field label="单服务器并行" required>
                 <InputNumber
                   value={f.perHost}
                   placeholder="输入 1–8"
@@ -47,7 +48,7 @@ export function SettingsPage() {
                   }}
                 />
               </Field>
-              <Field label="数据批次大小">
+              <Field label="数据批次大小" required>
                 <Space>
                   <InputNumber
                     value={f.batchSize}
@@ -69,7 +70,7 @@ export function SettingsPage() {
         <section className="settings-section">
           <h2>记录与恢复资料</h2>
           <Form layout="vertical">
-            <Field label="档案目录">
+            <Field label="档案目录" required>
               <Space.Compact block>
                 <Input
                   value={f.archivePath}
@@ -93,13 +94,17 @@ export function SettingsPage() {
             </Field>
             <Field label="本地配置与记录">
               <Space wrap>
-                <Button onClick={() => c.backupLocal()}>导出备份</Button>
+                <Button aria-label="导出备份" onClick={() => c.backupLocal()}>
+                  导出备份
+                </Button>
                 <Button onClick={() => c.restoreLocal()}>导入备份</Button>
               </Space>
             </Field>
             <Field label="管理归档资料">
               <Space wrap>
-                <Button onClick={() => c.set('cleanupDrawer', true)}>管理已归档资料</Button>
+                <Button aria-label="管理已归档资料" onClick={() => c.set('cleanupDrawer', true)}>
+                  管理已归档资料
+                </Button>
                 <span className="hint">清理后相应记录将无法回滚。</span>
               </Space>
             </Field>
@@ -111,7 +116,7 @@ export function SettingsPage() {
         <section className="settings-section">
           <h2>外观</h2>
           <Form layout="vertical">
-            <Field label="主题">
+            <Field label="主题" required>
               <Segmented<ThemeMode>
                 aria-label="主题"
                 value={appearance.themeMode}
@@ -132,6 +137,9 @@ export function SettingsPage() {
         <section className="settings-section">
           <h2>关于</h2>
           <p>DBAligner · 数据库结构与基础数据同步工具 · 开源许可 Apache-2.0</p>
+          <p>
+            <RepositoryLink />
+          </p>
           <UpdateSection />
           <p className="hint">
             数据库驱动、Java 运行时及其他依赖的许可见项目 THIRD_PARTY_NOTICES.md。
@@ -156,7 +164,7 @@ export function ExportPage() {
         <Panel title="导出范围" className="export-scope">
           <DatabaseOptionsStatus scope="export" />
           <Form layout="vertical">
-            <Field label="来源数据库">
+            <Field label="来源数据库" required>
               <Select
                 value={m.exportSource || undefined}
                 placeholder="选择要导出的数据库或 schema"

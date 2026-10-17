@@ -139,6 +139,26 @@ public final class Store implements AutoCloseable {
     }
   }
 
+  public synchronized void unlinkVersion(String id) throws SQLException {
+    try (var s = db.prepareStatement("DELETE FROM version_records WHERE version_id=?")) {
+      s.setString(1, id);
+      s.executeUpdate();
+    }
+  }
+
+  public synchronized void deleteRecordData(String id, String planId) throws Exception {
+    for (String table : List.of("record_events", "version_records")) {
+      try (var s = db.prepareStatement("DELETE FROM " + table + " WHERE record_id=?")) {
+        s.setString(1, id);
+        s.executeUpdate();
+      }
+    }
+    for (String kind : List.of("record", "external", "verification")) delete(kind, id);
+    if (!planId.isBlank()
+        && list("record").stream().noneMatch(r -> r.path("planId").asText().equals(planId)))
+      delete("plan", planId);
+  }
+
   public synchronized <T> T transaction(java.util.concurrent.Callable<T> work) throws Exception {
     if (!db.getAutoCommit()) return work.call();
     db.setAutoCommit(false);

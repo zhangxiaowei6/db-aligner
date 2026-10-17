@@ -63,6 +63,10 @@ class PostgresIntegrationTest {
       }
       try (var admin = db.open(new DbRef("pg", ""))) {
         db.execute(admin, "CREATE DATABASE " + PostgresSql.id(database));
+        var discovery = cfg.deepCopy();
+        discovery.putArray("databases").add("postgres");
+        assertTrue(db.databases(discovery).contains(database), "草稿列表应显示原指定范围外的可访问库");
+        assertFalse(service.store.get("connection", "pg").has("databases"));
         try (var c = db.open(new DbRef("pg", database))) {
           for (String schema : List.of("source", "target", "untouched"))
             db.execute(c, "CREATE SCHEMA " + PostgresSql.id(schema));
@@ -126,6 +130,15 @@ class PostgresIntegrationTest {
                 plan.targets.getFirst().changes.stream().noneMatch(x -> x.blocked),
                 Json.write(plan));
             var ids = plan.targets.getFirst().changes.stream().map(x -> x.id).toList();
+            var disposable = jobs.save(plan, ids, "SAVE_ONLY", "待删除的真库计划");
+            service.handle(
+                "record.updateRemark", Json.node(Map.of("id", disposable.id, "remark", "备注变更")));
+            service.handle(
+                "record.delete",
+                Json.node(Map.of("id", disposable.id, "confirmation", disposable.id)));
+            assertNull(service.store.get("record", disposable.id));
+            assertFalse(Files.exists(Path.of(disposable.archivePath)));
+            assertEquals(before, db.digest(c, target, table));
             var saved = jobs.save(plan, ids, "SAVE_ONLY", "保存不执行");
             assertEquals(before, db.digest(c, target, table));
             var executed =
@@ -496,7 +509,12 @@ class PostgresIntegrationTest {
                         "driverId", "mariadb",
                         "driverVersion", "3.5.10",
                         "ssl", true,
-                        "ca", mysqlCredentials.getParent().resolve("server-cert.pem").toAbsolutePath().toString()));
+                        "ca",
+                            mysqlCredentials
+                                .getParent()
+                                .resolve("server-cert.pem")
+                                .toAbsolutePath()
+                                .toString()));
               }
               var executable = NativeClientRelease.extract(root.resolve("native-client"));
               for (boolean cached : List.of(false, true)) {

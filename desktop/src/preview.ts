@@ -25,7 +25,8 @@ import type {
   TableChoice,
 } from './types';
 import { version } from '../package.json';
-import { connectionTestError } from './connection-validation';
+import { connectionSaveError, connectionTestError } from './connection-validation';
+import { versionNumberError } from './version-validation';
 import { executionScript } from './sync-scripts';
 import { effectiveOptions, fullStructure } from './structure-options';
 import { previewStructureChange } from './preview-structure';
@@ -775,8 +776,27 @@ const state: State = {
       })),
     },
   ],
-  versions: [],
-  versionLinks: {},
+  versions: [
+    {
+      id: 'preview-version-structure',
+      workspaceId: 'default',
+      number: 'v1.2.0',
+      description:
+        '虚构示例：基础字典与菜单结构归档。\n包含一条仅保存记录和一条已执行记录，各记录执行状态独立。',
+      createdAt: time,
+    },
+    {
+      id: 'preview-version-empty',
+      workspaceId: 'default',
+      number: 'v1.3.0-preview',
+      description: '虚构示例：下一批基础数据调整，尚未关联同步记录。',
+      createdAt: '2026-10-09T02:00:00Z',
+    },
+  ],
+  versionLinks: {
+    'SYNC-1008-008': 'preview-version-structure',
+    'PREVIEW-EXECUTED-007': 'preview-version-structure',
+  },
   settings: {
     id: 'global',
     concurrency: 4,
@@ -970,6 +990,11 @@ export const previewBridge: DesktopBridge = {
         };
         break;
       }
+      case 'app.openRepository':
+        if (Object.keys(p).length) throw new Error('接口不接受自定义参数');
+        // 浏览器实际打开使用关于页的固定链接，这里只保持桥接契约。
+        result = true;
+        break;
       case 'updates.get':
         result = previewUpdate;
         break;
@@ -1049,7 +1074,27 @@ export const previewBridge: DesktopBridge = {
         break;
       case 'databases.list': {
         await new Promise((resolve) => setTimeout(resolve, 200));
-        const connection = state.connections.find((c) => c.id === p.connectionId);
+        const connection = p.config
+          ? (p.config as ConnectionInfo)
+          : state.connections.find((c) => c.id === p.connectionId);
+        if (p.config && connection) {
+          const validation = connectionTestError(connection);
+          if (validation) throw new Error(validation);
+          if (connection.password === 'preview-fail')
+            throw new Error('密码验证失败（虚构预览数据）');
+          if (connection.user === 'preview-no-list')
+            throw new Error('无权读取数据库列表（虚构预览数据）');
+          result = [
+            ...new Set([
+              ...connection.databases,
+              ...(state.connections.find((item) => item.id === connection.id)?.databases || []),
+              ...(connection.databaseType === 'postgresql'
+                ? ['preview_pg']
+                : ['app_dev', 'app_test', 'app_prod']),
+            ]),
+          ];
+          break;
+        }
         if (connectionFailures.get(connection?.id || ''))
           throw new Error('密码验证失败（虚构预览数据）');
         result = connection?.databases || [];
@@ -1175,8 +1220,22 @@ export const previewBridge: DesktopBridge = {
         };
         value.id ||= crypto.randomUUID();
         if (p.kind === 'connection') {
-          const validation = connectionTestError(value);
+          const validation = connectionSaveError(
+            value,
+            !!state.connections.find((connection) => connection.id === value.id)?.hasPassword,
+          );
           if (validation) throw new Error(validation);
+          if (
+            !value.workspaceIds.every((id) =>
+              state.workspaces.some((workspace) => workspace.id === id),
+            )
+          )
+            throw new Error('关联工作区已删除，请重新选择');
+          if (p.groupId !== undefined) {
+            const selected = state.connectionGroups.find((group) => group.id === p.groupId);
+            if (!selected) throw new Error('分组已删除，请重新选择');
+            value.group = selected.name;
+          }
           const group = connectionGroupName(value);
           if (!state.connectionGroups.some((g) => g.name === group))
             state.connectionGroups.push({
@@ -1202,6 +1261,25 @@ export const previewBridge: DesktopBridge = {
                     .filter((c) => connectionGroupName(c) === group)
                     .map((c) => c.sortOrder ?? 0),
                 ) + 1;
+        }
+        if (
+          p.kind === 'template' &&
+          !state.workspaces.some(
+            (workspace) => workspace.id === (p.value as { workspaceId: string }).workspaceId,
+          )
+        )
+          throw new Error('工作区已删除，请重新选择');
+        if (p.kind === 'workspace' && 'connectionIds' in value) {
+          const ids = (p.value as { connectionIds: string[] }).connectionIds;
+          if (!ids.every((id) => state.connections.some((connection) => connection.id === id)))
+            throw new Error('关联连接已删除，请重新选择');
+          state.connections = state.connections.map((connection) => ({
+            ...connection,
+            workspaceIds: [
+              ...connection.workspaceIds.filter((id) => id !== value.id),
+              ...(ids.includes(connection.id) ? [value.id] : []),
+            ],
+          }));
         }
         const key = (
           {
@@ -1306,6 +1384,24 @@ export const previewBridge: DesktopBridge = {
         break;
       }
       case 'entity.delete': {
+        if (p.kind === 'workspace') {
+          if (state.workspaces.length <= 1) throw new Error('至少保留一个工作区');
+          if (
+            state.connections.some((connection) =>
+              connection.workspaceIds.includes(String(p.id)),
+            ) ||
+            [...state.templates, ...state.records, ...state.versions].some(
+              (item) => item.workspaceId === p.id,
+            )
+          )
+            throw new Error('工作区仍有关联内容，请先处理');
+          if (
+            [...compareTasks.values()].some((task) =>
+              ['RUNNING', 'CANCELLING'].includes(task.status),
+            )
+          )
+            throw new Error('比较中暂不可删除工作区');
+        }
         const key = (
           { workspace: 'workspaces', connection: 'connections', template: 'templates' } as const
         )[p.kind as 'workspace'];
@@ -1378,6 +1474,39 @@ export const previewBridge: DesktopBridge = {
         };
         break;
       }
+      case 'record.updateRemark': {
+        const record = state.records.find((record) => record.id === p.id);
+        if (!record) throw new Error('记录不存在');
+        if (['RUNNING', 'QUEUED'].includes(record.status)) throw new Error('记录正在排队或执行');
+        record.remark = String(p.remark || '');
+        result = { ok: true };
+        break;
+      }
+      case 'record.delete': {
+        const record = state.records.find((record) => record.id === p.id);
+        if (!record) throw new Error('记录不存在');
+        if (p.confirmation !== record.id) throw new Error('请输入完整记录编号确认删除');
+        if (['RUNNING', 'QUEUED'].includes(record.status)) throw new Error('记录正在排队或执行');
+        if (record.parentId || state.records.some((item) => item.parentId === record.id))
+          throw new Error('记录有关联恢复证据，不能删除');
+        state.records = state.records.filter((item) => item.id !== record.id);
+        state.external = state.external.filter((item) => item.id !== record.id);
+        previewVerification.delete(record.id);
+        delete state.versionLinks[record.id];
+        result = { ok: true, cleanupPending: false };
+        break;
+      }
+      case 'version.delete': {
+        const version = state.versions.find((version) => version.id === p.id);
+        if (!version) throw new Error('版本不存在');
+        if (p.confirmation !== version.number) throw new Error('请输入完整版本号确认删除');
+        state.versions = state.versions.filter((item) => item.id !== version.id);
+        state.versionLinks = Object.fromEntries(
+          Object.entries(state.versionLinks).filter(([, id]) => id !== version.id),
+        );
+        result = { ok: true };
+        break;
+      }
       case 'record.get': {
         const record = state.records.find((r) => r.id === p.id);
         if (!record) throw new Error('同步记录不存在');
@@ -1434,14 +1563,30 @@ export const previewBridge: DesktopBridge = {
         const v = {
           id: String(p.id || crypto.randomUUID()),
           workspaceId: String(p.workspaceId),
-          number: String(p.number),
-          description: String(p.description),
+          number: String(p.number || '').trim(),
+          description: String(p.description || ''),
           createdAt: time,
         };
+        if (!state.workspaces.some((workspace) => workspace.id === v.workspaceId))
+          throw new Error('工作区已删除，请重新选择');
+        const numberError = versionNumberError(v.number, state.versions, v.workspaceId, v.id);
+        if (numberError) throw new Error(numberError);
+        const recordIds = (p.recordIds || []) as string[];
+        for (const id of recordIds) {
+          if (
+            !state.records.some(
+              (record) => record.id === id && record.workspaceId === v.workspaceId,
+            )
+          )
+            throw new Error('版本与记录必须在同一工作区');
+          if (state.versionLinks[id] && state.versionLinks[id] !== v.id && !p.move)
+            throw new Error('记录已经归属其他版本，请明确选择移动');
+        }
         const existing = state.versions.findIndex((version) => version.id === v.id);
+        if (existing >= 0) v.createdAt = state.versions[existing].createdAt;
         if (existing >= 0) state.versions[existing] = v;
         else state.versions.push(v);
-        for (const id of p.recordIds as string[]) state.versionLinks[id] = v.id;
+        for (const id of recordIds) state.versionLinks[id] = v.id;
         result = v;
         break;
       }

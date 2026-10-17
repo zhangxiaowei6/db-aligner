@@ -198,6 +198,7 @@ export interface Settings {
   retention: string;
 }
 export interface State {
+  pendingDeletions?: { id: string; message: string }[];
   workspaces: Workspace[];
   connections: ConnectionInfo[];
   connectionGroups: ConnectionGroup[];

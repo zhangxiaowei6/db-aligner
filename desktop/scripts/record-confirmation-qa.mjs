@@ -117,7 +117,7 @@ export async function recordConfirmationQA(
       });
       await dialog.getByRole('button', { name: '执行所选回滚' }).hover();
       await shot(page, `rollback-execution-confirmation-minimum-${theme}`);
-      await dialog.getByRole('button', { name: /取\s*消/ }).click();
+      await dialog.getByRole('button', { name: /^取\s*消$/ }).click();
       await dialog.waitFor({ state: 'hidden' });
       assert.equal(await page.evaluate(() => window.rollbackSubmissions), 0);
       report.browser.push({

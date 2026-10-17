@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { DataTable, SelectionToggle } from './shared';
+import { DataTable, Field, SelectionToggle } from './shared';
 import { AsyncButton, RefreshButton } from './AsyncButton';
-import { App } from 'antd';
+import { App, Form, Input, Space } from 'antd';
 
 it('keeps an asynchronous action loading until completion and blocks duplicate clicks', async () => {
   let finish!: () => void;
@@ -228,4 +228,39 @@ it('shows menu result details when the menu row receives keyboard focus', async 
   );
   fireEvent.focusOut(screen.getByRole('menuitem'), { relatedTarget: document.body });
   await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+});
+
+it('keeps required labels and control semantics in sync, including compound fields', () => {
+  const view = render(
+    <Form>
+      <Field label="必填名称" required>
+        <Input defaultValue="已有值" />
+      </Field>
+      <Field label="证书路径" required>
+        <Space.Compact>
+          <Input />
+          <button>选择</button>
+        </Space.Compact>
+      </Field>
+      <Field label="备注">
+        <Input />
+      </Field>
+    </Form>,
+  );
+  expect(screen.getByLabelText('必填名称').getAttribute('aria-required')).toBe('true');
+  expect(screen.getByLabelText('证书路径').getAttribute('aria-required')).toBe('true');
+  expect(view.container.querySelectorAll('.ant-form-item-required')).toHaveLength(2);
+  expect(screen.getByLabelText('备注').getAttribute('aria-required')).toBe('false');
+  view.rerender(
+    <Form>
+      <Field label="证书路径" required={false}>
+        <Space.Compact>
+          <Input />
+          <button>选择</button>
+        </Space.Compact>
+      </Field>
+    </Form>,
+  );
+  expect(screen.getByLabelText('证书路径').getAttribute('aria-required')).toBe('false');
+  expect(view.container.querySelectorAll('.ant-form-item-required')).toHaveLength(0);
 });

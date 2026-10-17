@@ -1,9 +1,9 @@
 {
-  "recordedAt": "2026-10-15T19:45:42.624Z",
+  "recordedAt": "2026-10-17T16:48:15.186Z",
   "baseline": false,
   "environment": {
     "node": "v24.9.0",
-    "browser": "155.0.8059.41",
+    "browser": "155.0.8059.84",
     "viewport": {
       "width": 1488,
       "height": 1056
@@ -13,31 +13,31 @@
     {
       "theme": "light",
       "tables": 1000,
-      "firstExpandMs": 585,
+      "firstExpandMs": 884,
       "samples": [
         {
-          "collapseMs": 245.80000001192093,
-          "expandMs": 311.30000001192093
+          "collapseMs": 156.7999999821186,
+          "expandMs": 450.09999999403954
         },
         {
-          "collapseMs": 247.80000001192093,
-          "expandMs": 315.80000001192093
+          "collapseMs": 141.40000000596046,
+          "expandMs": 437
         },
         {
-          "collapseMs": 237.89999997615814,
-          "expandMs": 311.59999999403954
+          "collapseMs": 141.89999997615814,
+          "expandMs": 432.2000000178814
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 10.400000005960464,
-          "expandMs": 311.90000000596046
+          "collapseMs": 28.5,
+          "expandMs": 400
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 9.5,
-          "expandMs": 224.7999999821186
+          "collapseMs": 25.19999998807907,
+          "expandMs": 101.2999999821186
         }
       ],
       "mountedRows": 28,
@@ -47,31 +47,31 @@
     {
       "theme": "light",
       "tables": 5000,
-      "firstExpandMs": 560,
+      "firstExpandMs": 792,
       "samples": [
         {
-          "collapseMs": 245.5,
-          "expandMs": 315.7999999821186
+          "collapseMs": 139.80000001192093,
+          "expandMs": 456.69999998807907
         },
         {
-          "collapseMs": 249.2000000178814,
-          "expandMs": 311.60000002384186
+          "collapseMs": 144.5,
+          "expandMs": 488.59999999403954
         },
         {
-          "collapseMs": 242,
-          "expandMs": 315.80000001192093
+          "collapseMs": 199.90000000596046,
+          "expandMs": 456
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 11,
-          "expandMs": 313.7999999821186
+          "collapseMs": 31.69999998807907,
+          "expandMs": 409.69999998807907
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 11.5,
-          "expandMs": 225.2000000178814
+          "collapseMs": 22.599999994039536,
+          "expandMs": 97.90000000596046
         }
       ],
       "mountedRows": 28,
@@ -81,31 +81,31 @@
     {
       "theme": "dark",
       "tables": 1000,
-      "firstExpandMs": 586,
+      "firstExpandMs": 843,
       "samples": [
         {
-          "collapseMs": 245.09999999403954,
-          "expandMs": 315.59999999403954
+          "collapseMs": 148.80000001192093,
+          "expandMs": 457.60000002384186
         },
         {
-          "collapseMs": 243.40000000596046,
-          "expandMs": 317.59999999403954
+          "collapseMs": 162.7000000178814,
+          "expandMs": 459.89999997615814
         },
         {
-          "collapseMs": 241.40000000596046,
-          "expandMs": 315.7999999821186
+          "collapseMs": 133.7000000178814,
+          "expandMs": 461.10000002384186
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 10.099999994039536,
-          "expandMs": 313
+          "collapseMs": 33.80000001192093,
+          "expandMs": 406.69999998807907
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 10.199999988079071,
-          "expandMs": 226.80000001192093
+          "collapseMs": 34.19999998807907,
+          "expandMs": 98.59999999403954
         }
       ],
       "mountedRows": 28,
@@ -115,31 +115,31 @@
     {
       "theme": "dark",
       "tables": 5000,
-      "firstExpandMs": 559,
+      "firstExpandMs": 760,
       "samples": [
         {
-          "collapseMs": 255.69999998807907,
-          "expandMs": 315.7000000178814
+          "collapseMs": 130.5,
+          "expandMs": 432.7999999821186
         },
         {
-          "collapseMs": 243.60000002384186,
-          "expandMs": 315.69999998807907
+          "collapseMs": 134.69999998807907,
+          "expandMs": 473.60000002384186
         },
         {
-          "collapseMs": 243.59999999403954,
-          "expandMs": 310.19999998807907
+          "collapseMs": 155.2000000178814,
+          "expandMs": 452.10000002384186
         }
       ],
       "parents": [
         {
           "key": "test",
-          "collapseMs": 10.699999988079071,
-          "expandMs": 316.30000001192093
+          "collapseMs": 31,
+          "expandMs": 405.7000000178814
         },
         {
           "key": "group:preview-source-group",
-          "collapseMs": 10.399999976158142,
-          "expandMs": 225.5
+          "collapseMs": 24.400000005960464,
+          "expandMs": 104.59999999403954
         }
       ],
       "mountedRows": 28,

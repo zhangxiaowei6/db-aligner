@@ -1,5 +1,6 @@
 import { AsyncButton as Button } from './AsyncButton';
 import {
+  Children,
   cloneElement,
   isValidElement,
   useId,
@@ -12,9 +13,10 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Form, Table, Tag, Tooltip, type ButtonProps, type TableProps } from 'antd';
+import { Form, Space, Table, Tag, Tooltip, type ButtonProps, type TableProps } from 'antd';
 import { CheckOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons';
 import { statusColor, statusLabel, type ConnectionTestResult } from '../model';
+import { OverflowText } from './OverflowText';
 
 export function SelectionToggle({
   total,
@@ -107,17 +109,41 @@ export function Field({
   label,
   children,
   required = false,
+  compact = false,
 }: {
   label: string;
   children: ReactNode;
   required?: boolean;
+  compact?: boolean;
 }) {
   const id = useId();
+  let bound = false;
+  function bind(child: ReactNode): ReactNode {
+    if (!isValidElement(child) || bound) return child;
+    const element = child as ReactElement<{
+      id?: string;
+      children?: ReactNode;
+      'aria-required'?: boolean;
+      'aria-label'?: string;
+    }>;
+    if (element.type === Space || element.type === Space.Compact) {
+      return cloneElement(element, {}, Children.map(element.props.children, bind));
+    }
+    bound = true;
+    return cloneElement(element, {
+      id,
+      'aria-required': required,
+      'aria-label': element.props['aria-label'] || label,
+    });
+  }
   return (
-    <Form.Item label={label} htmlFor={id} required={required}>
-      {isValidElement(children)
-        ? cloneElement(children as ReactElement<{ id?: string }>, { id })
-        : children}
+    <Form.Item
+      label={label}
+      htmlFor={id}
+      required={required}
+      className={compact ? 'compact-field' : undefined}
+    >
+      {Array.isArray(children) ? Children.map(children, bind) : bind(children)}
     </Form.Item>
   );
 }
@@ -277,6 +303,17 @@ export function DataTable<T extends object>({
       totalWidth += width;
       return {
         ...column,
+        title:
+          typeof column.title === 'string' ? <OverflowText text={column.title} /> : column.title,
+        ellipsis: column.ellipsis ? { showTitle: false } : undefined,
+        render: (value, record, rowIndex) => {
+          const rendered = column.render ? column.render(value, record, rowIndex) : value;
+          return typeof rendered === 'string' || typeof rendered === 'number' ? (
+            <OverflowText text={rendered} />
+          ) : (
+            rendered
+          );
+        },
         width,
         onHeaderCell: (current) => ({
           ...column.onHeaderCell?.(current),

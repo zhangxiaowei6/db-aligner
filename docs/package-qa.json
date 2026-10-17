@@ -1,0 +1,20 @@
+{
+  "version": "0.1.1",
+  "unsigned": true,
+  "zipEntries": 1218,
+  "verifiedFiles": 1147,
+  "resourceHashesMatch": true,
+  "checksumsMatch": true,
+  "artifacts": [
+    {
+      "name": "DBAligner-Setup-0.1.1-win-x64.exe",
+      "bytes": 61186211,
+      "sha256": "67c5243c9fa4c2f65f3655b3bb6d93b2a939792b4705fcfbdbd5e94c50a8402c"
+    },
+    {
+      "name": "DBAligner-0.1.1-win-x64.zip",
+      "bytes": 67549304,
+      "sha256": "1778866c78171515300246b984c723f149e8986efaa22cbfd5ca0dab370d9179"
+    }
+  ]
+}

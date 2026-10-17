@@ -1,3 +1,5 @@
+import { breadcrumbs } from './navigation';
+import { RecordManagementDialogs } from './components/RecordManagementDialogs';
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -132,7 +134,7 @@ beforeEach(() => {
       ssl: false,
       ca: '',
       clientCert: '',
-      hasPassword: false,
+      hasPassword: true,
     },
   ];
   state.settings.archivePath = 'D:\\Test\\archives';
@@ -183,6 +185,71 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('keeps the real saved-password mask out of the form and blocks saving a new connection without a password', async () => {
+  await ready();
+  act(() => controller.editConnection(state.connections[0]));
+  const password = screen.getByLabelText('密码', { exact: true }) as HTMLInputElement;
+  expect(password.value).toBe('********');
+  expect(controller.m.connectionForm.password).toBe('');
+  await userEvent.click(screen.getByRole('button', { name: '保存连接' }));
+  await waitFor(() => expect(controller.m.connectionDialog).toBe(false));
+  expect(bridge.invoke.mock.calls.find(([method]) => method === 'entity.save')?.[1]).toMatchObject({
+    value: { password: '' },
+  });
+  act(() => {
+    controller.editConnection();
+    controller.patch('connectionForm', { name: '新连接', user: 'tester', hasPassword: true });
+  });
+  bridge.invoke.mockClear();
+  await act(async () => controller.saveConnection());
+  expect(controller.m.connectionDialog).toBe(true);
+  expect(bridge.invoke.mock.calls.some(([method]) => method === 'entity.save')).toBe(false);
+  await userEvent.click(screen.getByRole('button', { name: '保存连接' }));
+  expect(
+    await screen.findByText('请输入连接密码', { selector: '.ant-form-item-explain-error' }),
+  ).toBeTruthy();
+});
+
+it('uses a version table with independent edit actions, keeps failed edits open and returns from details', async () => {
+  state.versions = [
+    {
+      id: 'v',
+      workspaceId: 'default',
+      number: 'v-table',
+      description: '原说明',
+      createdAt: '2026-10-17T10:00:00Z',
+    },
+  ];
+  const normal = bridge.invoke.getMockImplementation()!;
+  let fail = true;
+  bridge.invoke.mockImplementation(async (method, params) => {
+    if (method === 'version.save') {
+      if (fail) throw new Error('保存版本失败');
+      state.versions[0].description = params.description;
+      return state.versions[0];
+    }
+    return normal(method, params);
+  });
+  await ready(<HistoryPage />);
+  act(() => controller.set('historyTab', 'versions'));
+  const row = screen.getByRole('row', { name: /v-table/ });
+  await userEvent.click(within(row).getByRole('button', { name: /^编\s*辑$/ }));
+  const dialog = await screen.findByRole('dialog', { name: '编辑版本' });
+  expect(controller.m.currentVersionId).toBe('');
+  await userEvent.clear(within(dialog).getByLabelText('版本说明'));
+  await userEvent.type(within(dialog).getByLabelText('版本说明'), '新说明');
+  await userEvent.click(within(dialog).getByRole('button', { name: /^保\s*存$/ }));
+  await screen.findByText('保存版本失败');
+  expect((within(dialog).getByLabelText('版本说明') as HTMLTextAreaElement).value).toBe('新说明');
+  fail = false;
+  await userEvent.click(within(dialog).getByRole('button', { name: /^保\s*存$/ }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '编辑版本' })).toBeNull());
+  await userEvent.click(screen.getByRole('button', { name: 'v-table' }));
+  expect(screen.getByRole('heading', { name: '关联同步记录' })).toBeTruthy();
+  act(() => controller.set('currentVersionId', ''));
+  expect(screen.getByRole('row', { name: /v-table 新说明/ })).toBeTruthy();
+});
+
 it.each<Page>(['scope', 'diff', 'history', 'settings'])(
   'creates connections in place on %s through cancel, failed save and successful save',
   async (page) => {
@@ -203,7 +270,11 @@ it.each<Page>(['scope', 'diff', 'history', 'settings'])(
     expect(controller.m.page).toBe(page);
     act(() => {
       controller.editConnection();
-      controller.patch('connectionForm', { name: '新连接', user: 'tester' });
+      controller.patch('connectionForm', {
+        name: '新连接',
+        user: 'tester',
+        password: 'fixture-only',
+      });
     });
     bridge.invoke.mockRejectedValueOnce(new Error('保存失败'));
     await act(async () => controller.saveConnection());
@@ -223,7 +294,11 @@ it('does not navigate back when a connection save finishes after leaving the sou
   act(() => {
     controller.set('page', 'scope');
     controller.editConnection();
-    controller.patch('connectionForm', { name: '新连接', user: 'tester' });
+    controller.patch('connectionForm', {
+      name: '新连接',
+      user: 'tester',
+      password: 'fixture-only',
+    });
   });
   const pending = deferred<unknown>();
   bridge.invoke.mockImplementationOnce(() => pending.promise);
@@ -284,7 +359,11 @@ it('leaves an empty group selection and blocks implicit group recreation until o
   await ready();
   act(() => {
     controller.editConnection();
-    controller.patch('connectionForm', { name: '新连接', user: 'tester' });
+    controller.patch('connectionForm', {
+      name: '新连接',
+      user: 'tester',
+      password: 'fixture-only',
+    });
   });
   expect(controller.m.connectionForm.group).toBe('');
   expect(screen.getByText('请选择连接分组')).toBeTruthy();
@@ -307,6 +386,7 @@ it('leaves an empty group selection and blocks implicit group recreation until o
   expect(bridge.invoke).toHaveBeenCalledWith('entity.save', {
     kind: 'connection',
     value: expect.objectContaining({ group: '新分组' }),
+    groupId: 'new-group',
   });
 });
 
@@ -1093,7 +1173,9 @@ describe('React business state and protocol', () => {
   it('assigns a stable id to a connection saved directly from the empty management page and invalidates old tree responses', async () => {
     await ready();
     act(() => controller.editConnection());
-    act(() => controller.patch('connectionForm', { name: '新连接', user: 'qa' }));
+    act(() =>
+      controller.patch('connectionForm', { name: '新连接', user: 'qa', password: 'fixture-only' }),
+    );
     await act(async () => {
       await controller.saveConnection();
     });
@@ -1110,6 +1192,7 @@ describe('React business state and protocol', () => {
         connectionId: id,
       });
     });
+    act(() => controller.patch('connectionForm', { password: 'fixture-only' }));
     await act(async () => {
       await controller.saveConnection();
     });
@@ -1340,15 +1423,19 @@ describe('React business state and protocol', () => {
     await userEvent.click(screen.getByRole('button', { name: '编辑连接 来源' }));
     const dialog = await screen.findByRole('dialog', { name: '编辑连接' });
     expect(dialog.textContent).not.toContain('删除');
-    await userEvent.clear(screen.getByLabelText('连接名称', { exact: true }));
-    await userEvent.type(screen.getByLabelText('连接名称', { exact: true }), '未保存');
-    await userEvent.click(screen.getByRole('button', { name: /^取\s*消$/ }));
+    fireEvent.change(within(dialog).getByLabelText('连接名称', { exact: true }), {
+      target: { value: '未保存' },
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^取\s*消$/ }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(controller.m.connectionForm.password).toBe('');
     await userEvent.click(screen.getByRole('button', { name: '编辑连接 来源' }));
-    expect(screen.getByLabelText('连接名称', { exact: true }).getAttribute('value')).toBe('来源');
+    const reopened = screen.getByRole('dialog', { name: '编辑连接' });
+    expect(within(reopened).getByLabelText('连接名称', { exact: true }).getAttribute('value')).toBe(
+      '来源',
+    );
     bridge.invoke.mockRejectedValueOnce(new Error('save failed'));
-    await userEvent.click(screen.getByRole('button', { name: '保存连接' }));
+    await userEvent.click(within(reopened).getByRole('button', { name: '保存连接' }));
     expect(controller.m.connectionDialog).toBe(true);
   }, 15000);
   it('confirms bulk deletion once, deletes only selected connections, and cleans stale selections', async () => {
@@ -1565,7 +1652,7 @@ describe('React business state and protocol', () => {
     await waitFor(() => expect(controller.m.connectionTest?.status).toBe('success'));
     expect(
       bridge.invoke.mock.calls.filter(([method]) => method === 'connections.test'),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     act(() => controller.patch('connectionForm', { password: 'changed' }));
     expect(screen.getByRole('button', { name: '测试连接' }).querySelector('.anticon')).toBeNull();
     expect(
@@ -1703,7 +1790,7 @@ describe('React business state and protocol', () => {
     const modifiedRow = screen.getByRole('checkbox', { name: '选择 dict_name' }).closest('tr')!;
     const modifiedCell = within(modifiedRow).getByText('修改字段').closest('td')!;
     expect(within(modifiedCell).getByText('数据类型、注释')).toBeTruthy();
-    const header = screen.getByText('源库定义', { selector: 'th' }).closest('tr')!;
+    const header = screen.getByRole('columnheader', { name: /^源库定义/ }).closest('tr')!;
     expect(
       within(header)
         .getAllByRole('columnheader')
@@ -1733,7 +1820,7 @@ describe('React business state and protocol', () => {
     expect(screen.queryByRole('button', { name: /更\s*多/ })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '上一步' }));
     expect(controller.m.page).toBe('scope');
-  }, 15000);
+  }, 30_000);
   it('shows the effective planned definition for a comment-only change rather than unselected source attributes', async () => {
     await ready(<DiffPage />);
     const plan = structuredClone(previewPlan);
@@ -1752,8 +1839,8 @@ describe('React business state and protocol', () => {
       "ALTER TABLE `shop_a`.`sys_dict` MODIFY COLUMN `dict_name` varchar(64) NOT NULL COMMENT '字典名称';";
     act(() => controller.commit((s) => ({ ...s, plan, currentChangeId: change.id, page: 'diff' })));
     await screen.findByText('修改了：注释');
-    expect(screen.getByText('本次计划定义', { selector: 'th' })).toBeTruthy();
-    const type = screen.getByText('数据类型', { selector: 'td' }).closest('tr')!;
+    expect(screen.getByRole('columnheader', { name: /^本次计划定义/ })).toBeTruthy();
+    const type = screen.getByRole('cell', { name: '数据类型' }).closest('tr')!;
     expect(within(type).getAllByText('varchar(64)')).toHaveLength(2);
     expect(type.classList.contains('difference-row')).toBe(false);
     expect(screen.queryByText('varchar(100)', { exact: true })).toBeNull();
@@ -3988,4 +4075,535 @@ it('discards a rollback recheck response after leaving its preview', async () =>
   });
   expect(controller.m.page).toBe('history');
   expect(controller.m.refreshResults[rollbackRefreshKey(controller.m)]).toBeUndefined();
+});
+
+describe('unified resource and history interactions', () => {
+  it('opens workspaces in place and submits membership atomically', async () => {
+    await ready(<WorkspacesPage />);
+    act(() => {
+      controller.navigate('history');
+      controller.set('scopeRemark', '保留范围备注');
+      controller.editWorkspace();
+      controller.patch('workspaceForm', { name: '新的项目', connectionIds: ['source'] });
+    });
+    expect(controller.m.page).toBe('history');
+    expect(screen.getByRole('dialog', { name: '新建工作区' })).toBeTruthy();
+    await act(async () => controller.saveWorkspace());
+    expect(controller.m.page).toBe('history');
+    expect(controller.m.scopeRemark).toBe('保留范围备注');
+    const saves = bridge.invoke.mock.calls.filter(([method]) => method === 'entity.save');
+    expect(saves).toHaveLength(1);
+    expect(saves[0][1]).toEqual({
+      kind: 'workspace',
+      value: expect.objectContaining({ connectionIds: ['source'] }),
+    });
+  });
+
+  it('discovers all databases from the current draft and preserves candidates when selecting', async () => {
+    const normal = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (method, params) =>
+      method === 'connections.test'
+        ? { serverVersion: '8.4.8' }
+        : method === 'databases.list' && params.config
+          ? ['a', 'b', 'new_db']
+          : normal(method, params),
+    );
+    await ready();
+    act(() => controller.editConnection(state.connections[0]));
+    await waitFor(() => expect(controller.m.connectionDiscovery?.status).toBe('success'));
+    expect(controller.m.connectionDiscovery?.databases).toContain('new_db');
+    expect(bridge.invoke).toHaveBeenCalledWith('databases.list', {
+      config: expect.objectContaining({ id: 'source', databases: ['a', 'b'] }),
+    });
+    act(() => controller.set('databasesText', 'new_db'));
+    expect(controller.m.connectionDiscovery?.status).toBe('success');
+    expect(screen.getByRole('combobox', { name: '指定数据库' })).toBeTruthy();
+    act(() => controller.patch('connectionForm', { host: '192.0.2.99' }));
+    expect(controller.m.connectionDiscovery).toBeUndefined();
+    expect(screen.getByRole('textbox', { name: '指定数据库' })).toBeTruthy();
+    expect(controller.m.databasesText).toBe('new_db');
+  });
+
+  it('keeps successful manual tests when database enumeration fails and rejects late lists', async () => {
+    const normal = bridge.invoke.getMockImplementation()!;
+    const list = deferred<string[]>();
+    bridge.invoke.mockImplementation(async (method, params) =>
+      method === 'connections.test'
+        ? { serverVersion: '8.4.8' }
+        : method === 'databases.list' && params.config
+          ? list.promise
+          : normal(method, params),
+    );
+    await ready();
+    act(() => {
+      controller.editConnection();
+      controller.patch('connectionForm', { name: '连接', user: 'tester' });
+      controller.set('databasesText', 'existing');
+    });
+    let test!: Promise<unknown>;
+    act(() => {
+      test = controller.testConnection();
+    });
+    await waitFor(() => expect(controller.m.connectionDiscovery?.status).toBe('loading'));
+    await act(async () => {
+      list.reject(new Error('没有列表权限'));
+      await test;
+    });
+    expect(controller.m.connectionTest?.status).toBe('success');
+    expect(controller.m.connectionDiscovery?.status).toBe('error');
+    expect(controller.m.databasesText).toBe('existing');
+    expect(screen.getByRole('textbox', { name: '指定数据库' })).toBeTruthy();
+    const late = deferred<string[]>();
+    bridge.invoke.mockImplementation(async (method, params) =>
+      method === 'databases.list' && params.config ? late.promise : normal(method, params),
+    );
+    let load!: Promise<void>;
+    act(() => {
+      load = controller.discoverConnection(false);
+      controller.closeConnection();
+      controller.editConnection();
+    });
+    await act(async () => {
+      late.resolve(['old']);
+      await load;
+    });
+    expect(controller.m.connectionDiscovery).toBeUndefined();
+  });
+
+  it('merges template metadata, keeps per-mode drafts and blocks missing source tables', async () => {
+    state.templates[0].tables.push({
+      name: 'removed',
+      structure: true,
+      data: false,
+      keyColumns: [],
+    });
+    await ready(<TemplatesPage />);
+    act(() => controller.editTemplate(state.templates[0]));
+    await waitFor(() => expect(controller.m.templateLoading).toBe(false));
+    expect(controller.m.templateFilter).toBe('selected');
+    expect(controller.m.templateForm.tables.find((table) => table.name === 'dict')?.comment).toBe(
+      '字典',
+    );
+    expect(
+      controller.m.templateForm.tables.find((table) => table.name === 'removed')?.sourceMissing,
+    ).toBe(true);
+    act(() => {
+      controller.set('templateSearch', '字典');
+      controller.set('templateFilter', 'selected');
+      controller.setTemplateMode('data');
+      controller.updateTemplateTable('dict', { data: true, keyText: 'code' });
+      controller.setTemplateMode('structure');
+    });
+    expect(controller.m.templateSearch).toBe('字典');
+    expect(controller.m.templateFilter).toBe('selected');
+    expect(controller.m.templateForm.tables.find((table) => table.name === 'dict')?.structure).toBe(
+      true,
+    );
+    await act(async () => controller.saveTemplate());
+    expect(controller.m.templateDialog).toBe(true);
+    expect(bridge.invoke.mock.calls.filter(([method]) => method === 'entity.save')).toHaveLength(0);
+    act(() => {
+      controller.updateTemplateTable('removed', { sourceMissing: false });
+      controller.setTemplateMode('data');
+    });
+    expect(controller.m.templateForm.tables.find((table) => table.name === 'dict')?.keyText).toBe(
+      'code',
+    );
+    expect(controller.m.templateForm.tables.some((table) => table.name === 'removed')).toBe(false);
+  });
+
+  it('requires the exact deletion identity, retains dialogs on error and preserves version records', async () => {
+    state.records = [
+      {
+        id: 'SYNC-one',
+        workspaceId: 'default',
+        createdAt: '',
+        mode: 'SAVE_ONLY',
+        status: 'UNEXECUTED',
+        remark: '原备注',
+        parentId: '',
+        archivePath: '',
+        selectedIds: [],
+        results: [],
+      },
+    ];
+    state.versions = [
+      {
+        id: 'v',
+        workspaceId: 'default',
+        number: '1.0',
+        description: '版本发布说明\n保留记录',
+        createdAt: '',
+      },
+    ];
+    state.versionLinks = { 'SYNC-one': 'v' };
+    const normal = bridge.invoke.getMockImplementation()!;
+    let fail = true;
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'version.delete') {
+        if (fail) throw new Error('删除失败');
+        state.versions = [];
+        state.versionLinks = {};
+        return { ok: true };
+      }
+      if (method === 'record.updateRemark') {
+        state.records[0].remark = params.remark;
+        return { ok: true };
+      }
+      return normal(method, params);
+    });
+    await ready(<RecordManagementDialogs />);
+    act(() => {
+      controller.editRecordRemark('SYNC-one');
+      controller.set('recordRemarkText', '修改后的备注');
+    });
+    await act(async () => controller.saveRecordRemark());
+    expect(controller.m.state.records[0].remark).toBe('修改后的备注');
+    act(() => controller.requestHistoryDeletion('record', 'SYNC-one'));
+    expect(screen.getByRole('region', { name: '记录备注' }).textContent).toContain('修改后的备注');
+    act(() => controller.set('deleteRequest', undefined));
+    act(() => controller.requestHistoryDeletion('version', 'v'));
+    const dialog = screen.getByRole('dialog', { name: '删除版本' });
+    expect(within(dialog).getByRole('region', { name: '版本说明' }).textContent).toContain(
+      '版本发布说明\n保留记录',
+    );
+    expect(
+      (within(dialog).getByRole('button', { name: '永久删除' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: '删除确认标识' }), {
+      target: { value: '1.0' },
+    });
+    await userEvent.click(within(dialog).getByRole('button', { name: '永久删除' }));
+    await screen.findByText('删除失败');
+    expect(controller.m.deleteRequest?.id).toBe('v');
+    fail = false;
+    await userEvent.click(within(dialog).getByRole('button', { name: '永久删除' }));
+    await waitFor(() => expect(controller.m.deleteRequest).toBeUndefined());
+    expect(controller.m.state.records).toHaveLength(1);
+    expect(controller.m.state.versionLinks).toEqual({});
+  });
+});
+
+it('does not close a reopened remark editor after an older save completes', async () => {
+  state.records = [
+    {
+      id: 'SYNC-one',
+      workspaceId: 'default',
+      createdAt: '',
+      mode: 'SAVE_ONLY',
+      status: 'UNEXECUTED',
+      remark: '原备注',
+      parentId: '',
+      archivePath: '',
+      selectedIds: [],
+      results: [],
+    },
+  ];
+  const normal = bridge.invoke.getMockImplementation()!;
+  const saved = deferred<unknown>();
+  bridge.invoke.mockImplementation(async (method, params) =>
+    method === 'record.updateRemark' ? saved.promise : normal(method, params),
+  );
+  await ready();
+  act(() => {
+    controller.editRecordRemark('SYNC-one');
+    controller.set('recordRemarkText', '旧提交');
+  });
+  let save!: Promise<void>;
+  act(() => {
+    save = controller.saveRecordRemark();
+    controller.set('recordRemarkId', '');
+    controller.editRecordRemark('SYNC-one');
+    controller.set('recordRemarkText', '重开的新草稿');
+  });
+  await act(async () => {
+    saved.resolve({ ok: true });
+    await save;
+  });
+  expect(controller.m.recordRemarkId).toBe('SYNC-one');
+  expect(controller.m.recordRemarkText).toBe('重开的新草稿');
+});
+
+it('shows table loading feedback and rejects a late table after navigation', async () => {
+  const normal = bridge.invoke.getMockImplementation()!;
+  const table = deferred<unknown>();
+  bridge.invoke.mockImplementation(async (method, params) =>
+    method === 'table.get' ? table.promise : normal(method, params),
+  );
+  await ready();
+  let loading!: Promise<void>;
+  act(() => {
+    loading = controller.openTable({
+      key: 'source/a/dict',
+      title: 'dict',
+      type: 'table',
+      table: 'dict',
+      ref: { connectionId: 'source', database: 'a' },
+    });
+  });
+  expect(controller.m.openingTable).toBe('a/dict');
+  act(() => controller.navigate('history'));
+  expect(controller.m.openingTable).toBeUndefined();
+  await act(async () => {
+    table.resolve(structuredClone(previewTable));
+    await loading;
+  });
+  expect(controller.m.page).toBe('history');
+  expect(controller.m.currentTable).toBeUndefined();
+});
+
+describe('首次进入页面与记录路径', () => {
+  it('reinitializes a list on every entry while preserving unrelated sync drafts', async () => {
+    await ready();
+    act(() =>
+      controller.commit((m) => ({
+        ...m,
+        page: 'history',
+        historySearch: 'old',
+        historyFilter: 'FAILED',
+        historySelection: ['old'],
+        currentVersionId: 'old',
+        scopeRemark: '保留范围备注',
+      })),
+    );
+    await act(async () => controller.enterPage({ page: 'history' }));
+    expect(controller.m.historySearch).toBe('');
+    expect(controller.m.historyFilter).toBe('');
+    expect(controller.m.historySelection).toEqual([]);
+    expect(controller.m.currentVersionId).toBe('');
+    expect(controller.m.scopeRemark).toBe('保留范围备注');
+    const entry = controller.m.pageEntry;
+    await act(async () => controller.enterPage({ page: 'history' }));
+    expect(controller.m.pageEntry).toBe(entry + 1);
+  });
+  it('starts a new sync from breadcrumbs but keeps the ordinary previous-step navigation', async () => {
+    await ready();
+    act(() =>
+      controller.commit((m) => ({
+        ...m,
+        page: 'diff',
+        sourceKey: 'source/a',
+        targetKeys: ['source/b'],
+        scopeRemark: 'old',
+        plan: structuredClone(previewPlan),
+      })),
+    );
+    act(() => controller.navigate('scope'));
+    expect(controller.m.sourceKey).toBe('source/a');
+    await act(async () => controller.enterPage({ page: 'scope' }));
+    expect(controller.m.sourceKey).toBe('');
+    expect(controller.m.targetKeys).toEqual([]);
+    expect(controller.m.plan).toBeUndefined();
+    expect(controller.m.scopeRemark).toBe('');
+  });
+  it('preserves a running comparison when reentering new sync', async () => {
+    await ready();
+    act(() =>
+      controller.commit((m) => ({
+        ...m,
+        page: 'settings',
+        sourceKey: 'source/a',
+        targetKeys: ['source/b'],
+        compareTask: {
+          compareId: 'active',
+          status: 'RUNNING',
+          progress: { table: '', phase: 'reading', completed: 0, total: 1, rows: 0 },
+        },
+      })),
+    );
+    await act(async () => controller.enterPage({ page: 'scope' }));
+    expect(controller.m.compareTask?.compareId).toBe('active');
+    expect(controller.m.sourceKey).toBe('source/a');
+    expect(controller.m.targetKeys).toEqual(['source/b']);
+  });
+  it('resets difference view from the saved plan without comparing or executing', async () => {
+    await ready();
+    act(() =>
+      controller.commit((m) => ({
+        ...m,
+        page: 'diff',
+        plan: structuredClone(previewPlan),
+        diffSearch: 'old',
+        selectedIds: [],
+      })),
+    );
+    bridge.invoke.mockClear();
+    await act(async () => controller.enterPage({ page: 'diff' }));
+    expect(controller.m.diffSearch).toBe('');
+    expect(controller.m.selectedIds).toEqual(
+      previewPlan.targets
+        .flatMap((t) => t.changes)
+        .filter((ch) => ch.selected && !ch.blocked)
+        .map((ch) => ch.id),
+    );
+    expect(
+      bridge.invoke.mock.calls.some(([method]) =>
+        ['sync.compare', 'sync.compare.start', 'sync.save', 'rollback.execute'].includes(method),
+      ),
+    ).toBe(false);
+  });
+  it('retains the version branch through record reload and rollback, then clears it for list entry', async () => {
+    const record: State['records'][number] = {
+      id: 'r',
+      workspaceId: 'default',
+      mode: 'SAVE_ONLY',
+      status: 'UNEXECUTED',
+      remark: '',
+      createdAt: '',
+      parentId: '',
+      archivePath: '',
+      selectedIds: [],
+      results: [],
+    };
+    state.records = [record];
+    state.versions = [
+      { id: 'v', workspaceId: 'default', number: 'v1', description: '', createdAt: '' },
+    ];
+    state.versionLinks = { r: 'v' };
+    const normal = bridge.invoke.getMockImplementation()!;
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'record.get') return { record, events: [], external: {}, files: [] };
+      if (method === 'rollback.preview') return { recordId: 'r', items: [] };
+      return normal(method, params);
+    });
+    await ready();
+    await act(async () =>
+      controller.enterPage({ page: 'history', tab: 'versions', versionId: 'v' }),
+    );
+    await act(async () => controller.openRecord('r'));
+    expect(controller.m.recordOrigin).toEqual({ versionId: 'v' });
+    await act(async () => controller.openRecord('r'));
+    expect(controller.m.recordOrigin).toEqual({ versionId: 'v' });
+    await act(async () =>
+      controller.enterPage({ page: 'rollback', recordId: 'r', origin: { versionId: 'v' } }),
+    );
+    expect(breadcrumbs(controller.m).map((i) => i.label)).toEqual([
+      '测试项目',
+      '同步历史',
+      '版本',
+      'v1',
+      'r',
+      '回滚预览',
+    ]);
+    await act(async () =>
+      controller.enterPage({ page: 'record', recordId: 'r', origin: { versionId: 'v' } }),
+    );
+    expect(controller.m.recordOrigin).toEqual({ versionId: 'v' });
+    await act(async () => controller.enterPage({ page: 'history', tab: 'records' }));
+    await act(async () => controller.openRecord('r'));
+    expect(controller.m.recordOrigin).toBeUndefined();
+  });
+  it('rejects late detail loads after leaving and permits retry after an entry error', async () => {
+    await ready();
+    const normal = bridge.invoke.getMockImplementation()!;
+    const late = deferred<unknown>();
+    bridge.invoke.mockImplementation(async (method, params) =>
+      method === 'record.get' ? late.promise : normal(method, params),
+    );
+    let opening!: Promise<void>;
+    act(() => {
+      opening = controller.enterPage({ page: 'record', recordId: 'r' });
+    });
+    await waitFor(() => expect(bridge.invoke).toHaveBeenCalledWith('record.get', { id: 'r' }));
+    act(() => controller.navigate('settings'));
+    await act(async () => {
+      late.resolve({
+        record: { id: 'r', workspaceId: 'default' },
+        files: [],
+        external: {},
+        events: [],
+      });
+      await opening;
+    });
+    expect(controller.m.page).toBe('settings');
+    expect(controller.m.detail).toBeUndefined();
+    bridge.invoke.mockImplementation(async (method, params) => {
+      if (method === 'record.get') throw new Error('读取失败');
+      return normal(method, params);
+    });
+    await act(async () => controller.enterPage({ page: 'record', recordId: 'r' }));
+    expect(controller.m.entryError).toBe('读取失败');
+    bridge.invoke.mockImplementation(async (method, params) =>
+      method === 'record.get'
+        ? { record: { id: 'r', workspaceId: 'default' }, files: [], external: {}, events: [] }
+        : normal(method, params),
+    );
+    await act(async () => controller.enterPage({ page: 'record', recordId: 'r' }));
+    expect(controller.m.entryError).toBeUndefined();
+    expect(controller.m.detail?.record.id).toBe('r');
+  });
+  it('clears settings and export drafts only when explicitly reentering those pages', async () => {
+    await ready();
+    act(() =>
+      controller.commit((m) => ({
+        ...m,
+        settingsDirty: true,
+        settingsForm: { ...m.settingsForm, concurrency: 12 },
+        exportSource: 'source/a',
+        includeDrop: true,
+        exportSql: 'old',
+      })),
+    );
+    await act(async () => controller.enterPage({ page: 'settings' }));
+    expect(controller.m.settingsForm.concurrency).toBe(state.settings.concurrency);
+    expect(controller.m.settingsDirty).toBe(false);
+    await act(async () => controller.enterPage({ page: 'export' }));
+    expect(controller.m.includeDrop).toBe(false);
+    expect(controller.m.exportSql).toBe('');
+    expect(controller.m.exportTables.every((t) => !t.selected)).toBe(true);
+  });
+  it('marks PostgreSQL conditional requirements and keeps the saved password optional', async () => {
+    await ready();
+    act(() => controller.editConnection(state.connections[0]));
+    let dialog = screen.getByRole('dialog', { name: '编辑连接' });
+    expect(
+      within(dialog)
+        .getByLabelText('密码')
+        .closest('.ant-form-item')
+        ?.querySelector('.ant-form-item-required'),
+    ).toBeNull();
+    act(() =>
+      controller.patch('connectionForm', {
+        databaseType: 'postgresql',
+        initialDatabase: 'postgres',
+        ssl: true,
+      }),
+    );
+    dialog = screen.getByRole('dialog', { name: '编辑连接' });
+    expect(within(dialog).getByLabelText('初始连接数据库').getAttribute('aria-required')).toBe(
+      'true',
+    );
+    expect(
+      within(dialog)
+        .getByLabelText('CA 证书（PEM，启用 SSL 时必填）')
+        .getAttribute('aria-required'),
+    ).toBe('true');
+  });
+});
+
+it('does not navigate to connections when an older import finishes after a fresh page entry', async () => {
+  await ready();
+  const row = { ...state.connections[0], id: 'imported', credentialStatus: '', selected: true };
+  act(() =>
+    controller.commit((m) => ({ ...m, page: 'import', importRows: [row], duplicateMode: 'copy' })),
+  );
+  const normal = bridge.invoke.getMockImplementation()!;
+  const saved = deferred<unknown>();
+  bridge.invoke.mockImplementation(async (method, params) =>
+    method === 'entity.save' ? saved.promise : normal(method, params),
+  );
+  let submission!: Promise<void>;
+  act(() => {
+    submission = controller.submitImport();
+  });
+  await waitFor(() =>
+    expect(bridge.invoke.mock.calls.some(([method]) => method === 'entity.save')).toBe(true),
+  );
+  await act(async () => controller.enterPage({ page: 'history' }));
+  await act(async () => {
+    saved.resolve({ ok: true });
+    await submission;
+  });
+  expect(controller.m.page).toBe('history');
+  expect(controller.m.importRows[0]?.id).toBe('imported');
 });

@@ -10,6 +10,34 @@ import type {
   RollbackPlan,
 } from './types';
 import { defaultStructureOptions } from './structure-options';
+
+it('rejects duplicate trimmed version numbers, preserves creation dates and does not partially assign records', async () => {
+  const params = {
+    workspaceId: 'default',
+    number: ' v-unique-test ',
+    description: '示例',
+    recordIds: [],
+  };
+  const first = await previewBridge.invoke<import('./types').Version>('version.save', params);
+  expect(first.number).toBe('v-unique-test');
+  await expect(previewBridge.invoke('version.save', params)).rejects.toThrow(
+    '工作区内版本号已存在',
+  );
+  await expect(
+    previewBridge.invoke('version.save', { ...first, description: '修改', recordIds: [] }),
+  ).resolves.toMatchObject({ createdAt: first.createdAt });
+  await expect(
+    previewBridge.invoke('version.save', {
+      ...params,
+      number: 'v-invalid-records',
+      recordIds: ['missing-record'],
+    }),
+  ).rejects.toThrow('版本与记录必须在同一工作区');
+  const after = await previewBridge.invoke<State>('state.load');
+  expect(after.versions.filter((version) => version.number === 'v-unique-test')).toHaveLength(1);
+  expect(after.versions.some((version) => version.number === 'v-invalid-records')).toBe(false);
+  await previewBridge.invoke('version.delete', { id: first.id, confirmation: first.number });
+});
 import { recordScriptFiles } from './sync-scripts';
 
 it('deletes only empty preview groups and preserves connections and remaining order', async () => {
@@ -273,7 +301,7 @@ it('blocks data differences when source columns or matching keys are unavailable
   ]);
 });
 
-it('keeps connection credentials private and preserves blank-password edits and clear-password behavior', async () => {
+it('keeps credentials private, preserves saved passwords on blank edits and rejects clearing required passwords', async () => {
   const before = await previewBridge.invoke<State>('state.load');
   const value = {
     ...before.connections[0],
@@ -295,18 +323,20 @@ it('keeps connection credentials private and preserves blank-password edits and 
   await expect(previewBridge.invoke('connections.test', { id: value.id })).rejects.toThrow(
     '密码验证失败',
   );
-  await previewBridge.invoke('entity.save', {
-    kind: 'connection',
-    value: { ...value, password: '', clearPassword: true },
-  });
+  await expect(
+    previewBridge.invoke('entity.save', {
+      kind: 'connection',
+      value: { ...value, password: '', clearPassword: true },
+    }),
+  ).rejects.toThrow('请输入连接密码');
   const after = await previewBridge.invoke<State>('state.load');
   expect(after.connections.find((connection) => connection.id === value.id)?.hasPassword).toBe(
-    false,
+    true,
   );
   expect(JSON.stringify(after.connections)).not.toContain('fictional-secret');
-  await expect(previewBridge.invoke('connections.test', { id: value.id })).resolves.toMatchObject({
-    serverVersion: expect.any(String),
-  });
+  await expect(previewBridge.invoke('connections.test', { id: value.id })).rejects.toThrow(
+    '密码验证失败',
+  );
   await previewBridge.invoke('entity.delete', { kind: 'connection', id: value.id });
 });
 

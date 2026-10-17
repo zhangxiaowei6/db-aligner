@@ -1,7 +1,8 @@
 import { AsyncButton as Button } from './AsyncButton';
+import { Field } from './shared';
 import { Form, Input, Modal, Select, type InputRef } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useController } from '../controller';
 
 export function ConnectionOrganizationDialogs() {
@@ -26,7 +27,7 @@ export function ConnectionOrganizationDialogs() {
         }}
       >
         <Form layout="vertical" onFinish={() => void c.saveGroup()}>
-          <Form.Item label="分组名称">
+          <Field label="分组名称" required>
             <Input
               ref={nameInput}
               aria-label="分组名称"
@@ -37,7 +38,7 @@ export function ConnectionOrganizationDialogs() {
               onChange={(event) => c.set('groupName', event.target.value)}
               onPressEnter={() => void c.saveGroup()}
             />
-          </Form.Item>
+          </Field>
         </Form>
       </Modal>
       <Modal
@@ -53,25 +54,30 @@ export function ConnectionOrganizationDialogs() {
         <p>
           {m.state.connections.find((connection) => connection.id === m.moveConnectionId)?.name}
         </p>
-        <Select
-          aria-label="目标分组"
-          placeholder="选择要移入的连接分组"
-          showSearch
-          optionFilterProp="label"
-          style={{ width: '100%' }}
-          value={m.moveGroupId || undefined}
-          options={m.state.connectionGroups.map((group) => ({
-            value: group.id,
-            label: group.name,
-          }))}
-          onChange={(id) => c.set('moveGroupId', id)}
-        />
+        <Form layout="vertical">
+          <Field label="目标分组" required>
+            <Select
+              aria-label="目标分组"
+              placeholder="选择要移入的连接分组"
+              showSearch
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+              value={m.moveGroupId || undefined}
+              options={m.state.connectionGroups.map((group) => ({
+                value: group.id,
+                label: group.name,
+              }))}
+              onChange={(id) => c.set('moveGroupId', id)}
+            />
+          </Field>
+        </Form>
       </Modal>
     </>
   );
 }
 
-export function ConnectionGroupSelect() {
+export function ConnectionGroupSelect(props: { id?: string; 'aria-required'?: boolean }) {
+  const nameId = useId();
   const c = useController();
   const { m } = c;
   const [name, setName] = useState('');
@@ -95,6 +101,7 @@ export function ConnectionGroupSelect() {
   }
   return (
     <Select
+      {...props}
       aria-label="连接分组"
       placeholder="请选择连接分组"
       showSearch
@@ -107,28 +114,32 @@ export function ConnectionGroupSelect() {
         <>
           {menu}
           <div className="group-select-create">
-            <Input
-              aria-label="新增连接分组名称"
-              placeholder="新分组名称"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  void create();
-                }
-              }}
-            />
-            <Button
-              aria-label="新增"
-              icon={<PlusOutlined aria-hidden />}
-              loading={saving}
-              disabled={!name.trim()}
-              onClick={() => create()}
-            >
-              新增
-            </Button>
+            <Form.Item label="新分组名称" htmlFor={nameId} required>
+              <Input
+                id={nameId}
+                aria-required="true"
+                aria-label="新增连接分组名称"
+                placeholder="新分组名称"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void create();
+                  }
+                }}
+              />
+              <Button
+                aria-label="新增"
+                icon={<PlusOutlined aria-hidden />}
+                loading={saving}
+                disabled={!name.trim()}
+                onClick={() => create()}
+              >
+                新增
+              </Button>
+            </Form.Item>
           </div>
         </>
       )}

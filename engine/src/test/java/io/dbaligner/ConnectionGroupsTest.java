@@ -164,6 +164,7 @@ class ConnectionGroupsTest {
   void serviceExportsImportsOrganizationAndRejectsFractionalPorts() throws Exception {
     JsonNode exported;
     try (var service = new Service(root.resolve("source"), ignored -> {})) {
+      service.store.put("workspace", "second", Map.of("id", "second", "name", "第二工作区"));
       for (String id : List.of("a", "b"))
         service.handle(
             "entity.save", Json.node(Map.of("kind", "connection", "value", connection(id, "分组"))));

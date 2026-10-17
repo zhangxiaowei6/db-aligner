@@ -17,11 +17,15 @@ public final class Service implements AutoCloseable {
   private final External external;
   private final Comparisons comparisons;
   private final ConnectionGroups connectionGroups;
+  private final RecordManagement recordManagement;
+  private final java.util.concurrent.locks.ReentrantReadWriteLock resourceGate =
+      new java.util.concurrent.locks.ReentrantReadWriteLock(true);
   private final UpdateGate updateGate = new UpdateGate();
   private final Map<String, SyncPlan> plans = new java.util.concurrent.ConcurrentHashMap<>();
 
   public Service(Path root, Consumer<Object> emit) throws Exception {
     store = new Store(root);
+    recordManagement = new RecordManagement(store);
     connectionGroups = new ConnectionGroups(store);
     connectionGroups.migrate();
     db = new Database(store);
@@ -36,7 +40,36 @@ public final class Service implements AutoCloseable {
     if (method.equals("engine.prepareUpdate"))
       return updateGate.prepare(() -> jobs.busy() || comparisons.busy());
     if (method.equals("engine.resumeUpdate")) return updateGate.resume();
-    return updateGate.request(() -> dispatch(method, p));
+    if (List.of("sync.compare", "sync.compare.get", "sync.compare.cancel", "record.cancel")
+        .contains(method)) return updateGate.request(() -> dispatch(method, p));
+    return updateGate.request(
+        () -> {
+          boolean mutation =
+              List.of(
+                      "entity.save",
+                      "entity.delete",
+                      "connectionGroups.save",
+                      "connectionGroups.delete",
+                      "connectionGroups.move",
+                      "connections.move",
+                      "record.updateRemark",
+                      "record.delete",
+                      "version.delete",
+                      "version.save",
+                      "archives.clear",
+                      "backup.export",
+                      "backup.prepareRestore",
+                      "backup.finishRestore",
+                      "config.import")
+                  .contains(method);
+          var lock = mutation ? resourceGate.writeLock() : resourceGate.readLock();
+          lock.lock();
+          try {
+            return dispatch(method, p);
+          } finally {
+            lock.unlock();
+          }
+        });
   }
 
   private Object dispatch(String method, JsonNode p) throws Exception {
@@ -64,8 +97,16 @@ public final class Service implements AutoCloseable {
               "settings",
               store.get("settings", "global"),
               "external",
-              store.list("external"));
-      case "entity.save" -> saveEntity(p.path("kind").asText(), p.path("value"));
+              store.list("external"),
+              "pendingDeletions",
+              recordManagement.pending());
+      case "entity.save" ->
+          store.transaction(
+              () ->
+                  saveEntity(
+                      p.path("kind").asText(),
+                      p.path("value"),
+                      p.has("groupId") ? p.path("groupId").asText() : null));
       case "connectionGroups.save" ->
           connectionGroups.save(p.path("id").asText(), p.path("name").asText());
       case "connections.move" -> connectionGroups.move(p);
@@ -75,10 +116,30 @@ public final class Service implements AutoCloseable {
         String kind = p.path("kind").asText();
         if (!List.of("workspace", "connection", "template").contains(kind))
           throw new IllegalArgumentException("不允许删除该类型");
-        if (kind.equals("workspace") && store.list("workspace").size() <= 1)
-          throw new IllegalArgumentException("至少保留一个工作区");
         if (jobs.busy()) throw new IllegalArgumentException("执行中暂不可删除配置");
-        store.delete(kind, p.path("id").asText());
+        if (comparisons.busy() && !kind.equals("template"))
+          throw new IllegalArgumentException("比较中暂不可删除工作区或连接");
+        store.transaction(
+            () -> {
+              String id = p.path("id").asText();
+              if (store.get(kind, id) == null) throw new IllegalArgumentException("配置不存在");
+              if (kind.equals("workspace")) {
+                if (store.list("workspace").size() <= 1)
+                  throw new IllegalArgumentException("至少保留一个工作区");
+                if (comparisons.busy()) throw new IllegalArgumentException("比较中暂不可删除工作区");
+                if (store.list("connection").stream()
+                    .anyMatch(c -> Json.strings(c.path("workspaceIds")).contains(id)))
+                  throw new IllegalArgumentException("工作区仍有关联连接，请先移除关联");
+                for (String child : List.of("template", "record", "version"))
+                  if (store.list(child).stream()
+                      .anyMatch(v -> v.path("workspaceId").asText().equals(id)))
+                    throw new IllegalArgumentException("工作区仍有模板、同步记录或版本，请先处理关联内容");
+                plans.values().removeIf(plan -> plan.workspaceId.equals(id));
+              }
+              store.delete(kind, id);
+              if (kind.equals("connection")) syncWorkspaceConnections();
+              return null;
+            });
         yield Map.of("ok", true);
       }
       case "connections.test" -> {
@@ -96,7 +157,10 @@ public final class Service implements AutoCloseable {
           yield Map.of("ok", true, "serverVersion", db.version(c));
         }
       }
-      case "databases.list" -> db.databases(p.path("connectionId").asText());
+      case "databases.list" ->
+          p.path("config").isObject()
+              ? db.databases(p.path("config"))
+              : db.databases(p.path("connectionId").asText());
       case "schemas.list" -> db.schemas(ref(p.path("ref")));
       case "database.capabilities" -> db.capabilities(ref(p.path("ref")));
       case "tables.list" -> db.tables(ref(p.path("ref")));
@@ -106,7 +170,7 @@ public final class Service implements AutoCloseable {
       case "sync.compare.get" -> comparisons.get(p.path("compareId").asText());
       case "sync.compare.cancel" -> comparisons.cancel(p.path("compareId").asText());
       case "sync.compare" -> {
-        String id = startComparison(p).get("compareId").toString();
+        String id = ((Map<?, ?>) handle("sync.compare.start", p)).get("compareId").toString();
         Map<String, Object> result;
         do {
           Thread.sleep(25);
@@ -120,13 +184,24 @@ public final class Service implements AutoCloseable {
       }
       case "sync.save" -> {
         var plan = plans.get(p.path("planId").asText());
-        if (plan == null) throw new IllegalArgumentException("比较计划已过期，请重新比较");
+        if (plan == null || store.get("workspace", plan.workspaceId) == null)
+          throw new IllegalArgumentException("比较计划已过期，请重新比较");
         yield jobs.save(
             plan,
             Json.strings(p.path("selectedIds")),
             p.path("mode").asText(),
             p.path("remark").asText());
       }
+      case "record.updateRemark" -> {
+        if (jobs.busy(text(p, "id"))) throw new IllegalArgumentException("请等待本记录执行结束后编辑备注");
+        yield recordManagement.remark(text(p, "id"), text(p, "remark"));
+      }
+      case "record.delete" -> {
+        if (jobs.busy(text(p, "id"))) throw new IllegalArgumentException("请等待本记录执行结束后删除记录");
+        yield recordManagement.deleteRecord(text(p, "id"), text(p, "confirmation"));
+      }
+      case "version.delete" ->
+          recordManagement.deleteVersion(text(p, "id"), text(p, "confirmation"));
       case "record.get" -> {
         String id = p.path("id").asText();
         var r = store.get("record", id);
@@ -179,6 +254,8 @@ public final class Service implements AutoCloseable {
       case "record.verify" -> external.audit(p.path("id").asText());
       case "schema.export" -> schemaExport(Json.MAPPER.treeToValue(p, SchemaExportOptions.class));
       case "backup.export" -> {
+        if (!recordManagement.pending().isEmpty())
+          throw new IllegalArgumentException("请先完成待处理的档案清理再备份");
         if (jobs.busy()) throw new IllegalArgumentException("请等待执行任务结束后备份");
         Backup.exportAll(store, Path.of(p.path("destination").asText()));
         yield Map.of("ok", true);
@@ -229,8 +306,12 @@ public final class Service implements AutoCloseable {
           throw new IllegalArgumentException("配置格式不正确");
         connectionGroups.importGroups(config.path("connectionGroups"));
         for (String kind : List.of("workspace", "connection", "template"))
-          for (JsonNode item : config.path(kind.equals("workspace") ? "workspaces" : kind + "s"))
-            saveEntity(kind, item);
+          for (JsonNode item : config.path(kind.equals("workspace") ? "workspaces" : kind + "s")) {
+            var value = (ObjectNode) item.deepCopy();
+            if (kind.equals("workspace")) value.remove("connectionIds");
+            saveEntity(kind, value);
+          }
+        syncWorkspaceConnections();
         yield Map.of("ok", true);
       }
       case "archives.clear" -> {
@@ -263,6 +344,10 @@ public final class Service implements AutoCloseable {
   }
 
   private Object saveEntity(String kind, JsonNode value) throws Exception {
+    return store.transaction(() -> saveEntity(kind, value, null));
+  }
+
+  private Object saveEntity(String kind, JsonNode value, String groupId) throws Exception {
     if (!List.of("workspace", "connection", "template", "settings").contains(kind)
         || !value.isObject()) throw new IllegalArgumentException("无效配置类型");
     var v = (ObjectNode) value.deepCopy();
@@ -320,11 +405,64 @@ public final class Service implements AutoCloseable {
           || v.path("port").asInt() < 1
           || v.path("port").asInt() > 65535) throw new IllegalArgumentException("请填写有效的服务器、端口和用户");
     }
-    return kind.equals("connection") ? connectionGroups.saveConnection(v) : store.put(kind, id, v);
+    if (kind.equals("connection")) {
+      if (groupId != null) {
+        var group = store.get("connectionGroup", groupId);
+        if (group == null) throw new IllegalArgumentException("分组已删除，请重新选择");
+        v.put("group", group.path("name").asText());
+      }
+      for (String workspaceId : Json.strings(v.path("workspaceIds")))
+        if (store.get("workspace", workspaceId) == null)
+          throw new IllegalArgumentException("关联工作区已删除，请重新选择");
+      var saved = connectionGroups.saveConnection(v);
+      syncWorkspaceConnections();
+      return saved;
+    }
+    if (kind.equals("template") && store.get("workspace", v.path("workspaceId").asText()) == null)
+      throw new IllegalArgumentException("工作区已删除，请重新选择");
+    if (kind.equals("workspace") && v.has("connectionIds")) {
+      var ids = Json.strings(v.path("connectionIds"));
+      for (String connectionId : ids)
+        if (store.get("connection", connectionId) == null)
+          throw new IllegalArgumentException("关联连接已删除，请重新选择");
+      for (var connection : store.list("connection")) {
+        var copy = (ObjectNode) connection.deepCopy();
+        var workspaces = new ArrayList<>(Json.strings(copy.path("workspaceIds")));
+        workspaces.remove(id);
+        if (ids.contains(copy.path("id").asText())) workspaces.add(id);
+        copy.set("workspaceIds", Json.node(workspaces));
+        store.put("connection", copy.path("id").asText(), copy);
+      }
+    }
+    return store.put(kind, id, v);
+  }
+
+  private String text(JsonNode parameters, String field) {
+    if (!parameters.path(field).isTextual()) throw new IllegalArgumentException("参数必须为文本：" + field);
+    return parameters.path(field).asText();
+  }
+
+  private void syncWorkspaceConnections() throws Exception {
+    var connections = store.list("connection");
+    for (var workspace : store.list("workspace")) {
+      if (!workspace.has("connectionIds")) continue;
+      String id = workspace.path("id").asText();
+      var copy = (ObjectNode) workspace.deepCopy();
+      copy.set(
+          "connectionIds",
+          Json.node(
+              connections.stream()
+                  .filter(c -> Json.strings(c.path("workspaceIds")).contains(id))
+                  .map(c -> c.path("id").asText())
+                  .toList()));
+      store.put("workspace", id, copy);
+    }
   }
 
   private Object saveVersion(JsonNode p) throws Exception {
     String workspace = p.path("workspaceId").asText(), id = p.path("id").asText();
+    if (store.get("workspace", workspace) == null)
+      throw new IllegalArgumentException("工作区已删除，请重新选择");
     if (id.isBlank()) id = UUID.randomUUID().toString();
     String number = p.path("number").asText().trim();
     if (number.isBlank()) throw new IllegalArgumentException("版本号不能为空");

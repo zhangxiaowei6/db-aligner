@@ -26,7 +26,7 @@ export async function updatesQA(browser, { repo, report, observe, shot, footerCh
       await shot(page, `updates-${theme}-${width}`);
       await section.getByRole('button', { name: '重启安装', exact: true }).click();
       await page.getByRole('dialog', { name: '重启并安装更新' }).waitFor();
-      await page.getByRole('button', { name: /取\s*消/ }).click();
+      await page.getByRole('button', { name: /^取\s*消$/ }).click();
       await page.getByRole('dialog', { name: '重启并安装更新' }).waitFor({ state: 'hidden' });
       assert(await section.getByRole('button', { name: '重启安装', exact: true }).isEnabled());
       report.browser.push({

@@ -1,14 +1,24 @@
+import { SyncTableSelector } from '../components/SyncTableSelector';
 import { DriverInstaller } from '../components/DriverInstaller';
 import { DatabaseTypeIcon } from '../components/DatabaseTypeIcon';
 import { AsyncButton as Button } from '../components/AsyncButton';
+import { ConnectionPasswordInput } from '../components/ConnectionPasswordInput';
 import {
-  StructureOptionsEditor,
-  TableStructureOptions,
-} from '../components/StructureOptionsEditor';
-import { AutoComplete, Checkbox, Form, Input, Modal, Radio, Select, Space, Tag } from 'antd';
+  Alert,
+  Spin,
+  AutoComplete,
+  Checkbox,
+  Form,
+  Input,
+  Modal,
+  Radio,
+  Select,
+  Space,
+  Tag,
+} from 'antd';
 import { EditOutlined, PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
-import { connectionTestError } from '../connection-validation';
+import { connectionTestError, importPasswordRequired } from '../connection-validation';
 import { orderedConnections, portFromText } from '../connection-organization';
 import { useController } from '../controller';
 import { preview } from '../api';
@@ -23,12 +33,11 @@ import {
 } from '../components/shared';
 import { DatabaseOptionsStatus } from '../components/DatabaseOptionsStatus';
 import { ConnectionGroupSelect } from '../components/ConnectionOrganization';
-import type { ConnectionInfo, SyncTemplate, TableChoice, Workspace } from '../types';
+import type { ConnectionInfo, SyncTemplate, Workspace } from '../types';
 
 export function WorkspacesPage() {
   const c = useController();
   const { m } = c;
-  const form = m.workspaceForm;
   return (
     <>
       <section>
@@ -84,50 +93,58 @@ export function WorkspacesPage() {
         </Space>
         <p className="hint">配置导出不包含连接密码和证书文件。</p>
       </section>
-      <Modal
-        title={m.state.workspaces.some((w) => w.id === form.id) ? '编辑工作区' : '新建工作区'}
-        open={m.workspaceDialog}
-        centered
-        width={560}
-        onCancel={c.closeWorkspace}
-        onOk={() => void c.saveWorkspace()}
-        okText="保存工作区"
-        cancelText="取消"
-        confirmLoading={m.workspaceSubmitting}
-        okButtonProps={{ disabled: !form.name.trim() }}
-        destroyOnHidden
-        styles={{ body: { maxHeight: '65vh', overflowY: 'auto' } }}
-      >
-        <Form layout="vertical" disabled={m.workspaceSubmitting}>
-          <Field label="工作区名称" required>
-            <Input
-              value={form.name}
-              placeholder="请输入工作区名称，例如：业务系统"
-              onChange={(e) => c.patch('workspaceForm', { name: e.target.value })}
-            />
-          </Field>
-          <Field label="说明">
-            <Input.TextArea
-              rows={3}
-              value={form.description}
-              placeholder="请输入工作区说明（选填）"
-              onChange={(e) => c.patch('workspaceForm', { description: e.target.value })}
-            />
-          </Field>
-          <Field label="关联连接">
-            <Select
-              mode="multiple"
-              showSearch
-              optionFilterProp="label"
-              placeholder="选择关联连接"
-              value={form.connectionIds || []}
-              options={m.state.connections.map((conn) => ({ label: conn.name, value: conn.id }))}
-              onChange={(ids) => c.patch('workspaceForm', { connectionIds: ids })}
-            />
-          </Field>
-        </Form>
-      </Modal>
+      <WorkspaceEditor />
     </>
+  );
+}
+export function WorkspaceEditor() {
+  const c = useController();
+  const { m } = c;
+  const form = m.workspaceForm;
+  return (
+    <Modal
+      title={m.state.workspaces.some((w) => w.id === form.id) ? '编辑工作区' : '新建工作区'}
+      open={m.workspaceDialog}
+      centered
+      width={560}
+      onCancel={c.closeWorkspace}
+      onOk={() => void c.saveWorkspace()}
+      okText="保存工作区"
+      cancelText="取消"
+      confirmLoading={m.workspaceSubmitting}
+      okButtonProps={{ disabled: !form.name.trim() }}
+      destroyOnHidden
+      styles={{ body: { maxHeight: '65vh', overflowY: 'auto' } }}
+    >
+      <Form layout="vertical" disabled={m.workspaceSubmitting}>
+        <Field label="工作区名称" required>
+          <Input
+            value={form.name}
+            placeholder="请输入工作区名称，例如：业务系统"
+            onChange={(e) => c.patch('workspaceForm', { name: e.target.value })}
+          />
+        </Field>
+        <Field label="说明">
+          <Input.TextArea
+            rows={3}
+            value={form.description}
+            placeholder="请输入工作区说明（选填）"
+            onChange={(e) => c.patch('workspaceForm', { description: e.target.value })}
+          />
+        </Field>
+        <Field label="关联连接">
+          <Select
+            mode="multiple"
+            showSearch
+            optionFilterProp="label"
+            placeholder="选择关联连接"
+            value={form.connectionIds || []}
+            options={m.state.connections.map((conn) => ({ label: conn.name, value: conn.id }))}
+            onChange={(ids) => c.patch('workspaceForm', { connectionIds: ids })}
+          />
+        </Field>
+      </Form>
+    </Modal>
   );
 }
 export function ConnectionsPage() {
@@ -245,6 +262,8 @@ export function ConnectionEditor() {
   const c = useController();
   const { m } = c;
   const f = m.connectionForm;
+  const hasSavedPassword = !!m.state.connections.find((connection) => connection.id === f.id)
+    ?.hasPassword;
   const [connectionFields] = Form.useForm();
   useEffect(() => {
     if (!m.connectionDialog) return;
@@ -300,7 +319,7 @@ export function ConnectionEditor() {
             c.patch('connectionForm', { port: portFromText(String(values.port)) });
         }}
       >
-        <Field label="数据库类型">
+        <Field label="数据库类型" required>
           <Select
             placeholder="选择数据库类型"
             aria-label="数据库类型"
@@ -328,7 +347,7 @@ export function ConnectionEditor() {
           />
         </Field>
         {f.databaseType === 'postgresql' && (
-          <Field label="初始连接数据库">
+          <Field label="初始连接数据库" required>
             <Input
               value={f.initialDatabase || ''}
               placeholder="例如：postgres"
@@ -366,9 +385,10 @@ export function ConnectionEditor() {
             label="端口"
             name="port"
             rules={[
+              { required: true, message: '请输入端口' },
               {
                 validator: (_, value) =>
-                  portFromText(String(value ?? ''))
+                  !String(value ?? '') || portFromText(String(value ?? ''))
                     ? Promise.resolve()
                     : Promise.reject(new Error('请输入 1–65535 的整数端口')),
               },
@@ -395,22 +415,82 @@ export function ConnectionEditor() {
               onChange={(e) => c.patch('connectionForm', { user: e.target.value })}
             />
           </Form.Item>
-          <Field label="密码">
-            <Input.Password
+          <Form.Item
+            label="密码"
+            name="password"
+            required={!hasSavedPassword}
+            extra={hasSavedPassword ? '已保存密码；留空保留，输入新密码可替换。' : undefined}
+            rules={[
+              {
+                validator: (_, value) =>
+                  hasSavedPassword || (typeof value === 'string' && value.length > 0)
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('请输入连接密码')),
+              },
+            ]}
+          >
+            <ConnectionPasswordInput
               value={f.password}
-              placeholder={f.hasPassword ? '已保存；留空保留原密码' : '请输入连接密码'}
-              onChange={(e) => c.patch('connectionForm', { password: e.target.value })}
+              aria-required={!hasSavedPassword}
+              hasSavedPassword={hasSavedPassword}
+              onChange={(password) => c.patch('connectionForm', { password })}
             />
-          </Field>
+          </Form.Item>
         </div>
         <Field label="指定数据库（可选）">
-          <Input
-            value={m.databasesText}
-            placeholder="留空显示可访问数据库；多个库用英文逗号分隔"
-            onChange={(e) => c.set('databasesText', e.target.value)}
-          />
+          {m.connectionDiscovery?.status === 'success' ? (
+            <Select
+              mode="multiple"
+              showSearch
+              allowClear
+              optionFilterProp="label"
+              style={{ width: '100%' }}
+              aria-label="指定数据库"
+              placeholder="选择指定数据库，留空显示全部可访问数据库"
+              value={m.databasesText
+                .split(',')
+                .map((value) => value.trim())
+                .filter(Boolean)}
+              options={[
+                ...new Set([
+                  ...m.connectionDiscovery.databases,
+                  ...m.databasesText
+                    .split(',')
+                    .map((value) => value.trim())
+                    .filter(Boolean),
+                ]),
+              ].map((value) => ({
+                value,
+                label: m.connectionDiscovery!.databases.includes(value)
+                  ? value
+                  : `${value}（当前不可用）`,
+              }))}
+              onChange={(values) => c.set('databasesText', values.join(', '))}
+            />
+          ) : (
+            <Input
+              value={m.databasesText}
+              aria-label="指定数据库"
+              placeholder="留空显示可访问数据库；多个库用英文逗号分隔"
+              onChange={(e) => c.set('databasesText', e.target.value)}
+            />
+          )}
+          {m.connectionDiscovery?.status === 'loading' && (
+            <p className="hint" role="status">
+              正在检查连接并读取数据库列表…
+            </p>
+          )}
+          {m.connectionDiscovery?.status === 'error' && (
+            <Alert
+              type="warning"
+              showIcon
+              title="数据库列表读取失败，可继续手动填写"
+              description={m.connectionDiscovery.error}
+              action={<Button onClick={() => c.discoverConnection()}>重试数据库列表</Button>}
+            />
+          )}
         </Field>
-        <Field label="连接分组">
+        <Field label="连接分组" required>
           <ConnectionGroupSelect />
         </Field>
         <Form.Item
@@ -437,6 +517,7 @@ export function ConnectionEditor() {
         {f.ssl && (
           <>
             <Field
+              required={f.databaseType === 'postgresql'}
               label={
                 f.databaseType === 'postgresql'
                   ? 'CA 证书（PEM，启用 SSL 时必填）'
@@ -490,19 +571,23 @@ export function ImportPage() {
   return (
     <>
       <Panel>
-        <Radio.Group
-          optionType="button"
-          buttonStyle="solid"
-          value={m.importFormat}
-          options={[
-            { label: 'Navicat .ncx', value: 'navicat' },
-            { label: 'DBeaver JSON', value: 'dbeaver' },
-            { label: 'DataGrip XML', value: 'datagrip' },
-          ]}
-          onChange={(e) =>
-            c.commit((s) => ({ ...s, importFormat: e.target.value as string, importRows: [] }))
-          }
-        />
+        <Form layout="vertical">
+          <Field label="会话格式" required>
+            <Radio.Group
+              optionType="button"
+              buttonStyle="solid"
+              value={m.importFormat}
+              options={[
+                { label: 'Navicat .ncx', value: 'navicat' },
+                { label: 'DBeaver JSON', value: 'dbeaver' },
+                { label: 'DataGrip XML', value: 'datagrip' },
+              ]}
+              onChange={(e) =>
+                c.commit((s) => ({ ...s, importFormat: e.target.value as string, importRows: [] }))
+              }
+            />
+          </Field>
+        </Form>
         <div className="button-row">
           <Button icon={<UploadOutlined />} onClick={() => c.readImport()}>
             选择会话文件
@@ -515,15 +600,19 @@ export function ImportPage() {
             示例仅模拟连接测试；先填写有效的必填参数，密码填写 preview-fail 可查看失败状态。
           </p>
         )}
-        <Input.TextArea
-          rows={4}
-          value={m.importText}
-          aria-label="会话内容"
-          placeholder="粘贴会话内容后解析"
-          onChange={(e) =>
-            c.commit((s) => ({ ...s, importText: e.target.value, importFileToken: '' }))
-          }
-        />
+        <Form layout="vertical">
+          <Field label="会话内容" required={!m.importFileToken}>
+            <Input.TextArea
+              rows={4}
+              value={m.importText}
+              aria-label="会话内容"
+              placeholder="粘贴会话内容后解析"
+              onChange={(e) =>
+                c.commit((s) => ({ ...s, importText: e.target.value, importFileToken: '' }))
+              }
+            />
+          </Field>
+        </Form>
         <Button
           className="top-gap"
           disabled={!m.importText && !m.importFileToken}
@@ -561,12 +650,18 @@ export function ImportPage() {
                   title: '凭据',
                   width: 220,
                   render: (_, row) => (
-                    <Input.Password
-                      value={row.password}
-                      aria-label={`${row.name} 密码`}
-                      placeholder={row.credentialStatus || '请输入连接密码'}
-                      onChange={(e) => c.updateImport(row.id, { password: e.target.value })}
-                    />
+                    <Field
+                      label="密码"
+                      compact
+                      required={importPasswordRequired(row, m.duplicateMode, m.state.connections)}
+                    >
+                      <Input.Password
+                        value={row.password}
+                        aria-label={`${row.name} 密码`}
+                        placeholder={row.credentialStatus || '请输入连接密码'}
+                        onChange={(e) => c.updateImport(row.id, { password: e.target.value })}
+                      />
+                    </Field>
                   ),
                 },
                 {
@@ -616,7 +711,7 @@ export function ImportPage() {
                 onChange={(name) => c.set('importGroup', name)}
               />
             </Field>
-            <Field label="重复连接">
+            <Field label="重复连接" required>
               <Select
                 placeholder="选择重复连接的处理方式"
                 value={m.duplicateMode}
@@ -789,92 +884,33 @@ export function TemplateEditor() {
           />
         </Field>
       </Form>
-      <Field label="同步类型">
-        <Radio.Group
-          value={m.templateMode}
-          disabled={m.templateSubmitting}
-          onChange={(event) => c.setTemplateMode(event.target.value)}
-          options={[
-            { label: '同步结构', value: 'structure' },
-            { label: '同步数据', value: 'data' },
-          ]}
+      {m.templateError && (
+        <Alert
+          type="error"
+          showIcon
+          title={m.templateError}
+          action={<Button onClick={c.loadTemplateTables}>重新加载来源表</Button>}
         />
-      </Field>
-      {m.templateMode === 'structure' && (
-        <div className="structure-defaults">
-          <strong>统一结构默认</strong>
-          <StructureOptionsEditor
-            value={m.templateStructureDefaults}
-            disabled={m.templateSubmitting}
-            onChange={(options) => c.set('templateStructureDefaults', options)}
-          />
-          <Button
-            size="small"
-            disabled={m.templateSubmitting}
-            onClick={() => c.applyStructureDefaults(true)}
-          >
-            应用到当前已选结构表
-          </Button>
-        </div>
       )}
-      <DataTable<TableChoice>
-        rowKey="name"
-        dataSource={f.tables}
-        columns={[
-          { title: '表名', dataIndex: 'name' },
-          {
-            title: '结构',
-            width: 65,
-            align: 'center',
-            render: (_, row) => (
-              <Checkbox
-                aria-label={`${row.name} 模板结构`}
-                disabled={m.templateSubmitting || m.templateMode !== 'structure'}
-                checked={row.structure}
-                onChange={(e) => c.updateTemplateTable(row.name, { structure: e.target.checked })}
-              />
-            ),
-          },
-          {
-            title: '数据',
-            width: 65,
-            align: 'center',
-            render: (_, row) => (
-              <Checkbox
-                aria-label={`${row.name} 模板数据`}
-                disabled={m.templateSubmitting || m.templateMode !== 'data'}
-                checked={row.data}
-                onChange={(e) => c.updateTemplateTable(row.name, { data: e.target.checked })}
-              />
-            ),
-          },
-          {
-            title: '结构细项',
-            width: 130,
-            render: (_, row) => (
-              <TableStructureOptions
-                label={`${row.name} 模板结构细项`}
-                value={row.structureOptions}
-                disabled={m.templateSubmitting || !row.structure}
-                onChange={(options) =>
-                  c.updateTemplateTable(row.name, { structureOptions: options })
-                }
-              />
-            ),
-          },
-          {
-            title: '匹配键',
-            render: (_, row) => (
-              <Input
-                value={row.keyText}
-                disabled={m.templateSubmitting || !row.data}
-                placeholder="默认主键"
-                onChange={(e) => c.updateTemplateTable(row.name, { keyText: e.target.value })}
-              />
-            ),
-          },
-        ]}
-      />
+      <Spin spinning={m.templateLoading}>
+        <SyncTableSelector
+          id="template"
+          mode={m.templateMode}
+          rows={f.tables.map((table) => ({ ...table, comment: table.comment || '' }))}
+          search={m.templateSearch}
+          filter={m.templateFilter}
+          defaults={m.templateStructureDefaults}
+          databaseType={m.templateSource.startsWith('pg:') ? 'postgresql' : 'mysql'}
+          disabled={m.templateSubmitting || m.templateLoading}
+          onMode={c.setTemplateMode}
+          onSearch={(value) => c.set('templateSearch', value)}
+          onFilter={(value) => c.set('templateFilter', value)}
+          onDefaults={(value) => c.set('templateStructureDefaults', value)}
+          onApplyDefaults={() => c.applyStructureDefaults(true)}
+          onUpdate={c.updateTemplateTable}
+          onToggle={c.toggleTemplateTables}
+        />
+      </Spin>
     </Modal>
   );
 }

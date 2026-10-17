@@ -263,7 +263,7 @@ try {
         await page.getByLabel('正在刷新表结构').waitFor({ state: 'hidden' });
         await page
           .locator('.page-heading .hint')
-          .filter({ hasText: /^结构版本 1$/ })
+          .filter({ hasText: /结构版本 1$/ })
           .waitFor();
         await page.waitForFunction(() =>
           document.querySelector('.ant-dropdown:has(.test-success)'),
@@ -305,7 +305,7 @@ try {
         await page.getByLabel('正在刷新表结构').waitFor({ state: 'hidden' });
         await page
           .locator('.page-heading .hint')
-          .filter({ hasText: /^结构版本 2$/ })
+          .filter({ hasText: /结构版本 2$/ })
           .waitFor();
         await page.waitForFunction(() =>
           document.querySelector('.ant-dropdown:has(.test-success)'),

@@ -58,6 +58,13 @@ class MySqlIntegrationTest {
               "CREATE DATABASE "
                   + Sql.id(ref.database())
                   + " CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
+        var discovery = config.deepCopy();
+        discovery.putArray("databases").add(src.database());
+        var visible = db.databases(discovery);
+        assertTrue(
+            visible.containsAll(List.of(src.database(), a.database(), b.database())),
+            "草稿数据库发现不能受原选择范围过滤");
+        assertFalse(store.get("connection", "server").has("databases"));
         try (var jobs = new Jobs(store, db, new Archives(store), e -> {})) {
           String table = "字典`表";
           String def =
@@ -133,6 +140,14 @@ class MySqlIntegrationTest {
           String beforeA = db.digest(admin, a, table), beforeB = db.digest(admin, b, table);
           var objectsA = db.tables(a);
           var objectsB = db.tables(b);
+          var disposable = jobs.save(plan, selected, "SAVE_ONLY", "待删除的真库计划");
+          var management = new RecordManagement(store);
+          management.remark(disposable.id, "可编辑备注");
+          management.deleteRecord(disposable.id, disposable.id);
+          assertNull(store.get("record", disposable.id));
+          assertFalse(Files.exists(Path.of(disposable.archivePath)));
+          assertEquals(beforeA, db.digest(admin, a, table));
+          assertEquals(beforeB, db.digest(admin, b, table));
           var saved = jobs.save(plan, selected, "SAVE_ONLY", "仅保存");
           assertEquals(beforeA, db.digest(admin, a, table));
           assertEquals(beforeB, db.digest(admin, b, table));
@@ -545,7 +560,8 @@ class MySqlIntegrationTest {
                     + "): "
                     + Files.readString(nativeRoot.resolve("native.log")));
             var smokeResult =
-                Json.read(Files.readString(resultFile), com.fasterxml.jackson.databind.JsonNode.class);
+                Json.read(
+                    Files.readString(resultFile), com.fasterxml.jackson.databind.JsonNode.class);
             assertEquals(0, running.exitValue(), smokeResult.toString());
             assertTrue(smokeResult.path("passed").asBoolean());
             Path report =

@@ -328,6 +328,11 @@ public final class Archives {
             z.closeEntry();
           }
         }
+        z.putNextEntry(new ZipEntry(id + "/current-metadata.json"));
+        z.write(
+            Json.write(Map.of("id", id, "remark", n.path("remark").asText()))
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        z.closeEntry();
         z.putNextEntry(new ZipEntry(id + "/additional-events.json"));
         z.write(Json.write(store.events(id)).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         z.closeEntry();

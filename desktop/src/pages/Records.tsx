@@ -1,3 +1,4 @@
+import { ContentTransition } from '../components/ContentTransition';
 import { fromKey, namespaceLabel } from '../model';
 import { recordRefreshKey } from '../model';
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
@@ -19,8 +20,10 @@ import { useController } from '../controller';
 import { date, displayValue, modeLabel, refKey, statusLabel, statusOf } from '../model';
 import { DataTable, Field, Footer, Panel, Status } from '../components/shared';
 import SqlView from '../components/SqlView';
-import type { Column, Step, SyncRecord, TargetResult } from '../types';
+import type { Column, Step, SyncRecord, TargetResult, Version } from '../types';
 import { recordScriptFiles } from '../sync-scripts';
+import { versionNumberError } from '../version-validation';
+import { OverflowText } from '../components/OverflowText';
 
 export function TablePage() {
   const c = useController();
@@ -84,66 +87,68 @@ export function TablePage() {
           { key: 'sql', label: '建表 SQL' },
         ]}
       />
-      {m.structureTab === 'columns' ? (
-        <>
-          <DataTable<Column>
+      <ContentTransition identity={`structure/${tab.id}/${m.structureTab}`}>
+        {m.structureTab === 'columns' ? (
+          <>
+            <DataTable<Column>
+              rowKey="name"
+              dataSource={table.columns}
+              scroll={{ x: 950 }}
+              columns={[
+                {
+                  title: '字段名',
+                  dataIndex: 'name',
+                  render: (name: string) => (
+                    <>
+                      {(table.primaryKeyColumns?.includes(name) ||
+                        table.indexes.some(
+                          (i) => i.name === 'PRIMARY' && i.columns.includes(name),
+                        )) && <KeyOutlined className="warning-text" />}{' '}
+                      {name}
+                    </>
+                  ),
+                },
+                { title: '数据类型', dataIndex: 'type' },
+                {
+                  title: '允许空',
+                  dataIndex: 'nullable',
+                  render: (v: boolean) => (v ? 'YES' : 'NO'),
+                },
+                { title: '默认值', dataIndex: 'defaultValue', render: displayValue },
+                { title: '额外属性', dataIndex: 'extra' },
+                { title: '注释', dataIndex: 'comment' },
+              ]}
+            />
+            <div className="two-panels">
+              <Panel title="索引信息">{indexes}</Panel>
+              <Panel title="表定义摘要">
+                <dl className="metadata">
+                  <dt>表注释</dt>
+                  <dd>{table.comment || '—'}</dd>
+                  <dt>外键数量</dt>
+                  <dd>{table.foreignKeys.length}</dd>
+                  <dt>结构状态</dt>
+                  <dd>{table.supported ? '支持同步' : table.issues.join('；')}</dd>
+                </dl>
+              </Panel>
+            </div>
+          </>
+        ) : m.structureTab === 'indexes' ? (
+          indexes
+        ) : m.structureTab === 'foreignKeys' ? (
+          <DataTable
             rowKey="name"
-            dataSource={table.columns}
-            scroll={{ x: 950 }}
+            dataSource={table.foreignKeys}
             columns={[
-              {
-                title: '字段名',
-                dataIndex: 'name',
-                render: (name: string) => (
-                  <>
-                    {(table.primaryKeyColumns?.includes(name) ||
-                      table.indexes.some(
-                        (i) => i.name === 'PRIMARY' && i.columns.includes(name),
-                      )) && <KeyOutlined className="warning-text" />}{' '}
-                    {name}
-                  </>
-                ),
-              },
-              { title: '数据类型', dataIndex: 'type' },
-              {
-                title: '允许空',
-                dataIndex: 'nullable',
-                render: (v: boolean) => (v ? 'YES' : 'NO'),
-              },
-              { title: '默认值', dataIndex: 'defaultValue', render: displayValue },
-              { title: '额外属性', dataIndex: 'extra' },
-              { title: '注释', dataIndex: 'comment' },
+              { title: '外键名', dataIndex: 'name' },
+              { title: '引用表', dataIndex: 'referencedTable' },
+              { title: '完整定义', dataIndex: 'definition' },
             ]}
           />
-          <div className="two-panels">
-            <Panel title="索引信息">{indexes}</Panel>
-            <Panel title="表定义摘要">
-              <dl className="metadata">
-                <dt>表注释</dt>
-                <dd>{table.comment || '—'}</dd>
-                <dt>外键数量</dt>
-                <dd>{table.foreignKeys.length}</dd>
-                <dt>结构状态</dt>
-                <dd>{table.supported ? '支持同步' : table.issues.join('；')}</dd>
-              </dl>
-            </Panel>
-          </div>
-        </>
-      ) : m.structureTab === 'indexes' ? (
-        indexes
-      ) : m.structureTab === 'foreignKeys' ? (
-        <DataTable
-          rowKey="name"
-          dataSource={table.foreignKeys}
-          columns={[
-            { title: '外键名', dataIndex: 'name' },
-            { title: '引用表', dataIndex: 'referencedTable' },
-            { title: '完整定义', dataIndex: 'definition' },
-          ]}
-        />
-      ) : (
-        <SqlView sql={table.createSql} />
-      )}
+        ) : (
+          <SqlView sql={table.createSql} />
+        )}
+      </ContentTransition>
       <p className="hint">从左侧双击表名切换表结构，右键菜单可发起同步或导出。</p>
     </>
   );
@@ -165,11 +170,13 @@ export function HistoryPage() {
       title: '同步记录／备注',
       render: (_: unknown, row: SyncRecord) => (
         <>
-          <Button type="link" onClick={() => c.action(() => c.openRecord(row.id))}>
-            {row.id}
-          </Button>
-          <div>{row.remark || '未填写备注'}</div>
-          <div className="secondary">{date(row.createdAt)}</div>
+          <OverflowText text={row.id}>
+            <Button type="link" onClick={() => c.action(() => c.openRecord(row.id))} />
+          </OverflowText>
+          <OverflowText text={row.remark || '未填写备注'} />
+          <div className="secondary">
+            <OverflowText text={date(row.createdAt)} />
+          </div>
           {row.parentId && <div className="secondary">关联 {row.parentId}</div>}
         </>
       ),
@@ -181,9 +188,33 @@ export function HistoryPage() {
       render: (_: unknown, row: SyncRecord) =>
         versions.find((v) => v.id === m.state.versionLinks[row.id])?.number || '未标记',
     },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 210,
+      render: (_: unknown, row: SyncRecord) => (
+        <Space>
+          <Button
+            size="small"
+            disabled={['RUNNING', 'QUEUED'].includes(row.status)}
+            onClick={() => c.editRecordRemark(row.id)}
+          >
+            编辑
+          </Button>
+          <Button
+            size="small"
+            danger
+            disabled={['RUNNING', 'QUEUED'].includes(row.status)}
+            onClick={() => c.requestHistoryDeletion('record', row.id)}
+          >
+            删除
+          </Button>
+        </Space>
+      ),
+    },
   ];
   return (
-    <>
+    <ContentTransition identity={`history/${m.historyTab}`}>
       <Tabs
         activeKey={m.historyTab}
         onChange={(value) => c.set('historyTab', value)}
@@ -262,46 +293,22 @@ export function HistoryPage() {
           </Empty>
         </div>
       ) : (
-        <div className="version-layout">
-          <section>
-            {versions.map((v) => (
-              <button
-                key={v.id}
-                className={`template-card ${v.id === m.currentVersionId ? 'selected' : ''}`}
-                onClick={() => c.set('currentVersionId', v.id)}
-              >
-                <strong>{v.number}</strong>
-                <span>{date(v.createdAt)}</span>
-                <span>{v.description}</span>
-                <span>
-                  {records.filter((r) => m.state.versionLinks[r.id] === v.id).length} 条记录
-                </span>
-              </button>
-            ))}
-          </section>
-          {version ? (
+        <ContentTransition identity={`version/${version?.id || 'list'}`}>
+          {version && (
             <section>
-              <div className="section-heading">
-                <h2>{version.number}</h2>
+              <div className="record-summary">
                 <Space wrap>
-                  <Button onClick={() => c.editVersion()}>编辑说明</Button>
-                  <Button onClick={() => c.set('historyTab', 'records')}>追加记录</Button>
-                  <Button
-                    type="primary"
-                    disabled={!versionRecords.length}
-                    onClick={() =>
-                      c.exportRecords(
-                        versionRecords.map((r) => r.id),
-                        version.number + '-scripts.zip',
-                      )
-                    }
-                  >
-                    导出版本脚本
-                  </Button>
+                  <strong>{version.number}</strong>
+                  <span>{date(version.createdAt)}</span>
+                  <span>{versionRecords.length} 条同步记录</span>
                 </Space>
+                <dl className="metadata top-gap">
+                  <dt>版本说明</dt>
+                  <dd className="preserve-lines">{version.description || '未填写说明'}</dd>
+                </dl>
               </div>
-              <p>{version.description}</p>
               <p className="hint">版本用于归档多条同步记录，各记录执行状态独立保存。</p>
+              <h2>关联同步记录</h2>
               <DataTable<SyncRecord>
                 rowKey="id"
                 dataSource={versionRecords}
@@ -312,12 +319,75 @@ export function HistoryPage() {
                 按记录及目标库保留同步与回滚脚本及本地恢复资料，点击记录查看具体内容。
               </p>
             </section>
-          ) : (
-            <section className="hint version-placeholder">选择左侧版本查看详情</section>
           )}
-        </div>
+          <div hidden={!!version}>
+            <div className="section-heading">
+              <Input
+                className="medium-input"
+                prefix={<SearchOutlined />}
+                placeholder="搜索版本号、版本说明"
+                aria-label="搜索版本"
+                value={m.versionSearch}
+                onChange={(event) => c.set('versionSearch', event.target.value)}
+              />
+            </div>
+            <DataTable<Version>
+              rowKey="id"
+              dataSource={versions.filter((item) =>
+                `${item.number} ${item.description}`
+                  .toLowerCase()
+                  .includes(m.versionSearch.trim().toLowerCase()),
+              )}
+              onRow={(row) => ({ onDoubleClick: () => c.set('currentVersionId', row.id) })}
+              columns={[
+                {
+                  title: '版本号',
+                  key: 'number',
+                  render: (_, row) => (
+                    <OverflowText text={row.number}>
+                      <Button type="link" onClick={() => c.set('currentVersionId', row.id)} />
+                    </OverflowText>
+                  ),
+                },
+                {
+                  title: '版本说明',
+                  dataIndex: 'description',
+                  key: 'description',
+                  ellipsis: true,
+                  render: (value: string) => value || '未填写说明',
+                },
+                {
+                  title: '同步记录',
+                  render: (_, row) =>
+                    `${records.filter((record) => m.state.versionLinks[record.id] === row.id).length} 条记录`,
+                },
+                { title: '创建时间', render: (_, row) => date(row.createdAt) },
+                {
+                  title: '操作',
+                  key: 'actions',
+                  width: 210,
+                  render: (_, row) => (
+                    <Space>
+                      <Button size="small" onClick={() => c.editVersion(row.id)}>
+                        编辑
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        onClick={() => c.requestHistoryDeletion('version', row.id)}
+                      >
+                        删除
+                      </Button>
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+            <p className="hint">点击版本号查看关联记录与脚本；删除版本保留同步记录及恢复资料。</p>
+          </div>
+        </ContentTransition>
       )}
-    </>
+    </ContentTransition>
   );
 }
 export function RecordPage() {
@@ -335,7 +405,7 @@ export function RecordPage() {
   const rollbackScripts = m.recordTab === 'rollbackScripts';
   const scriptFiles = recordScriptFiles(detail.files, m.recordTab);
   return (
-    <>
+    <ContentTransition identity={`record-tab/${record.id}/${m.recordTab}`}>
       <div className="record-summary">
         <Space wrap>
           <span>{modeLabel(m, record)}</span>
@@ -589,13 +659,17 @@ export function RecordPage() {
           回滚预览
         </Button>
       </Footer>
-    </>
+    </ContentTransition>
   );
 }
 export function RecordDrawers() {
   const c = useController();
   const { m } = c;
   const versions = m.state.versions.filter((v) => v.workspaceId === m.workspaceId);
+  const numberError =
+    m.versionMode === 'new' && m.versionForm.number
+      ? versionNumberError(m.versionForm.number, versions, m.workspaceId)
+      : undefined;
   const changes =
     m.detail?.record.plan?.targets
       .flatMap((t) => t.changes)
@@ -610,7 +684,7 @@ export function RecordDrawers() {
         footer={
           <Space>
             <Button onClick={() => c.set('versionDrawer', false)}>取消</Button>
-            <Button type="primary" onClick={() => c.markVersion()}>
+            <Button type="primary" disabled={!!numberError} onClick={() => c.markVersion()}>
               确认标记
             </Button>
           </Space>
@@ -627,7 +701,7 @@ export function RecordDrawers() {
         />
         <Form layout="vertical" className="top-gap">
           {m.versionMode === 'append' ? (
-            <Field label="已有版本">
+            <Field label="已有版本" required>
               <Select
                 value={m.versionForm.id || undefined}
                 placeholder="选择要追加记录的版本"
@@ -637,13 +711,22 @@ export function RecordDrawers() {
             </Field>
           ) : (
             <>
-              <Field label="版本号">
+              <Form.Item
+                label="版本号"
+                htmlFor="version-number"
+                required
+                validateStatus={numberError ? 'error' : undefined}
+                help={numberError}
+              >
                 <Input
+                  id="version-number"
+                  aria-label="版本号"
+                  aria-required="true"
                   value={m.versionForm.number}
                   placeholder="例如 v1.4.0"
                   onChange={(e) => c.patch('versionForm', { number: e.target.value })}
                 />
-              </Field>
+              </Form.Item>
               <Field label="版本说明">
                 <Input.TextArea
                   rows={4}
@@ -692,15 +775,19 @@ export function RecordDrawers() {
         }
       >
         <p className="hint">登记实际执行的变更；登记后仍需校验目标库状态与恢复资料。</p>
-        <Checkbox.Group
-          className="external-choices"
-          value={m.externalIds}
-          onChange={(ids) => c.set('externalIds', ids as string[])}
-          options={changes.map((ch) => ({
-            value: ch.id,
-            label: `${namespaceLabel(fromKey(ch.targetKey))} / ${ch.table} / ${ch.label}`,
-          }))}
-        />
+        <Form layout="vertical">
+          <Field label="实际执行范围" required>
+            <Checkbox.Group
+              className="external-choices"
+              value={m.externalIds}
+              onChange={(ids) => c.set('externalIds', ids as string[])}
+              options={changes.map((ch) => ({
+                value: ch.id,
+                label: `${namespaceLabel(fromKey(ch.targetKey))} / ${ch.table} / ${ch.label}`,
+              }))}
+            />
+          </Field>
+        </Form>
         <Input.TextArea
           className="top-gap"
           rows={4}

@@ -1,0 +1,21 @@
+{
+  "browser": [
+    {
+      "check": "navigation-hierarchy-fresh-entry-text-hover-required-fields",
+      "theme": "light",
+      "passed": true,
+      "padding": "0px",
+      "margin": "0px",
+      "textHeight": 22
+    },
+    {
+      "check": "navigation-hierarchy-fresh-entry-text-hover-required-fields",
+      "theme": "dark",
+      "passed": true,
+      "padding": "0px",
+      "margin": "0px",
+      "textHeight": 22
+    }
+  ],
+  "errors": []
+}

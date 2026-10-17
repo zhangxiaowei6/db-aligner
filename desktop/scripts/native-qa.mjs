@@ -1,4 +1,4 @@
-/** Isolated WebView2 acceptance for a freshly built Tauri portable client. */
+/** Isolated WebView2 acceptance for a freshly built Tauri client. */
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { randomInt, randomUUID } from 'node:crypto';
@@ -24,7 +24,13 @@ const profile = await fs.mkdtemp(
   path.join(os.tmpdir(), `dbaligner-qa-profile-${randomUUID().slice(0, 8)}-`),
 );
 await fs.mkdir(path.join(profile, 'webview-profile'), { recursive: true });
-const report = { client: 'DBAligner', checks: [], errors: [], screenshots: [] };
+const report = {
+  client: 'DBAligner',
+  build: process.env.DB_ALIGNER_QA_APP ? '指定的本次构建程序' : '便携分发包',
+  checks: [],
+  errors: [],
+  screenshots: [],
+};
 await fs.mkdir(path.join(output, 'screenshots', 'react-ant-design'), { recursive: true });
 
 async function launch(port) {
@@ -134,7 +140,64 @@ try {
   assert.equal(ping.protocol, 1);
   const state = await invoke(page, 'state.load');
   assert(state.workspaces.length > 0);
-  report.checks.push('受限桥接和随包 Java 引擎');
+  report.checks.push('受限桥接和 Java 引擎');
+  await assert.rejects(
+    () => invoke(page, 'app.openRepository', { url: 'https://example.invalid' }),
+    /不接受自定义参数/,
+  );
+  assert.equal(await invoke(page, 'app.openRepository'), true);
+  report.checks.push('固定 GitHub 仓库通过宿主交给系统默认浏览器，拒绝自定义地址');
+  const credentialGroup = await invoke(page, 'connectionGroups.save', { name: '原生密码校验分组' });
+  const connection = {
+    id: 'native-password-check',
+    name: '原生凭据验收',
+    host: '127.0.0.1',
+    port: 3306,
+    user: 'fixture_user',
+    group: credentialGroup.name,
+    workspaceIds: [state.workspaces[0].id],
+    databases: [],
+    ssl: false,
+    hasPassword: true,
+    password: '',
+  };
+  await assert.rejects(
+    () =>
+      invoke(page, 'entity.save', {
+        kind: 'connection',
+        value: connection,
+        groupId: credentialGroup.id,
+      }),
+    /请输入连接密码/,
+  );
+  const savedConnection = await invoke(page, 'entity.save', {
+    kind: 'connection',
+    value: { ...connection, password: 'native-fixture-only' },
+    groupId: credentialGroup.id,
+  });
+  assert(savedConnection.hasPassword);
+  assert(!('password' in savedConnection));
+  assert(
+    (
+      await invoke(page, 'entity.save', {
+        kind: 'connection',
+        value: connection,
+        groupId: credentialGroup.id,
+      })
+    ).hasPassword,
+  );
+  await assert.rejects(
+    () =>
+      invoke(page, 'entity.save', {
+        kind: 'connection',
+        value: { ...connection, port: 0 },
+        groupId: credentialGroup.id,
+      }),
+    /端口/,
+  );
+  await invoke(page, 'entity.delete', { kind: 'connection', id: connection.id });
+  await invoke(page, 'connectionGroups.delete', { groupId: credentialGroup.id });
+  report.checks.push('新连接密码必填、真实凭据保留、端口范围及明文不回显通过原生宿主');
   await assert.rejects(() => invoke(page, 'engine.prepareUpdate'));
   await assert.rejects(() =>
     invoke(page, 'drivers.install', { driverId: 'postgresql', url: 'https://example.invalid' }),
@@ -166,12 +229,59 @@ try {
     await page.locator('.ant-modal-wrap').waitFor({ state: 'detached', timeout: 3000 });
   }
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  report.checks.push('最大化安装版在减少动态效果下两次弹窗输入和关闭响应');
+  report.checks.push('最大化原生窗口在减少动态效果下两次弹窗输入和关闭响应');
   const group = await invoke(page, 'connectionGroups.save', { name: '原生验收分组' });
   assert(group.id);
   const removed = await invoke(page, 'connectionGroups.delete', { groupId: group.id });
   assert(removed.ok);
   report.checks.push('Java 保存及删除命令通过原生宿主');
+  await assert.rejects(
+    () =>
+      invoke(page, 'record.updateRemark', { id: 'SYNC-native-missing', remark: '原生验收备注' }),
+    /记录不存在/,
+  );
+  await assert.rejects(
+    () => invoke(page, 'record.delete', { id: 'SYNC-native-missing', confirmation: '错误编号' }),
+    /完整记录编号/,
+  );
+  await assert.rejects(
+    () =>
+      invoke(page, 'record.delete', {
+        id: 'SYNC-native-missing',
+        confirmation: 'SYNC-native-missing',
+        archivePath: 'C:/',
+      }),
+    /不接受额外路径或字段/,
+  );
+  report.checks.push('备注与记录删除经过宿主及引擎校验，拒绝前端档案路径');
+  const version = await invoke(page, 'version.save', {
+    workspaceId: state.workspaces[0].id,
+    number: 'native-delete-check',
+    description: '原生删除版本验收说明',
+    recordIds: [],
+  });
+  await assert.rejects(
+    () =>
+      invoke(page, 'version.save', {
+        workspaceId: state.workspaces[0].id,
+        number: ' native-delete-check ',
+        description: '',
+        recordIds: [],
+      }),
+    /工作区内版本号已存在/,
+  );
+  report.checks.push('原生版本创建拒绝去除首尾空格后的重复版本号');
+  await assert.rejects(
+    () => invoke(page, 'version.delete', { id: version.id, confirmation: '错误版本号' }),
+    /完整版本号/,
+  );
+  assert(
+    (await invoke(page, 'version.delete', { id: version.id, confirmation: version.number })).ok,
+  );
+  const afterDeletion = await invoke(page, 'state.load');
+  assert(!afterDeletion.versions.some((item) => item.id === version.id));
+  assert.equal(afterDeletion.records.length, state.records.length);
+  report.checks.push('版本删除完整确认标识及记录保留通过原生宿主');
   await screenshot(page, 'native-client-light.png');
   const dark = await invoke(page, 'appearance.set', { themeMode: 'dark' });
   assert.equal(dark.themeMode, 'dark');

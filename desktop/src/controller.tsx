@@ -1,3 +1,4 @@
+import { reconcileReferences, workspaceContents } from './resource-references';
 import {
   createContext,
   useCallback,
@@ -7,14 +8,17 @@ import {
   useRef,
   type ReactNode,
 } from 'react';
-import { App, Input, Radio } from 'antd';
+import { App, Form, Input, Radio } from 'antd';
 import { mixedSyncModes, syncModeOf, tablesForMode, type SyncMode } from './sync-mode';
 import { api, onEvent, preview, windowAction } from './api';
 import { copyModel } from './copy';
-import { connectionTestError } from './connection-validation';
+import type { NavigationTarget, RecordOrigin } from './navigation';
+import { connectionSaveError, connectionTestError } from './connection-validation';
+import { versionNumberError } from './version-validation';
 import {
   connectionGroupName,
   connectionSignature,
+  discoverySignature,
   normalizeOrganization,
 } from './connection-organization';
 import { SyncExecutionConfirmation } from './components/SyncExecutionConfirmation';
@@ -23,6 +27,7 @@ import { effectiveOptions } from './structure-options';
 import { defaultScriptFile, recordScriptFiles } from './sync-scripts';
 import {
   changesOf,
+  statusLabel,
   connectionOwnsKey,
   dbOptions,
   emptyConnection,
@@ -103,10 +108,12 @@ function useBusinessController() {
   const closePending = useRef(false);
   const syncSubmitPending = useRef(false);
   const rollbackSubmitPending = useRef(false);
+  const versionSubmitPending = useRef(false);
   const compareStarting = useRef(false);
   const compareCancelPending = useRef(false);
   const targetTableLoads = useRef(new Map<string, { signature: string; promise: Promise<void> }>());
   const connectionEditorGeneration = useRef(0);
+  const recordRemarkGeneration = useRef(0);
   const groupSaving = useRef(false);
   const groupDeleting = useRef(false);
   const groupEditorGeneration = useRef(0);
@@ -159,13 +166,52 @@ function useBusinessController() {
     if (!mounted.current) return;
     const current = latest.current;
     const next = update(current);
+    const newEntry = current.pageEntry !== next.pageEntry;
+    if (current.page !== next.page || current.workspaceId !== next.workspaceId || newEntry) {
+      requests.current.delete('navigation');
+      if (!newEntry) {
+        next.entering = undefined;
+        next.entryError = undefined;
+      }
+    }
+    if (
+      current.recordRemarkId !== next.recordRemarkId ||
+      current.page !== next.page ||
+      newEntry ||
+      current.workspaceId !== next.workspaceId
+    )
+      recordRemarkGeneration.current += 1;
+    if (current.workspaceId !== next.workspaceId || current.page !== next.page || newEntry) {
+      next.deleteRequest = undefined;
+      next.recordRemarkId = '';
+    }
+    if (
+      current.connectionDialog !== next.connectionDialog ||
+      current.connectionForm.id !== next.connectionForm.id ||
+      discoverySignature(current.connectionForm) !== discoverySignature(next.connectionForm)
+    ) {
+      next.connectionDiscovery = undefined;
+      requests.current.delete('connectionDiscovery');
+    }
     if (next.sourceKey && next.sourceKey !== current.sourceKey)
       next.syncDatabaseType = next.sourceKey.startsWith('pg:') ? 'postgresql' : 'mysql';
+    if (current.page !== next.page || current.workspaceId !== next.workspaceId)
+      next.openingTable = undefined;
+    if (
+      current.page !== next.page ||
+      newEntry ||
+      (current.page === 'history' &&
+        (current.historyTab !== next.historyTab ||
+          current.currentVersionId !== next.currentVersionId))
+    ) {
+      requests.current.delete('table');
+      requests.current.delete('record');
+    }
     if (current.page !== next.page || current.recordView !== next.recordView)
       requests.current.delete('rollback');
     if (
       current.workspaceId !== next.workspaceId ||
-      (current.page === 'workspaces' && next.page !== 'workspaces')
+      (current.page === 'workspaces' && (next.page !== 'workspaces' || newEntry))
     ) {
       workspaceEditorGeneration.current += 1;
       next.workspaceDialog = false;
@@ -173,7 +219,7 @@ function useBusinessController() {
     }
     if (
       current.connectionDialog &&
-      (current.workspaceId !== next.workspaceId || current.page !== next.page)
+      (current.workspaceId !== next.workspaceId || current.page !== next.page || newEntry)
     ) {
       connectionEditorGeneration.current += 1;
       next.connectionDialog = false;
@@ -189,7 +235,7 @@ function useBusinessController() {
     }
     if (
       current.workspaceId !== next.workspaceId ||
-      (current.templateDialog && current.page !== next.page)
+      (current.templateDialog && (current.page !== next.page || newEntry))
     ) {
       templateEditorGeneration.current += 1;
       requests.current.delete('templateScope');
@@ -308,9 +354,15 @@ function useBusinessController() {
     const id = ++requestSerial.current;
     requests.current.set(name, id);
     const workspace = latest.current.workspaceId;
+    const entry = latest.current.pageEntry;
+    const pageRequest =
+      /^(navigation|record|recordScripts|recordScript:.*|file|rollback|table|exportSQL|exportScope|import|importFile|importTest:.*|applyTemplate|beginSync)$/.test(
+        name,
+      );
     return () =>
       mounted.current &&
       requests.current.get(name) === id &&
+      (!pageRequest || latest.current.pageEntry === entry) &&
       latest.current.workspaceId === workspace;
   }
   async function action<T>(fn: () => Promise<T>, silent = false): Promise<T | undefined> {
@@ -345,6 +397,24 @@ function useBusinessController() {
           requests.current.delete('targetTables:' + key);
           targetTableLoads.current.delete(key);
         }
+      }
+      const previous = latest.current;
+      const references = reconcileReferences(previous, state);
+      const cleared =
+        (previous.connectionForm.group && references.connectionForm?.group === '') ||
+        previous.connectionForm.workspaceIds.length >
+          (references.connectionForm?.workspaceIds.length || 0) ||
+        previous.importWorkspaceIds.length > (references.importWorkspaceIds?.length || 0) ||
+        (previous.sourceKey && references.sourceKey === '') ||
+        (previous.templateSource && references.templateSource === '') ||
+        (previous.exportSource && references.exportSource === '');
+      if (cleared && previous.state.workspaces.length)
+        void message.info('关联资源已删除或解除关联，失效选择已清空，其他草稿保留');
+      if (previous.templateSource && references.templateSource === '')
+        requests.current.delete('templateScope');
+      if (previous.exportSource && references.exportSource === '') {
+        requests.current.delete('exportScope');
+        requests.current.delete('exportSQL');
       }
       commit((s) => ({
         ...s,
@@ -431,7 +501,7 @@ function useBusinessController() {
         settingsDirty: resetSettings ? false : s.settingsDirty,
         engineError: '',
         loading: false,
-        historySelection: s.historySelection.filter((id) => state.records.some((r) => r.id === id)),
+        ...reconcileReferences(s, state),
       }));
     } catch (e) {
       if (valid())
@@ -443,11 +513,128 @@ function useBusinessController() {
     }
   }
   function navigate(page: Page) {
+    requests.current.delete('navigation');
+    requests.current.delete('table');
+    requests.current.delete('record');
     const previous = latest.current.page;
-    set('page', page);
+    commit((s) => ({
+      ...s,
+      page,
+      openingTable: undefined,
+      entering: undefined,
+      entryError: undefined,
+    }));
     if (page === 'scope' && previous !== 'scope' && latest.current.sourceKey && !comparisonActive())
       void loadTargetTables(true);
     if (preview && page === 'import' && !latest.current.importRows.length) void loadImportExample();
+  }
+  /** 显式首次进入；继续编辑、后台刷新和表单入口不调用这里。 */
+  async function enterPage(target: NavigationTarget) {
+    if (latest.current.entering && !latest.current.entryError) return;
+    const initial = initialModel();
+    const before = latest.current;
+    commit((s) => ({
+      ...s,
+      page: target.page,
+      pageEntry: s.pageEntry + 1,
+      entering: target,
+      entryError: undefined,
+      externalDrawer: false,
+      versionDrawer: false,
+      cleanupDrawer: false,
+      groupDialog: false,
+      moveConnectionId: '',
+      compareConfirmation: undefined,
+      applyingTemplateId: '',
+      ...(target.page === 'history'
+        ? {
+            historyTab: target.tab || 'records',
+            currentVersionId: target.versionId || '',
+            historySearch: '',
+            historyFilter: '',
+            historySelection: [],
+          }
+        : {}),
+      ...(target.page === 'connections' ? { connectionSearch: '', connectionSelection: [] } : {}),
+      ...(target.page === 'record'
+        ? { detail: undefined, recordScripts: {}, recordScriptErrors: {}, fileSql: '' }
+        : {}),
+      ...(target.page === 'rollback'
+        ? { rollback: undefined, rollbackIds: [], rollbackRemark: '', rollbackSql: '' }
+        : {}),
+      ...(target.page === 'table' ? { currentTable: undefined, structureTab: 'columns' } : {}),
+      ...(target.page === 'record' || target.page === 'rollback'
+        ? { recordOrigin: target.origin }
+        : {}),
+      ...(target.page === 'import'
+        ? {
+            importText: '',
+            importRows: [],
+            importName: '',
+            importFileToken: '',
+            importFormat: initial.importFormat,
+            importWorkspaceIds: [s.workspaceId],
+            importGroup: initial.importGroup,
+            duplicateMode: initial.duplicateMode,
+          }
+        : {}),
+      ...(target.page === 'export'
+        ? { includeDrop: false, exportSql: '', exportPreview: undefined, exportGenerating: false }
+        : {}),
+    }));
+    const valid = request('navigation');
+    try {
+      await loadState();
+      if (!valid()) return;
+      const s = latest.current;
+      if (s.engineError) throw new Error(s.engineError);
+      if (target.page === 'scope') {
+        if (before.compareTask && ['RUNNING', 'CANCELLING'].includes(before.compareTask.status))
+          navigate('scope');
+        else await beginSync();
+      } else if (target.page === 'record') await openRecord(target.recordId, target.origin);
+      else if (target.page === 'rollback') {
+        if (
+          !s.state.records.some((r) => r.id === target.recordId && r.workspaceId === s.workspaceId)
+        )
+          throw new Error('同步记录已不存在，请返回同步记录列表');
+        set('recordOrigin', target.origin);
+        const view = s.rollbackView;
+        await beginRollback(target.recordId);
+        if (valid() && latest.current.rollbackView === view)
+          throw new Error('回滚预览加载失败，请重试');
+      } else if (target.page === 'table') {
+        const view = s.tableView;
+        await openTable({
+          key: '',
+          type: 'table',
+          title: target.table,
+          ref: target.ref,
+          table: target.table,
+        });
+        if (valid() && latest.current.tableView === view) throw new Error('表结构加载失败，请重试');
+      } else if (target.page === 'diff') {
+        if (!s.plan) throw new Error('当前差异计划已失效，请重新开始同步');
+        const changes = s.plan.targets.flatMap((t) => t.changes);
+        commit((v) => ({
+          ...v,
+          diffSearch: '',
+          diffTab: s.plan!.tables.some((t) => t.structure) ? 'structure' : 'data',
+          selectedIds: changes.filter((ch) => ch.selected && !ch.blocked).map((ch) => ch.id),
+          currentChangeId: changes.find((ch) => !ch.blocked)?.id || '',
+        }));
+      } else if (target.page === 'settings') {
+        commit((v) => ({ ...v, settingsForm: copyModel(v.state.settings), settingsDirty: false }));
+      } else if (target.page === 'export') {
+        const source = s.exportSource || s.sourceKey || dbOptions(s)[0]?.value || '';
+        await loadExport(source);
+      }
+      // beginSync 的普通导航会使 navigation 令牌失效，但同一进入轮次仍可完成。
+      if (latest.current.pageEntry === before.pageEntry + 1 && latest.current.page === target.page)
+        commit((v) => ({ ...v, entering: undefined, entryError: undefined }));
+    } catch (error) {
+      if (valid()) set('entryError', error instanceof Error ? error.message : String(error));
+    }
   }
   async function loadImportExample() {
     if (!preview) return;
@@ -679,17 +866,33 @@ function useBusinessController() {
     const viewValid = request('table');
     const modelValid = request('table:' + id);
     const valid = () => viewValid() && modelValid();
-    await action(async () => {
-      const model = await api<Table>('table.get', { ref: node.ref, table: node.table });
-      const tab = { id, ref: node.ref!, table: node.table!, model };
-      if (valid())
-        commit((s) => ({
-          ...s,
-          currentTable: tab,
-          tableView: s.tableView + 1,
-          page: 'table',
-        }));
-    });
+    set(
+      'openingTable',
+      node.ref.database + (node.ref.schema ? '/' + node.ref.schema : '') + '/' + node.table,
+    );
+    try {
+      await action(async () => {
+        const model = await api<Table>('table.get', { ref: node.ref, table: node.table });
+        const tab = { id, ref: node.ref!, table: node.table!, model };
+        if (
+          valid() &&
+          latest.current.state.connections.some(
+            (connection) =>
+              connection.id === node.ref!.connectionId &&
+              connection.workspaceIds.includes(latest.current.workspaceId),
+          )
+        )
+          commit((s) => ({
+            ...s,
+            currentTable: tab,
+            tableView: s.tableView + 1,
+            page: 'table',
+            openingTable: undefined,
+          }));
+      });
+    } finally {
+      if (viewValid()) set('openingTable', undefined);
+    }
   }
   const clearRefresh = useCallback(
     (key: string) => {
@@ -1389,7 +1592,7 @@ function useBusinessController() {
           remark: s.scopeRemark,
         });
         await loadState();
-        if (latest.current.workspaceId === s.workspaceId) await openRecord(r.id);
+        if (samePageSession(s)) await openRecord(r.id);
         void message.success(
           mode === 'SAVE_ONLY'
             ? '同步记录和脚本已保存，目标库未变更'
@@ -1418,7 +1621,6 @@ function useBusinessController() {
         : { id: crypto.randomUUID(), name: '', description: '', connectionIds: [] },
     );
     set('workspaceDialog', true);
-    navigate('workspaces');
   }
   function closeWorkspace() {
     workspaceEditorGeneration.current += 1;
@@ -1441,11 +1643,6 @@ function useBusinessController() {
         await api('entity.save', { kind: 'workspace', value: form });
         if (latest.current.workspaceForm === s.workspaceForm)
           patch('workspaceForm', { id: form.id });
-        for (const c of s.state.connections) {
-          const workspaceIds = c.workspaceIds.filter((id) => id !== form.id);
-          if (form.connectionIds?.includes(c.id)) workspaceIds.push(form.id);
-          await api('entity.save', { kind: 'connection', value: { ...c, workspaceIds } });
-        }
         await loadState();
         if (
           generation === workspaceEditorGeneration.current &&
@@ -1507,7 +1704,6 @@ function useBusinessController() {
     groupSaving.current = true;
     const s = latest.current;
     const generation = groupEditorGeneration.current;
-    const connectionGeneration = connectionEditorGeneration.current;
     const name = s.groupName.trim();
     set('groupSubmitting', true);
     try {
@@ -1522,17 +1718,6 @@ function useBusinessController() {
           ...(generation === groupEditorGeneration.current && v.workspaceId === s.workspaceId
             ? { groupDialog: false, groupForm: undefined, groupName: '' }
             : {}),
-          connectionForm:
-            connectionGeneration === connectionEditorGeneration.current &&
-            v.connectionDialog &&
-            s.groupForm &&
-            v.connectionForm.group === s.groupForm.name
-              ? { ...v.connectionForm, group: group.name }
-              : v.connectionForm,
-          importGroup:
-            v.workspaceId === s.workspaceId && s.groupForm && v.importGroup === s.groupForm.name
-              ? group.name
-              : v.importGroup,
         }));
         await loadState();
         void message.success('分组已保存');
@@ -1583,25 +1768,10 @@ function useBusinessController() {
         cancelText: '取消',
         okButtonProps: { danger: true },
         onOk: async () => {
-          const connectionGeneration = connectionEditorGeneration.current;
-          const workspaceId = latest.current.workspaceId;
           set('organizationSaving', true);
           try {
             await api('connectionGroups.delete', { groupId });
             await loadState();
-            commit((value) => ({
-              ...value,
-              moveGroupId: value.moveGroupId === groupId ? '' : value.moveGroupId,
-              importGroup:
-                value.workspaceId === workspaceId && value.importGroup === group.name
-                  ? ''
-                  : value.importGroup,
-              connectionForm:
-                connectionEditorGeneration.current === connectionGeneration &&
-                value.connectionForm.group === group.name
-                  ? { ...value.connectionForm, group: '' }
-                  : value.connectionForm,
-            }));
             void message.success('分组已删除');
           } catch (error) {
             void message.error(error instanceof Error ? error.message : String(error));
@@ -1653,6 +1823,7 @@ function useBusinessController() {
   }
   async function saveConnection() {
     const s = latest.current;
+    const generation = connectionEditorGeneration.current;
     const form = {
       ...copyModel(s.connectionForm),
       id: s.connectionForm.id || crypto.randomUUID(),
@@ -1661,12 +1832,24 @@ function useBusinessController() {
     await action(async () => {
       if (!form.name.trim() || !form.host.trim() || !form.user.trim() || !form.workspaceIds.length)
         throw new Error('请填写连接名称、服务器、用户并选择工作区');
-      const validation = connectionTestError(form);
+      const validation = connectionSaveError(
+        form,
+        !!s.state.connections.find((item) => item.id === form.id)?.hasPassword,
+      );
       if (validation) throw new Error(validation);
       if (!latest.current.state.connectionGroups.some((group) => group.name === form.group))
         throw new Error('请选择现有连接分组，或先新增分组');
-      await api('entity.save', { kind: 'connection', value: form });
-      if (latest.current.connectionForm === s.connectionForm)
+      await api('entity.save', {
+        kind: 'connection',
+        value: form,
+        groupId: latest.current.state.connectionGroups.find((group) => group.name === form.group)!
+          .id,
+      });
+      if (
+        generation === connectionEditorGeneration.current &&
+        JSON.stringify(latest.current.connectionForm) === JSON.stringify(s.connectionForm) &&
+        latest.current.databasesText === s.databasesText
+      )
         commit((v) => ({
           ...v,
           connectionDialog: false,
@@ -1698,6 +1881,41 @@ function useBusinessController() {
       void message.success('连接已保存');
     });
   }
+  async function discoverConnection(verify = true) {
+    const s = latest.current;
+    const generation = connectionEditorGeneration.current;
+    const config = { ...copyModel(s.connectionForm), databases: splitKeys(s.databasesText) };
+    if (!s.connectionDialog || connectionTestError(config) || !config.workspaceIds.length) return;
+    const signature = discoverySignature(config);
+    const requestValid = request('connectionDiscovery');
+    const valid = () =>
+      requestValid() &&
+      latest.current.connectionDialog &&
+      generation === connectionEditorGeneration.current &&
+      latest.current.connectionForm.id === config.id &&
+      discoverySignature(latest.current.connectionForm) === signature;
+    set('connectionDiscovery', { status: 'loading', databases: [] });
+    try {
+      if (verify) await api('connections.test', { id: config.id, config });
+      if (!valid()) return;
+      const databases = await api<string[]>('databases.list', { config });
+      if (valid()) set('connectionDiscovery', { status: 'success', databases });
+    } catch (error) {
+      if (valid())
+        set('connectionDiscovery', {
+          status: 'error',
+          databases: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+    }
+  }
+  useEffect(() => {
+    if (
+      m.connectionDialog &&
+      m.state.connections.some((connection) => connection.id === m.connectionForm.id)
+    )
+      void discoverConnection();
+  }, [m.connectionDialog, m.connectionForm.id]);
   async function testConnection(
     connection?: ConnectionInfo,
     entry: 'list' | 'tree' = 'list',
@@ -1766,10 +1984,12 @@ function useBusinessController() {
       return result;
     } else if (
       current.connectionTest === testing &&
-      current.connectionForm === s.connectionForm &&
+      current.connectionForm.id === s.connectionForm.id &&
+      discoverySignature(current.connectionForm) === discoverySignature(s.connectionForm) &&
       current.databasesText === s.databasesText
     ) {
       commit((v) => ({ ...v, connectionTest: result }));
+      if (result.status === 'success') await discoverConnection(false);
       return result;
     }
   }
@@ -1780,6 +2000,19 @@ function useBusinessController() {
   }
   async function removeEntity(kind: string, id: string) {
     if (kind === 'connection') return removeConnections([id]);
+    if (kind === 'workspace') {
+      const counts = workspaceContents(latest.current.state, id);
+      if (Object.values(counts).some(Boolean)) {
+        void message.error(
+          `工作区仍有 ${counts.connections} 个连接、${counts.templates} 个模板、${counts.records} 条记录、${counts.versions} 个版本，请先处理关联内容`,
+        );
+        return;
+      }
+      if (latest.current.state.workspaces.length <= 1) {
+        void message.error('至少保留一个工作区');
+        return;
+      }
+    }
     const workspaceGeneration = workspaceEditorGeneration.current;
     const templateGeneration = templateEditorGeneration.current;
     if (!(await confirm('删除配置', '确认删除这项配置？已有同步记录会保留。', '删除'))) return;
@@ -1979,7 +2212,7 @@ function useBusinessController() {
           },
         });
       }
-      if (latest.current.workspaceId === s.workspaceId)
+      if (samePageSession(s))
         commit((v) => ({
           ...v,
           importRows: [],
@@ -2012,6 +2245,11 @@ function useBusinessController() {
     commit((v) => ({
       ...v,
       templateMode: mode,
+      templateSearch: '',
+      templateFilter: t ? 'selected' : 'all',
+      templateDrafts: {},
+      templateError: '',
+      templateLoading: false,
       templateForm: {
         ...form,
         tables: form.tables.map((t) => ({
@@ -2025,6 +2263,7 @@ function useBusinessController() {
       templateTargets: form.targets.map(refKey),
       templateDialog: true,
     }));
+    if (form.source.connectionId) void loadTemplateTables();
   }
   function closeTemplate() {
     templateEditorGeneration.current += 1;
@@ -2032,6 +2271,11 @@ function useBusinessController() {
     commit((s) => ({
       ...s,
       templateDialog: false,
+      templateLoading: false,
+      templateError: '',
+      templateSearch: '',
+      templateFilter: 'all',
+      templateDrafts: {},
       templateForm: { ...initialModel().templateForm, workspaceId: s.workspaceId },
       templateSource: '',
       templateTargets: [],
@@ -2044,55 +2288,144 @@ function useBusinessController() {
       templateTargets: s.templateTargets.filter(
         (key) => key !== source && key.startsWith('pg:') === source.startsWith('pg:'),
       ),
+      templateForm: { ...s.templateForm, tables: [] },
+      templateDrafts: {},
+      templateSearch: '',
+      templateFilter: 'all',
     }));
+    await loadTemplateTables();
+  }
+  async function loadTemplateTables() {
+    const s = latest.current;
+    if (!s.templateSource) return;
     const valid = request('templateScope');
-    const id = latest.current.templateForm.id;
     const generation = templateEditorGeneration.current;
-    await action(async () => {
-      const rows = await api<{ name: string }[]>('tables.list', { ref: fromKey(source) });
+    set('templateLoading', true);
+    set('templateError', '');
+    try {
+      const rows = await api<{ name: string; comment?: string }[]>('tables.list', {
+        ref: fromKey(s.templateSource),
+      });
       if (
-        valid() &&
-        generation === templateEditorGeneration.current &&
-        latest.current.templateSource === source &&
-        latest.current.templateForm.id === id
+        !valid() ||
+        generation !== templateEditorGeneration.current ||
+        !latest.current.templateDialog ||
+        latest.current.templateSource !== s.templateSource
       )
-        patch('templateForm', {
-          tables: rows.map((t) => ({
-            name: t.name,
-            structure: false,
-            data: false,
-            keyColumns: [],
-            keyText: '',
-            structureOptions: { ...latest.current.templateStructureDefaults },
-          })),
-        });
-    });
+        return;
+      commit((v) => ({
+        ...v,
+        templateForm: {
+          ...v.templateForm,
+          tables: [
+            ...rows.map((row) => ({
+              name: row.name,
+              structure: false,
+              data: false,
+              keyColumns: [],
+              keyText: '',
+              structureOptions: { ...v.templateStructureDefaults },
+              ...v.templateForm.tables.find((table) => table.name === row.name),
+              comment: row.comment || '',
+              sourceMissing: false,
+            })),
+            ...v.templateForm.tables
+              .filter((table) => !rows.some((row) => row.name === table.name))
+              .map((table) => ({ ...table, sourceMissing: true })),
+          ],
+        },
+        templateLoading: false,
+      }));
+    } catch (error) {
+      if (valid() && generation === templateEditorGeneration.current)
+        commit((v) => ({
+          ...v,
+          templateLoading: false,
+          templateError: error instanceof Error ? error.message : String(error),
+        }));
+    }
   }
   function setTemplateMode(mode: SyncMode) {
-    commit((s) => ({
-      ...s,
-      templateMode: mode,
-      templateForm: { ...s.templateForm, tables: tablesForMode(s.templateForm.tables, mode) },
-    }));
+    commit((s) => {
+      if (mode === s.templateMode) return s;
+      const draft = s.templateDrafts[mode];
+      return {
+        ...s,
+        templateMode: mode,
+        templateDrafts: {
+          ...s.templateDrafts,
+          [s.templateMode]: {
+            tables: copyModel(s.templateForm.tables),
+            search: s.templateSearch,
+            filter: s.templateFilter,
+          },
+        },
+        templateForm: {
+          ...s.templateForm,
+          tables: draft
+            ? copyModel(draft.tables)
+            : s.templateForm.tables.map((table) => ({
+                ...table,
+                structure: false,
+                data: false,
+                keyColumns: [],
+                keyText: '',
+              })),
+        },
+        templateSearch: draft?.search || '',
+        templateFilter: draft?.filter || 'all',
+      };
+    });
   }
-  function updateTemplateTable(name: string, fields: Partial<TableChoice>) {
-    const mode = fields.data
-      ? 'data'
-      : fields.structure
-        ? 'structure'
-        : latest.current.templateMode;
+  function updateTemplateTable(
+    name: string,
+    fields: Partial<Model['templateForm']['tables'][number]>,
+  ) {
     commit((s) => ({
       ...s,
-      templateMode: mode,
       templateForm: {
         ...s.templateForm,
-        tables: tablesForMode(s.templateForm.tables, mode).map((t) =>
-          t.name === name
-            ? { ...t, ...fields, [mode === 'data' ? 'structure' : 'data']: false }
-            : t,
-        ),
+        tables:
+          fields.sourceMissing === false
+            ? s.templateForm.tables.filter((table) => table.name !== name)
+            : s.templateForm.tables.map((table) =>
+                table.name === name
+                  ? {
+                      ...table,
+                      ...fields,
+                      [s.templateMode === 'data' ? 'structure' : 'data']: false,
+                    }
+                  : table,
+              ),
       },
+      templateDrafts:
+        fields.sourceMissing === false
+          ? Object.fromEntries(
+              Object.entries(s.templateDrafts).map(([mode, draft]) => [
+                mode,
+                { ...draft, tables: draft!.tables.filter((table) => table.name !== name) },
+              ]),
+            )
+          : s.templateDrafts,
     }));
+  }
+  function toggleTemplateTables() {
+    commit((s) => {
+      const matches = (table: Model['templateForm']['tables'][number]) =>
+        scopeTableMatches({ ...table, comment: table.comment || '' }, s.templateSearch) &&
+        (s.templateFilter === 'all' || table[s.templateMode]);
+      const rows = s.templateForm.tables.filter(matches);
+      const selected = !rows.every((table) => table[s.templateMode]);
+      return {
+        ...s,
+        templateForm: {
+          ...s.templateForm,
+          tables: s.templateForm.tables.map((table) =>
+            matches(table) ? { ...table, [s.templateMode]: selected } : table,
+          ),
+        },
+      };
+    });
   }
   async function saveTemplate() {
     if (templateSaving.current) return;
@@ -2104,6 +2437,9 @@ function useBusinessController() {
       await action(async () => {
         if (!s.templateForm.name.trim() || !s.templateSource || !s.templateTargets.length)
           throw new Error('请填写模板名称并选择来源与目标库');
+        if (s.templateLoading || s.templateError) throw new Error('请先成功加载来源表清单');
+        if (s.templateForm.tables.some((table) => table.sourceMissing))
+          throw new Error('请先移除来源已缺失的表');
         if (mixedSyncModes(s.templateForm.tables))
           throw new Error('每次只能同步结构或数据，请选择一种同步类型');
         await api('entity.save', {
@@ -2232,61 +2568,195 @@ function useBusinessController() {
     }));
   }
   async function markVersion() {
+    if (versionSubmitPending.current) return;
+    versionSubmitPending.current = true;
     const s = latest.current;
-    await action(async () => {
-      const version =
-        s.versionMode === 'append'
-          ? s.state.versions.find((v) => v.id === s.versionForm.id)
-          : s.versionForm;
-      if (!version || !version.number.trim()) throw new Error('请填写版本号或选择已有版本');
-      await api('version.save', {
-        workspaceId: s.workspaceId,
-        id: version.id,
-        number: version.number,
-        description: version.description,
-        move: s.versionForm.move,
-        recordIds: s.historySelection,
+    try {
+      await action(async () => {
+        const version =
+          s.versionMode === 'append'
+            ? s.state.versions.find((v) => v.id === s.versionForm.id)
+            : s.versionForm;
+        if (!version || !version.number.trim()) throw new Error('请填写版本号或选择已有版本');
+        const validation = versionNumberError(
+          version.number,
+          s.state.versions,
+          s.workspaceId,
+          s.versionMode === 'append' ? version.id : '',
+        );
+        if (validation) throw new Error(validation);
+        await api('version.save', {
+          workspaceId: s.workspaceId,
+          id: version.id,
+          number: version.number.trim(),
+          description: version.description,
+          move: s.versionForm.move,
+          recordIds: s.historySelection,
+        });
+        if (
+          latest.current.workspaceId === s.workspaceId &&
+          latest.current.versionForm === s.versionForm &&
+          latest.current.versionMode === s.versionMode
+        )
+          set('versionDrawer', false);
+        await loadState();
+        void message.success('版本归档已更新');
       });
-      set('versionDrawer', false);
-      await loadState();
-      void message.success('版本归档已更新');
-    });
+    } finally {
+      versionSubmitPending.current = false;
+    }
   }
-  async function editVersion() {
+  async function editVersion(id = latest.current.currentVersionId) {
     const s = latest.current;
-    const version = s.state.versions.find((v) => v.id === s.currentVersionId);
+    const version = s.state.versions.find((v) => v.id === id && v.workspaceId === s.workspaceId);
     if (!version) return;
     let description = version.description;
-    const accepted = await modal.confirm({
-      title: '编辑版本说明',
+    await modal.confirm({
+      title: '编辑版本',
       content: (
-        <Input.TextArea
-          placeholder="填写版本包含的变更与注意事项（选填）"
-          defaultValue={description}
-          onChange={(e) => {
-            description = e.target.value;
-          }}
-          rows={4}
-          aria-label="版本说明"
-        />
+        <Form layout="vertical">
+          <p>{version.number}</p>
+          <Form.Item label="版本说明">
+            <Input.TextArea
+              placeholder="填写版本包含的变更与注意事项（选填）"
+              defaultValue={description}
+              onChange={(e) => {
+                description = e.target.value;
+              }}
+              rows={4}
+              aria-label="版本说明"
+            />
+          </Form.Item>
+        </Form>
       ),
       okText: '保存',
       cancelText: '取消',
+      onOk: async () => {
+        if (
+          latest.current.workspaceId !== s.workspaceId ||
+          !latest.current.state.versions.some((item) => item.id === id)
+        )
+          throw new Error('版本已失效，请重新打开编辑');
+        try {
+          await api('version.save', { ...version, recordIds: [], description });
+          await loadState();
+        } catch (error) {
+          void message.error(error instanceof Error ? error.message : String(error));
+          throw error;
+        }
+      },
     });
-    if (accepted)
-      await action(async () => {
-        await api('version.save', { ...version, recordIds: [], description });
-        await loadState();
-      });
   }
-  async function openRecord(id: string) {
+  function editRecordRemark(id: string) {
+    recordRemarkGeneration.current += 1;
+    const record = latest.current.state.records.find((record) => record.id === id);
+    if (record)
+      commit((s) => ({
+        ...s,
+        deleteRequest: undefined,
+        recordRemarkId: id,
+        recordRemarkText: record.remark || '',
+      }));
+  }
+  async function saveRecordRemark() {
+    const s = latest.current;
+    const generation = recordRemarkGeneration.current;
+    await api('record.updateRemark', { id: s.recordRemarkId, remark: s.recordRemarkText });
+    await loadState();
+    if (
+      generation === recordRemarkGeneration.current &&
+      latest.current.workspaceId === s.workspaceId &&
+      latest.current.recordRemarkId === s.recordRemarkId
+    )
+      set('recordRemarkId', '');
+    void message.success('备注已保存');
+  }
+  function requestHistoryDeletion(kind: 'record' | 'version', id: string) {
+    const s = latest.current;
+    const record = s.state.records.find((record) => record.id === id);
+    const version = s.state.versions.find(
+      (version) => version.id === (kind === 'version' ? id : s.state.versionLinks[id]),
+    );
+    if ((kind === 'record' && !record) || (kind === 'version' && !version)) return;
+    const contextText = kind === 'record' ? record!.remark : version!.description;
+    set('recordRemarkId', '');
+    set('deleteRequest', {
+      kind,
+      id,
+      label: kind === 'record' ? id : version!.number,
+      context: contextText?.trim()
+        ? { label: kind === 'record' ? '记录备注' : '版本说明', text: contextText }
+        : undefined,
+      description:
+        kind === 'record'
+          ? `状态：${statusLabel(record!.status)}；所属版本：${version?.number || '未标记'}。将永久删除该记录、SQL、日志和恢复资料，工具将无法再基于该记录恢复。有关联恢复证据时禁止删除；状态不明不代表执行成功。`
+          : `将删除版本说明并解除 ${Object.values(s.state.versionLinks).filter((value) => value === id).length} 条记录的版本归属。同步记录及其 SQL、日志和恢复资料全部保留。`,
+    });
+  }
+  async function deleteHistoryEntity(confirmation: string) {
+    const s = latest.current;
+    const request = s.deleteRequest;
+    if (!request || confirmation !== request.label) throw new Error('确认标识不匹配');
+    const result = await api<{ cleanupPending?: boolean; message?: string }>(
+      request.kind + '.delete',
+      { id: request.id, confirmation },
+    );
+    for (const key of requests.current.keys())
+      if (
+        key === 'record' ||
+        key === 'file' ||
+        key === 'rollback' ||
+        key.startsWith('recordScript:')
+      )
+        requests.current.delete(key);
+    await loadState();
+    if (latest.current.deleteRequest === request) set('deleteRequest', undefined);
+    if (result.cleanupPending)
+      void message.warning('记录已删除，本地档案清理待重试：' + result.message);
+    else
+      void message.success(
+        request.kind === 'record' ? '记录及本地资料已删除' : '版本已删除，相关同步记录保留',
+      );
+  }
+  async function retryRecordDeletion(id: string) {
+    await action(async () => {
+      const result = await api<{ cleanupPending?: boolean; message?: string }>('record.delete', {
+        id,
+        confirmation: id,
+      });
+      await loadState();
+      if (result.cleanupPending) throw new Error(result.message || '本地档案清理仍未完成');
+      void message.success('本地档案处理已完成');
+    });
+  }
+  async function openRecord(id: string, origin?: RecordOrigin) {
+    const current = latest.current;
+    const branch =
+      origin ||
+      (current.page === 'history'
+        ? current.historyTab === 'versions' && current.currentVersionId
+          ? { versionId: current.currentVersionId }
+          : undefined
+        : current.detail?.record.id === id || current.rollback?.recordId === id
+          ? current.recordOrigin
+          : undefined);
     const valid = request('record');
     const detail = await api<RecordDetail>('record.get', { id });
     if (!valid()) return;
+    if (detail.record.workspaceId !== latest.current.workspaceId)
+      throw new Error('同步记录已不存在或不属于当前工作区');
     const file = defaultScriptFile(detail.files, 'scripts');
     commit((s) => ({
       ...s,
       detail,
+      recordOrigin:
+        branch &&
+        latest.current.state.versionLinks[id] === branch.versionId &&
+        latest.current.state.versions.some(
+          (v) => v.id === branch.versionId && v.workspaceId === latest.current.workspaceId,
+        )
+          ? branch
+          : undefined,
       recordView: s.recordView + 1,
       fileSelected: file,
       fileSql: '',
@@ -2413,15 +2883,39 @@ function useBusinessController() {
       if (await api('record.export', { ids, name })) void message.success('脚本包已导出');
     });
   }
+  function samePageSession(snapshot: Model) {
+    const current = latest.current;
+    return (
+      current.page === snapshot.page &&
+      current.workspaceId === snapshot.workspaceId &&
+      current.pageEntry === snapshot.pageEntry
+    );
+  }
+  function recordViewIsCurrent(snapshot: Model) {
+    const current = latest.current;
+    return (
+      current.page === 'record' &&
+      current.workspaceId === snapshot.workspaceId &&
+      current.pageEntry === snapshot.pageEntry &&
+      current.recordView === snapshot.recordView &&
+      current.detail?.record.id === snapshot.detail?.record.id
+    );
+  }
   async function auditRecord() {
-    const id = latest.current.detail?.record.id;
+    const snapshot = latest.current;
+    const id = snapshot.detail?.record.id;
     if (!id) return;
     await action(async () => {
       await api('record.verify', { id });
       await loadState();
-      if (latest.current.detail?.record.id === id) {
+      if (recordViewIsCurrent(snapshot)) {
         await openRecord(id);
-        set('recordTab', 'results');
+        if (
+          latest.current.page === 'record' &&
+          latest.current.pageEntry === snapshot.pageEntry &&
+          latest.current.detail?.record.id === id
+        )
+          set('recordTab', 'results');
       }
       void message.success('当前状态核验已记录，原执行状态保留');
     });
@@ -2451,19 +2945,20 @@ function useBusinessController() {
         backupCompleted: false,
         remark: s.externalRemark,
       });
-      set('externalDrawer', false);
+      if (recordViewIsCurrent(s)) set('externalDrawer', false);
       await loadState();
-      if (latest.current.detail?.record.id === id) await openRecord(id);
+      if (recordViewIsCurrent(s)) await openRecord(id);
       void message.success('外部执行已登记，待核验');
     });
   }
   async function verifyExternal() {
-    const id = latest.current.detail?.record.id;
+    const snapshot = latest.current;
+    const id = snapshot.detail?.record.id;
     if (!id) return;
     await action(async () => {
       const result = await api<{ verified: boolean }>('external.verify', { id });
       await loadState();
-      if (latest.current.detail?.record.id === id) await openRecord(id);
+      if (recordViewIsCurrent(snapshot)) await openRecord(id);
       void (result.verified
         ? message.success('执行状态与恢复资料已核验')
         : message.warning('未通过完整核验，请查看校验结果'));
@@ -2536,7 +3031,7 @@ function useBusinessController() {
           remark: s.rollbackRemark,
         });
         await loadState();
-        if (latest.current.workspaceId === s.workspaceId) await openRecord(r.id);
+        if (samePageSession(s)) await openRecord(r.id);
       });
     } finally {
       rollbackSubmitPending.current = false;
@@ -2814,7 +3309,7 @@ function useBusinessController() {
             const id = s.detail.record.id;
             await action(async () => {
               const detail = await api<RecordDetail>('record.get', { id });
-              if (active && latest.current.detail?.record.id === id) set('detail', detail);
+              if (active && recordViewIsCurrent(s)) set('detail', detail);
             });
           }
         }, 300);
@@ -2909,6 +3404,7 @@ function useBusinessController() {
     commit,
     action,
     navigate,
+    enterPage,
     loadState,
     switchWorkspace,
     loadTree,
@@ -2953,6 +3449,7 @@ function useBusinessController() {
     closeConnection,
     saveConnection,
     testConnection,
+    discoverConnection,
     loadDatabaseOptions,
     refreshConnection,
     removeConnections,
@@ -2968,12 +3465,19 @@ function useBusinessController() {
     closeTemplate,
     templateSourceChanged,
     updateTemplateTable,
+    toggleTemplateTables,
+    loadTemplateTables,
     saveTemplate,
     applyTemplate,
     openVersionDrawer,
     markVersion,
     editVersion,
     openRecord,
+    editRecordRemark,
+    saveRecordRemark,
+    requestHistoryDeletion,
+    deleteHistoryEntity,
+    retryRecordDeletion,
     changeRecordTab,
     selectFile,
     exportRecords,

@@ -45,6 +45,33 @@ public final class Database extends MySqlAdapter {
         : super.databases(id);
   }
 
+  /**
+   * Enumerate visible databases for an unsaved configuration; selection filters do not restrict
+   * discovery.
+   */
+  public java.util.List<String> databases(com.fasterxml.jackson.databind.JsonNode config)
+      throws Exception {
+    String type = DriverRegistry.type(config);
+    String query =
+        type.equals("postgresql")
+            ? "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn AND"
+                + " has_database_privilege(datname,'CONNECT') ORDER BY datname"
+            : "SHOW DATABASES";
+    String id = config.path("id").asText();
+    try (var c = openConfig(new Model.DbRef(id, ""), config, secret(id));
+        var statement = c.createStatement();
+        var rows = statement.executeQuery(query)) {
+      var result = new java.util.ArrayList<String>();
+      while (rows.next()) {
+        String name = rows.getString(1);
+        if (type.equals("postgresql")
+            || !java.util.List.of("mysql", "sys", "information_schema", "performance_schema")
+                .contains(name)) result.add(name);
+      }
+      return result;
+    }
+  }
+
   public java.util.List<String> schemas(Model.DbRef ref) throws Exception {
     return postgres.schemas(ref);
   }

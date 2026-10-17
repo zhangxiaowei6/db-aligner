@@ -11,6 +11,7 @@ import { App, ConfigProvider, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { api, onEvent } from './api';
 import type { Appearance, ThemeMode } from './types';
+import { motion, motionVariables } from './motion';
 
 const AppearanceContext = createContext<{
   appearance: Appearance;
@@ -53,7 +54,15 @@ export function AppearanceProvider({
         theme={{
           algorithm:
             appearance.resolvedTheme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
-          token: { fontFamily: "'Segoe UI', 'Microsoft YaHei UI', sans-serif", fontSize: 14 },
+          token: {
+            fontFamily: "'Segoe UI', 'Microsoft YaHei UI', sans-serif",
+            fontSize: 14,
+            motionDurationFast: `${motion.fast / 1000}s`,
+            motionDurationMid: `${motion.content / 1000}s`,
+            motionDurationSlow: `${motion.slow / 1000}s`,
+            motionEaseOut: motion.easing,
+            motionEaseInOut: 'ease-in-out',
+          },
         }}
       >
         <App message={{ top: 80, duration: 3, maxCount: 3 }}>
@@ -73,6 +82,7 @@ function ThemeSurface({ children }: { children: ReactNode }) {
       document.documentElement.style.setProperty(key, String(value));
   }, [appearance.resolvedTheme, token]);
   const vars = {
+    ...motionVariables,
     '--surface': token.colorBgContainer,
     '--layout-bg': token.colorBgLayout,
     '--raised-bg': token.colorBgElevated,

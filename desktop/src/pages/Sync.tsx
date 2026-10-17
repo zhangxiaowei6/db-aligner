@@ -1,8 +1,10 @@
+import { SyncTableSelector } from '../components/SyncTableSelector';
+import { ContentTransition } from '../components/ContentTransition';
 import { namespaceLabel } from '../model';
 import { DatabaseCapabilities } from '../components/DatabaseCapabilities';
 import { refKey } from '../model';
 import { targetRefreshKey } from '../model';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AsyncButton as Button, RefreshButton } from '../components/AsyncButton';
 import {
   Alert,
@@ -21,8 +23,6 @@ import {
 import {
   ArrowRightOutlined,
   DatabaseOutlined,
-  CheckSquareOutlined,
-  ClearOutlined,
   EditOutlined,
   FileOutlined,
   PlusOutlined,
@@ -52,10 +52,6 @@ import { columnChangeSummary } from '../column-comparison';
 import { DiffInspector } from '../components/DiffInspector';
 import SqlView from '../components/SqlView';
 import { TemplateEditor } from './Management';
-import {
-  StructureOptionsEditor,
-  TableStructureOptions,
-} from '../components/StructureOptionsEditor';
 
 export function ScopePage() {
   const c = useController();
@@ -78,28 +74,8 @@ export function ScopePage() {
       </div>
     );
   const options = dbOptions(m).filter((option) => option.databaseType === m.syncDatabaseType);
-  const filtered = m.scopeTables.filter(
-    (table) =>
-      scopeTableMatches(table, m.tableSearch) &&
-      (m.scopeTableFilter === 'all' || table[m.scopeMode]),
-  );
-  const selectedTables = m.scopeTables.filter((table) => table[m.scopeMode]);
-  const templates = m.state.templates.filter((t) => t.workspaceId === m.workspaceId);
-  const selectedTemplate = templates.find((t) => t.id === m.scopeTemplateId);
-  const filteredSelected = filtered.filter((table) => table[m.scopeMode]).length;
-  const allFilteredSelected = filtered.length > 0 && filteredSelected === filtered.length;
-  const selectionLabel =
-    m.scopeTableFilter === 'selected'
-      ? allFilteredSelected
-        ? '取消选择筛选结果'
-        : '全选筛选结果'
-      : m.tableSearch.trim()
-        ? allFilteredSelected
-          ? '取消选择搜索结果'
-          : '全选搜索结果'
-        : allFilteredSelected
-          ? '取消全选'
-          : '全选所有表';
+  const templates = m.state.templates.filter((template) => template.workspaceId === m.workspaceId);
+  const selectedTemplate = templates.find((template) => template.id === m.scopeTemplateId);
   return (
     <>
       <div className="scope-layout">
@@ -160,7 +136,7 @@ export function ScopePage() {
             {m.templateApplyError && <Alert type="error" showIcon title={m.templateApplyError} />}
           </div>
 
-          <Field label="同步数据库类型">
+          <Field label="同步数据库类型" required>
             <Radio.Group
               aria-label="同步数据库类型"
               value={m.syncDatabaseType}
@@ -175,7 +151,7 @@ export function ScopePage() {
           <DatabaseOptionsStatus scope="sync" />
           <Form layout="vertical">
             <div className="source-target-form">
-              <Field label="来源数据库">
+              <Field label="来源数据库" required>
                 <Select
                   disabled={comparing}
                   showSearch
@@ -189,7 +165,7 @@ export function ScopePage() {
                 />
               </Field>
               <ArrowRightOutlined className="flow-arrow" />
-              <Field label="目标数据库（可多选）">
+              <Field label="目标数据库（可多选）" required>
                 <Select
                   className="target-database-select"
                   aria-label="目标数据库"
@@ -217,21 +193,7 @@ export function ScopePage() {
           <div className="section-heading">
             <h2>选择需要比较的表</h2>
           </div>
-          <Tabs
-            aria-label="同步类型"
-            activeKey={m.scopeMode}
-            onChange={(value) => c.setScopeMode(value as 'structure' | 'data')}
-            items={[
-              {
-                key: 'structure',
-                label: '同步结构',
-                disabled: comparing || !!m.applyingTemplateId,
-              },
-              { key: 'data', label: '同步数据', disabled: comparing || !!m.applyingTemplateId },
-            ]}
-          />
           <div className="scope-toolbar">
-            <span className="hint">每次只同步一种类型；两种类型分别保留选表、搜索和筛选</span>
             <RefreshButton
               key={targetRefreshKey(m)}
               size="small"
@@ -279,174 +241,28 @@ export function ScopePage() {
               }
             />
           )}
-          {m.scopeMode === 'structure' && (
-            <div className="structure-defaults">
-              <strong>统一结构默认</strong>
-              <StructureOptionsEditor
-                databaseType={m.syncDatabaseType}
-                value={m.structureDefaults}
-                disabled={comparing}
-                onChange={(options) => c.set('structureDefaults', options)}
-              />
-              <Button
-                size="small"
-                disabled={comparing || !m.scopeTables.some((table) => table.structure)}
-                onClick={() => c.applyStructureDefaults()}
-              >
-                应用到当前已选结构表
-              </Button>
-            </div>
-          )}
-          <div className="scope-table-search">
-            <label htmlFor="scope-table-search">搜索表</label>
-            <Input
-              id="scope-table-search"
-              allowClear
-              prefix={<SearchOutlined />}
-              placeholder="表名或说明，表名搜索可忽略 _"
-              value={m.tableSearch}
-              onChange={(e) => c.set('tableSearch', e.target.value)}
-            />
-            <Radio.Group
-              aria-label="表筛选"
-              optionType="button"
-              value={m.scopeTableFilter}
-              options={[
-                { label: '全部表', value: 'all' },
-                { label: '已选表', value: 'selected' },
-              ]}
-              onChange={(event) => c.set('scopeTableFilter', event.target.value)}
-            />
-            <Button
-              icon={
-                allFilteredSelected ? (
-                  <ClearOutlined aria-hidden />
-                ) : (
-                  <CheckSquareOutlined aria-hidden />
-                )
-              }
-              disabled={comparing || !filtered.length}
-              aria-pressed={allFilteredSelected}
-              onClick={() => c.toggleScope(m.scopeMode)}
-            >
-              {selectionLabel}
-            </Button>
-            <span className="hint" role="status">
-              显示 {filtered.length} / {m.scopeTables.length} 张表 · 当前类型已选{' '}
-              {selectedTables.length} 张
-            </span>
-          </div>
-          <DataTable<ScopeTable>
-            size="small"
-            className="scope-table"
-            rowKey="name"
-            dataSource={filtered}
-            locale={{
-              emptyText: !m.scopeTables.length
-                ? '选择源库后加载表名'
-                : m.scopeTableFilter === 'selected'
-                  ? '没有符合条件的已选表，请调整搜索或切换到全部表'
-                  : '没有匹配的表，请调整搜索内容',
-            }}
-            columns={[
-              {
-                key: 'selection',
-                width: 64,
-                align: 'center',
-                title: (
-                  <Checkbox
-                    checked={allFilteredSelected}
-                    indeterminate={filteredSelected > 0 && !allFilteredSelected}
-                    disabled={comparing || !filtered.length}
-                    aria-label="选择当前列表全部表"
-                    onChange={() => c.toggleScope(m.scopeMode)}
-                  />
-                ),
-                render: (_, row) => (
-                  <Checkbox
-                    checked={row[m.scopeMode]}
-                    disabled={comparing}
-                    aria-label={`${row.name} ${m.scopeMode === 'structure' ? '表结构' : '基础数据'}`}
-                    onChange={(e) => c.updateScope(row.name, { [m.scopeMode]: e.target.checked })}
-                  />
-                ),
-              },
-              {
-                title: '表名',
-                key: 'name',
-                width: 240,
-                ellipsis: true,
-                render: (_, row) => {
-                  const missing = c.missingTargets(row.name);
-                  return (
-                    <span className="table-name-cell">
-                      <TableOutlined />
-                      <span title={row.name}>{row.name}</span>
-                      {!!missing.length && (
-                        <Tooltip
-                          title={`目标库缺少该表：${missing.map((key) => `${key.slice(key.indexOf('/') + 1)}（${m.state.connections.find((item) => item.id === key.slice(0, key.indexOf('/')))?.name || key.slice(0, key.indexOf('/'))}）`).join('、')}`}
-                        >
-                          <Tag color="orange">目标缺失</Tag>
-                        </Tooltip>
-                      )}
-                    </span>
-                  );
-                },
-              },
-              {
-                title: '表说明',
-                dataIndex: 'comment',
-                width: 240,
-                ellipsis: true,
-                render: (value: string) => value || '无表注释',
-              },
-              {
-                title: m.scopeMode === 'structure' ? '结构细项' : '匹配键',
-                width: m.scopeMode === 'structure' ? 220 : 320,
-                render: (_, row) =>
-                  m.scopeMode === 'structure' ? (
-                    <TableStructureOptions
-                      databaseType={m.sourceKey.startsWith('pg:') ? 'postgresql' : 'mysql'}
-                      label={`${row.name} 结构细项`}
-                      value={row.structureOptions}
-                      disabled={comparing || !row.structure}
-                      onChange={(options) => c.updateScope(row.name, { structureOptions: options })}
-                    />
-                  ) : (
-                    <Input
-                      value={row.keyText}
-                      disabled={comparing || !row.data}
-                      placeholder="默认主键；复合键用逗号分隔"
-                      aria-label={`${row.name} 匹配键`}
-                      onChange={(e) => c.updateScope(row.name, { keyText: e.target.value })}
-                    />
-                  ),
-              },
-            ]}
+          <SyncTableSelector
+            id="scope"
+            mode={m.scopeMode}
+            rows={m.scopeTables}
+            search={m.tableSearch}
+            filter={m.scopeTableFilter}
+            defaults={m.structureDefaults}
+            databaseType={m.syncDatabaseType}
+            disabled={comparing || !!m.applyingTemplateId}
+            onMode={c.setScopeMode}
+            onSearch={(value) => c.set('tableSearch', value)}
+            onFilter={(value) => c.set('scopeTableFilter', value)}
+            onDefaults={(value) => c.set('structureDefaults', value)}
+            onApplyDefaults={() => c.applyStructureDefaults()}
+            onUpdate={c.updateScope}
+            onToggle={() => c.toggleScope(m.scopeMode)}
+            missingTargets={(name) =>
+              c
+                .missingTargets(name)
+                .map((key) => options.find((option) => option.value === key)?.label || key)
+            }
           />
-          {m.scopeMode === 'structure' ? (
-            <p className="hint">删除与高风险结构变更默认不选中，在差异预览中逐项确认。</p>
-          ) : (
-            <>
-              <p className="hint">
-                数据同步仅处理源库与目标库都存在的同名表；目标缺表时自动跳过，不创建表。
-              </p>
-              <p className="hint">
-                业务键匹配保留目标主键，不自动映射关联表
-                ID。已有表的字段定义或顺序变化时，请先同步结构，再重新比较数据。
-              </p>
-              <p className="hint">
-                数据量限制：源库和每个目标库的每张表最多 20,000 行；超过上限会阻止该表的数据同步，
-                不会只同步前 20,000 行。工具适用于基础字典等中小规模数据， 不适合全量迁移、CDC
-                或大表持续复制。
-              </p>
-              <p className="hint">
-                多表或多目标比较会读取源库和目标库数据，增加数据库负载、网络传输和客户端内存占用；
-                即使每表未超限也需注意总量。建议只选择必要表，按表分批、避开业务高峰，
-                并确认源库与目标库容量、匹配键索引及网络条件；分批选表不能绕过单表行数上限。
-              </p>
-            </>
-          )}
         </Panel>
       </div>
       <Footer>
@@ -640,7 +456,7 @@ export function DiffPage() {
           />
         </div>
       </div>
-      <div className="diff-layout">
+      <ContentTransition identity={`diff-tab/${diffTab}`} className="diff-layout">
         <section className={allNodes.length > 200 ? 'review-viewport' : undefined}>
           <p className="hint">
             {diffTab === 'data' ? '按目标库、表和数据记录分组' : '按目标库与表分组'}
@@ -729,21 +545,23 @@ export function DiffPage() {
           />
         </section>
         <aside className="diff-inspector" ref={inspector} aria-label="差异明细" tabIndex={0}>
-          <DiffInspector
-            plan={plan}
-            node={inspected}
-            selectedIds={m.selectedIds}
-            onInspect={(change) =>
-              c.commit((state) => ({
-                ...state,
-                currentChangeId: change.id,
-                diffSearch: '',
-                diffTab: change.kind.endsWith('_ROW') ? 'data' : 'structure',
-              }))
-            }
-          />
+          <ContentTransition identity={`diff-item/${diffTab}/${inspected?.id}`}>
+            <DiffInspector
+              plan={plan}
+              node={inspected}
+              selectedIds={m.selectedIds}
+              onInspect={(change) =>
+                c.commit((state) => ({
+                  ...state,
+                  currentChangeId: change.id,
+                  diffSearch: '',
+                  diffTab: change.kind.endsWith('_ROW') ? 'data' : 'structure',
+                }))
+              }
+            />
+          </ContentTransition>
         </aside>
-      </div>
+      </ContentTransition>
       <Footer help="同步脚本与记录自动保存；执行前准备回滚资料。">
         <label htmlFor="sync-remark">本次备注</label>
         <Input
@@ -775,6 +593,7 @@ export function RollbackPage() {
   const c = useController();
   const { m } = c;
   const rollback = m.rollback;
+  const [inspectedId, setInspectedId] = useState('');
   const nodes = useMemo(() => recoveryNodes(m), [rollback]);
   const selected = useMemo(() => new Set(m.rollbackIds), [m.rollbackIds]);
   const counts = useMemo(() => reviewCounts(nodes, selected), [nodes, selected]);
@@ -797,7 +616,10 @@ export function RollbackPage() {
             expandable={{ defaultExpandAllRows: true }}
             onRow={(row) => ({
               onClick: () => {
-                if (row.item) c.set('rollbackSql', row.item.sql.join(';\n'));
+                if (row.item) {
+                  setInspectedId(row.id);
+                  c.set('rollbackSql', row.item.sql.join(';\n'));
+                }
               },
             })}
             columns={[
@@ -849,7 +671,9 @@ export function RollbackPage() {
         </section>
         <aside className="diff-inspector">
           <h2>回滚 SQL 预览</h2>
-          <SqlView sql={m.rollbackSql} />
+          <ContentTransition identity={`rollback-item/${rollback.recordId}/${inspectedId}`}>
+            <SqlView sql={m.rollbackSql} />
+          </ContentTransition>
           {rollback.items.some((i) => !i.eligible) && (
             <Alert
               className="top-gap"

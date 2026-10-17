@@ -1,0 +1,65 @@
+{
+  "browser": [
+    {
+      "check": "draft-database-discovery-and-page-preservation",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "different-table-identity-and-structure-tab-transition",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "template-shared-table-selector-and-tabs",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "record-remark-and-typed-delete-with-cancel-and-minimum-window",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "version-delete-retains-records-and-clears-membership",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "common-navigation-motion-and-reduced-motion",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "draft-database-discovery-and-page-preservation",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "different-table-identity-and-structure-tab-transition",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "template-shared-table-selector-and-tabs",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "record-remark-and-typed-delete-with-cancel-and-minimum-window",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "version-delete-retains-records-and-clears-membership",
+      "theme": "dark",
+      "passed": true
+    },
+    {
+      "check": "common-navigation-motion-and-reduced-motion",
+      "theme": "dark",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

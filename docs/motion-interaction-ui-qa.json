@@ -1,0 +1,15 @@
+{
+  "browser": [
+    {
+      "check": "unified-motion-tree-real-transitions-required-credentials-version-table-and-repository",
+      "theme": "light",
+      "passed": true
+    },
+    {
+      "check": "unified-motion-tree-real-transitions-required-credentials-version-table-and-repository",
+      "theme": "dark",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

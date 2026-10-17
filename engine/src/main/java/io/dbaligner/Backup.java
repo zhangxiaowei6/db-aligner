@@ -72,6 +72,12 @@ public final class Backup {
           var rs = tables.executeQuery("SELECT COUNT(*) FROM entities")) {
         rs.next();
       }
+      try (var pending = c.createStatement();
+          var rows =
+              pending.executeQuery("SELECT COUNT(*) FROM entities WHERE kind='recordDeletion'")) {
+        if (rows.next() && rows.getInt(1) > 0)
+          throw new IllegalArgumentException("备份含未完成的档案删除日志，拒绝恢复");
+      }
       try (var records = c.createStatement();
           var rs = records.executeQuery("SELECT id,json FROM entities WHERE kind='record'")) {
         while (rs.next()) {

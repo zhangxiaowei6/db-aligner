@@ -17,6 +17,7 @@ import type {
 } from './types';
 import { defaultStructureOptions } from './structure-options';
 import { organizedConnections } from './connection-organization';
+import type { NavigationTarget, RecordOrigin } from './navigation';
 
 export type Page =
   | 'scope'
@@ -103,6 +104,10 @@ export interface Model {
   state: State;
   workspaceId: string;
   page: Page;
+  pageEntry: number;
+  entering?: NavigationTarget;
+  entryError?: string;
+  recordOrigin?: RecordOrigin;
   busy: number;
   syncSubmitting?: string;
   rollbackSubmitting?: string;
@@ -151,6 +156,7 @@ export interface Model {
   diffTab: string;
   currentChangeId: string;
   diffSearch: string;
+  openingTable?: string;
   currentTable?: { id: string; ref: DbRef; table: string; model: Table };
   structureTab: string;
   workspaceForm: Workspace;
@@ -178,13 +184,40 @@ export interface Model {
   importRows: ImportRow[];
   duplicateMode: string;
   importGroup: string;
-  templateForm: SyncTemplate;
+  templateForm: Omit<SyncTemplate, 'tables'> & {
+    tables: (TableChoice & { comment?: string; sourceMissing?: boolean })[];
+  };
+  templateSearch: string;
+  templateFilter: ScopeTableFilter;
+  templateDrafts: Partial<
+    Record<
+      'structure' | 'data',
+      { tables: Model['templateForm']['tables']; search: string; filter: ScopeTableFilter }
+    >
+  >;
+  templateLoading: boolean;
+  templateError: string;
+  connectionDiscovery?: {
+    status: 'loading' | 'success' | 'error';
+    databases: string[];
+    error?: string;
+  };
   templateDialog: boolean;
   templateSubmitting: boolean;
   templateSource: string;
   templateTargets: string[];
+  recordRemarkId: string;
+  recordRemarkText: string;
+  deleteRequest?: {
+    kind: 'record' | 'version';
+    id: string;
+    label: string;
+    description: string;
+    context?: { label: string; text: string };
+  };
   historyTab: string;
   historySearch: string;
+  versionSearch: string;
   historyFilter: string;
   historySelection: string[];
   versionDrawer: boolean;
@@ -279,6 +312,11 @@ export function initialModel(): Model {
     scopeMode: 'structure',
     scopeDrafts: {},
     templateMode: 'structure',
+    templateSearch: '',
+    templateFilter: 'all',
+    templateDrafts: {},
+    templateLoading: false,
+    templateError: '',
     scopeTemplateId: '',
     applyingTemplateId: '',
     templateApplyError: '',
@@ -331,8 +369,12 @@ export function initialModel(): Model {
     templateDialog: false,
     templateSubmitting: false,
     templateTargets: [],
+    recordRemarkId: '',
+    recordRemarkText: '',
     historyTab: 'records',
+    pageEntry: 0,
     historySearch: '',
+    versionSearch: '',
     historyFilter: '',
     historySelection: [],
     versionDrawer: false,
