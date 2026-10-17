@@ -75,6 +75,16 @@ try {
       if (Test-Path -LiteralPath (Join-Path $taskPortable "engine/lib/$($taskDriverFile.name)")) { throw '按需驱动不能预置到引擎依赖' }
     }
   }
+  # ZIP 时间戳仅支持 1980～2107 年；只调整暂存副本，保留依赖源文件及内容。
+  $taskZipMinTime = [datetime]::new(1980, 1, 1, 0, 0, 0)
+  $taskZipMaxTime = [datetime]::new(2107, 12, 31, 23, 59, 58)
+  Get-ChildItem -LiteralPath $taskPortable -Recurse -Force | ForEach-Object {
+    if ($_.LastWriteTime.Year -lt 1980) {
+      $_.LastWriteTime = $taskZipMinTime
+    } elseif ($_.LastWriteTime.Year -gt 2107) {
+      $_.LastWriteTime = $taskZipMaxTime
+    }
+  }
   $taskZipName = "DBAligner-$taskVersion-win-x64.zip"
   Compress-Archive -Path (Join-Path $taskPortable '*') -DestinationPath (Join-Path $taskRelease $taskZipName) -Force
   $taskAttachments += $taskZipName
