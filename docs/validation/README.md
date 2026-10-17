@@ -58,6 +58,19 @@ jsdom 仍有 CSS 解析告警；实际浏览器检查错误为 0。
 两个递增正式版本间真实自动更新；远程签名构建、附件核验与公开结果另行记录，不将本地无签名
 产物作为正式 Release 附件。
 
+### GitHub 首轮失败与多数据库专项修正
+
+候选提交 `08845c8` 的[首轮主分支 CI](https://github.com/zhangxiaowei6/db-aligner/actions/runs/39051727244)
+通过默认测试、版本检查和生产前端构建，随后多数据库预览因旧的端口控件精确角色名称定位超时而失败，
+未进入打包阶段，未创建发布标签。改为按关联标签定位端口和初始数据库，同时兼容取消按钮的自动空格。
+本地同专项进一步暴露树展开的前一层查询／过渡尚未结束就操作下一层的竞争，改为使用稳定节点属性，
+等待 `aria-busy=false`、`aria-expanded=true` 和过渡节点移除后继续。
+
+`npm run qa:ui -w desktop -- --multi-database` 本地重跑退出 0，浅色／深色与 1488／1180
+两种宽度共 8 条 MySQL／PostgreSQL 流程通过，错误 0，保留比较、确认、执行、记录和恢复断言。
+对应[多数据库报告](../multi-database-ui-qa.json)与 `multi-db-*.png` 截图由本次脚本生成。
+仅修改验收定位及等待条件，没有修改产品代码或放宽业务断言；后续 CI 与发布事实另行记录。
+
 ## 2026-10-18：便携 ZIP 许可证时间戳修复
 
 修复 `scripts/release-files.ps1` 在 Windows PowerShell `Compress-Archive` 下处理早于

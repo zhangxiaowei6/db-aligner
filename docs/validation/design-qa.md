@@ -32,6 +32,11 @@
 [原生报告](../package-native/native-client-ui-qa.json)记录。浏览器为虚构资料；真库、包摘要、
 维护者验收确认和独立安装／升级证据的边界见[本次验证记录](README.md#2026-10-18011-发布前完整回归)。
 
+本轮另完整重跑多数据库专项：浅深主题、1488／1180 宽度下 8 条流程通过。
+已查看[浅色 PostgreSQL 确认](../screenshots/react-ant-design/multi-db-confirm-light-1180.png)与
+[深色 MySQL 差异](../screenshots/react-ant-design/multi-db-mysql-diff-dark-1180.png)，
+来源、目标及 schema 路径可辨识，最小窗口下确认和差异操作可达。脚本修正及首轮 CI 失败保留在验证记录。
+
 ## 2026-10-17：页面路径、文字面包屑与必填标记
 
 面包屑专项使用生产前端和内存虚构资料，浅色／深色两组均通过，控制台错误 0，见[面包屑与表单报告](../navigation-ui-qa.json)。覆盖祖先与末级页面点击、Enter／Space、同页重新进入、记录列表与版本来源分支、回滚再次校验、导入重进清空、设置恢复已保存配置、减少动态效果及长项目名截断。[完整浏览器回归](../react-ui-qa.json)另外通过 132 项检查，错误 0；默认测试与真库结果见[验证记录](README.md)。

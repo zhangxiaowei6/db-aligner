@@ -1,6 +1,24 @@
 import assert from 'node:assert/strict';
 
 export async function multiDatabaseQA(browser, { report, observe, shot, modalSettled }) {
+  async function expandBranch(page, type, title) {
+    const label = page.locator(`.tree-label[data-node-type="${type}"][title="${title}"]`);
+    const row = page.locator('.ant-tree-treenode').filter({ has: label });
+    await label.waitFor();
+    if ((await row.getAttribute('aria-expanded')) !== 'true')
+      await row.locator('.ant-tree-switcher').click();
+    const key = await label.getAttribute('data-node-key');
+    await page.waitForFunction((nodeKey) => {
+      const label = [...document.querySelectorAll('.tree-label')].find(
+        (node) => node.getAttribute('data-node-key') === nodeKey,
+      );
+      return (
+        label?.getAttribute('aria-busy') === 'false' &&
+        label.closest('.ant-tree-treenode')?.getAttribute('aria-expanded') === 'true'
+      );
+    }, key);
+    await page.locator('.ant-tree-treenode-motion').waitFor({ state: 'detached' });
+  }
   for (const theme of ['light', 'dark']) {
     for (const width of [1488, 1180]) {
       const page = await browser.newPage({
@@ -17,32 +35,19 @@ export async function multiDatabaseQA(browser, { report, observe, shot, modalSet
       const dialog = page.getByRole('dialog', { name: '编辑连接' });
       await dialog.getByRole('button', { name: '安装驱动', exact: true }).click();
       await dialog.getByText('驱动已安装', { exact: true }).waitFor();
+      assert.equal(await dialog.getByLabel('端口', { exact: true }).inputValue(), '5432');
       assert.equal(
-        await dialog.getByRole('textbox', { name: '端口', exact: true }).inputValue(),
-        '5432',
-      );
-      assert.equal(
-        await dialog.getByRole('textbox', { name: '初始连接数据库', exact: true }).inputValue(),
+        await dialog.getByLabel('初始连接数据库', { exact: true }).inputValue(),
         'postgres',
       );
       await shot(page, `multi-db-driver-${theme}-${width}`);
       await dialog.getByRole('button', { name: '测试连接', exact: true }).click();
       await dialog.getByText(/连接成功/).waitFor();
-      await dialog.getByRole('button', { name: '取 消', exact: true }).click();
-      await page.getByRole('tree').getByText('PostgreSQL 演示', { exact: true }).dblclick();
-      await page.locator('[id$="-pg-source"]:not([id^="undefined-"])').waitFor();
-      await page
-        .locator('.ant-tree-treenode')
-        .filter({ has: page.locator('[data-connection-id="pg-source"]') })
-        .locator('.ant-tree-switcher')
-        .click();
-      await page.getByRole('tree').getByText('demo_pg', { exact: true }).dblclick();
-      const schema = page.locator('[data-node-type="schema"]').filter({ hasText: /^public$/ });
-      await page
-        .locator('.ant-tree-treenode:not([id^="undefined-"])')
-        .filter({ has: schema })
-        .waitFor();
-      await schema.dblclick();
+      await dialog.getByRole('button', { name: /^取\s*消$/ }).click();
+      await expandBranch(page, 'group', 'PostgreSQL 演示');
+      await expandBranch(page, 'connection', 'PostgreSQL 来源（虚构）');
+      await expandBranch(page, 'database', 'demo_pg');
+      await expandBranch(page, 'schema', 'public');
       await page.getByRole('tree').getByText('sys_dict', { exact: true }).waitFor();
       await page.locator('.tree-label[aria-busy="true"]').first().waitFor({ state: 'hidden' });
       await shot(page, `multi-db-tree-${theme}-${width}`);
