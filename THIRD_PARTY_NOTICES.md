@@ -2,6 +2,8 @@
 
 DBAligner source code is licensed under Apache-2.0. Third-party components retain their own licenses. The installed application includes this notice, `licenses/`, Java's `runtime/legal/`, and unmodified JAR files under `engine/lib/`. The Windows WebView2 runtime is supplied by Microsoft or acquired separately at first installation.
 
+## Components
+
 | Component                                  | License                                                 | Upstream                                                   |
 | ------------------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------- |
 | Tauri and Rust desktop dependencies        | See `licenses/rust-inventory.json` and `licenses/rust/` | https://github.com/tauri-apps/tauri                        |
@@ -22,10 +24,16 @@ DBAligner source code is licensed under Apache-2.0. Third-party components retai
 | Apache Commons Logging / Log4j             | Apache-2.0                                              | https://logging.apache.org/                                |
 | Jakarta Annotations                        | EPL-2.0 or GPL-2.0 with Classpath Exception             | https://github.com/jakartaee/common-annotations-api        |
 
+## Driver distribution and replacement
+
 MariaDB Connector/J is distributed as a separate, unmodified `mariadb-java-client-3.5.10.jar` and loaded from the external Java class path. You may replace it with a compatible modified driver JAR. The distribution includes the matching source JAR and LGPL license text in `licenses/mariadb/`. DBAligner does not prohibit reverse engineering for debugging modifications to this LGPL component. Neither MariaDB nor MySQL server software is shipped with DBAligner; the optional integration test script downloads server software solely into the ignored developer `.tools` directory.
 
 PostgreSQL JDBC 42.7.8 is an optional, unmodified driver downloaded only when requested. Its pinned artifact SHA-256 and source URL are recorded in the bundled driver catalogue; its license is included in `licenses/postgresql/LICENSE`. PostgreSQL server binaries are not distributed with the application. Isolated integration-test binaries remain in the ignored `.tools/postgresql-test` directory.
 
+## Runtime source and legal materials
+
 OpenJDK corresponding source for the exact bundled Temurin build is linked in `licenses/runtime-source.json`; the runtime's original legal notices are retained. Generated npm and Rust dependency inventories and upstream license texts are in `licenses/`. Build tooling such as TypeScript, Vite, Maven, JUnit and NSIS has separate licenses and is not part of the DBAligner source license.
+
+## Redistribution
 
 No upstream authors endorse DBAligner. Preserve the notices when redistributing releases and regenerate the dependency inventory when upgrading dependencies.

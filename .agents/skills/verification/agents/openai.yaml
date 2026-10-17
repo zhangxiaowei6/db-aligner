@@ -1,4 +1,4 @@
 interface:
   display_name: '修改验证与证据记录'
-  short_description: '按修改范围选择检查组合，准确记录通过、失败、跳过及各类验收证据'
+  short_description: '选择修改检查组合、复核结果或整理验收证据，按相关章节执行并记录实际检查。'
   default_prompt: '使用 $verification 验证本项目的当前修改，执行必要检查并记录实际结果与未覆盖项。'

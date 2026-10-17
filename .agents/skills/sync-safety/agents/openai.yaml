@@ -1,4 +1,4 @@
 interface:
   display_name: '数据库同步与恢复'
-  short_description: '维护比较、执行与恢复证据链，核对范围保护、锁内复验和历史兼容行为'
+  short_description: '修改比较、执行、归档、核验、回滚或本地备份恢复，按相关章节执行并记录实际检查。'
   default_prompt: '使用 $sync-safety 分析或修改本项目的同步与恢复逻辑，保留执行事实并完成相应真库验证。'

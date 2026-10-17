@@ -1,4 +1,4 @@
 interface:
   display_name: 'Git 提交规范'
-  short_description: '按 Conventional Commits 生成中文提交消息并检查提交范围'
+  short_description: '创建、检查或拆分 Git 提交消息时使用中文 Conventional Commits。'
   default_prompt: '使用 $git-commit-convention 为当前变更拟定并检查符合规范的中文 Git 提交消息。'
