@@ -1,6 +1,6 @@
 [package]
 name = "dbaligner"
-version = "0.1.0"
+version = "0.1.1"
 description = "DBAligner Windows desktop client"
 authors = ["DBAligner contributors"]
 edition = "2021"
